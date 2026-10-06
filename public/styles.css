@@ -1,0 +1,53 @@
+:root {
+  --bg: #fafafa;
+  --fg: #1f1f1f;
+  --muted: #666;
+  --card: #fff;
+  --border: #e3e3e3;
+  --accent: #ee4d2d;
+  --code-bg: #f3f3f3;
+  --warn-bg: #fff4e5;
+  --error: #b42318;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141414;
+    --fg: #ececec;
+    --muted: #a0a0a0;
+    --card: #1e1e1e;
+    --border: #333;
+    --code-bg: #262626;
+    --warn-bg: #3a2a12;
+    --error: #ff8a80;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.container { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+h1 { margin: 0 0 8px; }
+h1::before { content: ""; display: inline-block; width: 12px; height: 28px; margin-right: 10px; background: var(--accent); border-radius: 3px; vertical-align: -4px; }
+a { color: var(--accent); }
+.lead { color: var(--muted); }
+.muted { color: var(--muted); font-size: 14px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-top: 24px; }
+fieldset { border: 0; padding: 0; margin: 0 0 20px; }
+legend { font-weight: 600; margin-bottom: 8px; }
+.option { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; cursor: pointer; }
+.option.disabled { opacity: 0.5; cursor: not-allowed; }
+.option span { display: flex; flex-direction: column; }
+.option small { color: var(--muted); }
+input[type="text"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; }
+button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 12px 20px; font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); padding: 12px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+pre.secret { border: 2px solid var(--accent); font-size: 14px; }
+.warning { background: var(--warn-bg); padding: 8px 12px; border-radius: 8px; }
+.error { color: var(--error); }

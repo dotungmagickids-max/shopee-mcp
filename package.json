@@ -1,0 +1,34 @@
+{
+  "name": "shopee-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo remote MCP server for Shopee Open Platform, built on @congminh1254/shopee-sdk",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "gen:catalog": "tsx scripts/build-catalog.ts"
+  },
+  "dependencies": {
+    "@congminh1254/shopee-sdk": "^2.9.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@supabase/supabase-js": "^2.117.2",
+    "next": "^16.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}
