@@ -13,7 +13,10 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "gen:catalog": "tsx scripts/build-catalog.ts"
+    "gen:catalog": "tsx scripts/build-catalog.ts",
+    "setup": "tsx scripts/setup.ts",
+    "doctor": "tsx scripts/doctor.ts",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@congminh1254/shopee-sdk": "^2.9.0",
@@ -28,7 +31,14 @@
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "dotenv": "^16.6.1",
+    "postgres": "^3.4.9",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/congminh1254/shopee-mcp"
   }
 }

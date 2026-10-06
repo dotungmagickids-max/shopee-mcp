@@ -4,9 +4,13 @@
  * The catalog maps every SDK manager method to its Shopee endpoint, HTTP method,
  * auth requirement and (trimmed) request/response field docs from the spec files.
  *
- * Usage: npm run gen:catalog -- ../shopee-sdk
+ * Usage:
+ *   npm run gen:catalog                  # clones the SDK repo into a temp dir
+ *   npm run gen:catalog -- ../shopee-sdk # uses an existing checkout
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { CatalogEntry, CatalogParam } from "../src/lib/catalog-types";
 
@@ -18,7 +22,17 @@ type SpecParam = {
   children?: SpecParam[];
 };
 
-const sdkRoot = path.resolve(process.argv[2] ?? "../shopee-sdk");
+const SDK_REPO = "https://github.com/congminh1254/shopee-sdk";
+
+function resolveSdkRoot(): string {
+  if (process.argv[2]) return path.resolve(process.argv[2]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shopee-sdk-"));
+  console.log(`Cloning ${SDK_REPO} into ${dir}…`);
+  execFileSync("git", ["clone", "--depth", "1", SDK_REPO, dir], { stdio: "inherit" });
+  return dir;
+}
+
+const sdkRoot = resolveSdkRoot();
 const managersDir = path.join(sdkRoot, "src/managers");
 const schemasDir = path.join(sdkRoot, "schemas");
 const outFile = path.resolve("src/lib/catalog.generated.ts");

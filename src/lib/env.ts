@@ -27,8 +27,13 @@ export function partnerCredentials(region: ShopeeRegion): { partnerId: number; p
   return { partnerId: Number(id), partnerKey: key };
 }
 
-/** Public base URL of this deployment, used to build the Shopee redirect URL. */
+/**
+ * Public base URL of this deployment, used to build the Shopee redirect URL.
+ * On Vercel this defaults to the production domain, so preview deployments
+ * also redirect to the domain registered in the Shopee console.
+ */
 export function appUrl(request: Request): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   return new URL(request.url).origin;
 }
