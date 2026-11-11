@@ -56,6 +56,8 @@ export async function POST(request: Request) {
     if (params.extra_cost_per_unit != null) params.extra_cost_per_unit = Math.max(0, params.extra_cost_per_unit);
     if (params.use_profit_roas != null) params.use_profit_roas = params.use_profit_roas ? 1 : 0;
     if (params.ad_fee_pct != null) params.ad_fee_pct = Math.min(50, Math.max(0, params.ad_fee_pct));
+    if (params.peak_max_increase_pct != null) params.peak_max_increase_pct = Math.min(200, Math.max(0, params.peak_max_increase_pct));
+    if (params.peak_cooldown_minutes != null) params.peak_cooldown_minutes = Math.max(15, params.peak_cooldown_minutes);
     if (params.return_fee_per_order != null) params.return_fee_per_order = Math.max(0, params.return_fee_per_order);
     const saleDates = String(form.get("sale_dates") ?? "")
       .split(/[\s,;]+/)
@@ -71,6 +73,15 @@ export async function POST(request: Request) {
       start_budget: numOrNull("start_budget") ?? 100000,
       reset_unlimited: form.get("reset_unlimited") === "on",
       sale_dates: saleDates,
+      mini_sale_days: [
+        ...new Set(
+          String(form.get("mini_sale_days") ?? "")
+            .split(/[\s,;]+/)
+            .map(Number)
+            .filter((d) => Number.isInteger(d) && d >= 1 && d <= 31),
+        ),
+      ].sort((a, b) => a - b),
+      pre_sale_days: Math.min(7, Math.max(0, numOrNull("pre_sale_days") ?? 2)),
       good_hours: parseHours(String(form.get("good_hours") ?? "")),
       rule_params: params,
       updated_at: now,

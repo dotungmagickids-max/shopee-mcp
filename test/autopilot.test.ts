@@ -332,6 +332,38 @@ describe("good hours setting", () => {
   });
 });
 
+describe("sale calendar", () => {
+  it("classifies days and loosens limits on peak days", async () => {
+    const { saleTier, isPeakDay, dailyCap, increaseLimit, editsLimit, DEFAULT_RULE_PARAMS } = await import(
+      "../src/lib/autopilot/settings"
+    );
+    const s: any = {
+      sale_dates: ["2026-11-27"],
+      mini_sale_days: [1, 15, 20, 25],
+      pre_sale_days: 2,
+      daily_cap_normal: 30_000_000,
+      daily_cap_sale: 80_000_000,
+      max_increase_pct: 30,
+      max_edits_per_day: 6,
+      params: DEFAULT_RULE_PARAMS,
+    };
+    assert.equal(saleTier(s, "2026-11-11"), "lon");
+    assert.equal(saleTier(s, "2026-11-27"), "lon");
+    assert.equal(saleTier(s, "2026-11-10"), "truoc");
+    assert.equal(saleTier(s, "2026-11-09"), "truoc");
+    assert.equal(saleTier(s, "2026-11-25"), "truoc"); // 2 ngày trước 27/11
+    assert.equal(saleTier(s, "2026-11-15"), "nho");
+    assert.equal(saleTier(s, "2026-11-08"), "thuong");
+    assert.equal(saleTier(s, "2026-12-01"), "nho");
+    assert.equal(isPeakDay(s, "2026-11-15"), false);
+    assert.equal(dailyCap(s, "2026-11-10"), 80_000_000);
+    assert.equal(dailyCap(s, "2026-11-15"), 30_000_000);
+    assert.equal(increaseLimit(s, "2026-11-11"), 100);
+    assert.equal(increaseLimit(s, "2026-11-08"), 30);
+    assert.equal(editsLimit(s, "2026-11-11"), 12);
+  });
+});
+
 describe("time helpers", () => {
   it("uses Vietnam time", () => {
     // 2026-11-10T17:30:00Z = 00:30 ngày 11/11 giờ VN

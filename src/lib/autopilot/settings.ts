@@ -1,5 +1,5 @@
 import { db } from "../supabase";
-import { vnDate } from "./time";
+import { addDays, vnDate } from "./time";
 
 /** Tham số luật mặc định; ghi đè từng shop qua autopilot_settings.rule_params. */
 export const DEFAULT_RULE_PARAMS = {
@@ -41,6 +41,12 @@ export const DEFAULT_RULE_PARAMS = {
   core_min_units: 60, // Chủ lực: bán ≥ N cái / 30 ngày trên Shopee
   core_max_cost_pct: 36, // …giá vốn ≤ % giá bán
   core_min_stock_days: 14, // …tồn đủ bán ≥ N ngày
+  // Ngày cao điểm (ngày đôi, ngày khai báo, và N ngày trước đó): chạy theo lãi, ít cản
+  peak_scale_spend_ratio: 0.6, // tăng khi đã tiêu ≥ tỉ lệ ngân sách
+  peak_scale_step_pct: 50, // mỗi lần tăng (%)
+  peak_max_increase_pct: 100, // trần mỗi lần tăng (%) — thay cho trần 30% ngày thường
+  peak_cooldown_minutes: 30,
+  peak_max_edits_per_day: 12,
 };
 
 export type RuleParams = typeof DEFAULT_RULE_PARAMS;
@@ -59,6 +65,8 @@ export interface ShopSettings {
   start_budget: number;
   reset_unlimited: boolean;
   sale_dates: string[];
+  mini_sale_days: number[]; // ngày sale nhỏ hằng tháng
+  pre_sale_days: number; // số ngày trước ngày sale lớn cũng tính là cao điểm
   good_hours: number[]; // rỗng = tự tính
   params: RuleParams;
 }
@@ -109,20 +117,60 @@ export async function loadSettings(shopId: number): Promise<ShopSettings> {
     start_budget: Number(r.start_budget ?? 100_000),
     reset_unlimited: !!r.reset_unlimited,
     sale_dates: r.sale_dates ?? [],
+    mini_sale_days: (r.mini_sale_days ?? [1, 15, 20, 25]).map(Number),
+    pre_sale_days: Number(r.pre_sale_days ?? 2),
     good_hours: (r.good_hours ?? []).map(Number),
     params: { ...DEFAULT_RULE_PARAMS, ...(r.rule_params ?? {}) },
   };
 }
 
-/** Ngày sale: ngày trùng tháng (1/1 … 12/12) hoặc ngày khai báo trong sale_dates. */
+/** Ngày sale lớn: ngày trùng tháng (1/1 … 12/12) hoặc ngày khai báo trong sale_dates (vd 27/11 Black Friday). */
 export function isSaleDay(s: ShopSettings, date = vnDate()): boolean {
   const [, m, d] = date.split("-").map(Number);
   return m === d || s.sale_dates.includes(date);
 }
 
-/** Trần tổng ngân sách/ngày đang áp dụng (null = chưa đặt). */
+/**
+ * Loại ngày theo lịch sale Shopee (số thật Magickids 9–11/2026):
+ *   "lon"   ngày đôi / ngày khai báo — 11/11 chi 37tr, 1.229 đơn
+ *   "truoc" N ngày trước ngày sale lớn — 10/11 chi 16tr, 9/11 7,5tr
+ *   "nho"   ngày 1, 15, 20, 25 hằng tháng — chi và đơn gấp ~2 ngày thường
+ *   "thuong"
+ */
+export type SaleTier = "lon" | "truoc" | "nho" | "thuong";
+
+export function saleTier(s: ShopSettings, date = vnDate()): SaleTier {
+  if (isSaleDay(s, date)) return "lon";
+  for (let k = 1; k <= s.pre_sale_days; k++) if (isSaleDay(s, addDays(date, k))) return "truoc";
+  if (s.mini_sale_days.includes(Number(date.slice(8, 10)))) return "nho";
+  return "thuong";
+}
+
+export const SALE_TIER_VI: Record<SaleTier, string> = {
+  lon: "ngày sale lớn",
+  truoc: "ngày trước sale lớn",
+  nho: "ngày sale nhỏ",
+  thuong: "ngày thường",
+};
+
+/** Ngày cao điểm: sale lớn và các ngày ngay trước đó — luật chạy theo lãi, ít cản. */
+export function isPeakDay(s: ShopSettings, date = vnDate()): boolean {
+  const t = saleTier(s, date);
+  return t === "lon" || t === "truoc";
+}
+
+/** Cầu chì tổng ngân sách/ngày đang áp dụng (null = chưa đặt). Chỉ để chặn lỗi, không phải mục tiêu chi. */
 export function dailyCap(s: ShopSettings, date = vnDate()): number | null {
-  return isSaleDay(s, date) ? s.daily_cap_sale ?? s.daily_cap_normal : s.daily_cap_normal;
+  return isPeakDay(s, date) ? s.daily_cap_sale ?? s.daily_cap_normal : s.daily_cap_normal;
+}
+
+/** Mức tăng tối đa mỗi lần và số lần chỉnh/ngày theo loại ngày. */
+export function increaseLimit(s: ShopSettings, date = vnDate()): number {
+  return isPeakDay(s, date) ? Math.max(s.max_increase_pct, s.params.peak_max_increase_pct) : s.max_increase_pct;
+}
+
+export function editsLimit(s: ShopSettings, date = vnDate()): number {
+  return isPeakDay(s, date) ? Math.max(s.max_edits_per_day, s.params.peak_max_edits_per_day) : s.max_edits_per_day;
 }
 
 /** Tool có được hoạt động (đề xuất/thực thi) không. */
