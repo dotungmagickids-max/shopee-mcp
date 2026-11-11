@@ -83,6 +83,8 @@ export async function GET(request: Request): Promise<Response> {
 <pre class="secret">${escapeHtml(key)}</pre>
 <h2>Use it</h2>
 <p>MCP endpoint (Streamable HTTP): <code>${escapeHtml(mcpUrl)}</code></p>
+<p>Claude (web, desktop, mobile): add a custom connector with the URL above. When it asks you to sign in,
+paste this key (one key per line to combine several shops).</p>
 <p>Claude Code:</p>
 <pre>${escapeHtml(claudeCode)}</pre>
 <p>Clients that take a JSON config (Cursor, VS Code, …):</p>

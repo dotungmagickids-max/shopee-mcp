@@ -1,29 +1,41 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { keyFromRequest, verifyApiKey } from "@/lib/api-keys";
+import { appUrl } from "@/lib/env";
 import { createMcpServer } from "@/lib/mcp-server";
+import { contextFromAccessToken, isAccessToken } from "@/lib/oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function unauthorized(): Response {
+function unauthorized(request: Request): Response {
+  // resource_metadata lets OAuth clients (claude.ai connectors) discover how to sign in.
+  const metadataUrl = `${appUrl(request)}/.well-known/oauth-protected-resource`;
   return Response.json(
     {
       jsonrpc: "2.0",
-      error: { code: -32001, message: "Missing or invalid API key. Send 'Authorization: Bearer smcp_…'." },
+      error: {
+        code: -32001,
+        message: "Missing or invalid credentials. Sign in with OAuth or send 'Authorization: Bearer smcp_…'.",
+      },
       id: null,
     },
-    { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="shopee-mcp"' } }
+    {
+      status: 401,
+      headers: { "WWW-Authenticate": `Bearer realm="shopee-mcp", resource_metadata="${metadataUrl}"` },
+    }
   );
 }
 
 /**
  * Stateless Streamable HTTP endpoint: each request gets a fresh MCP server bound
- * to the caller's API key, which fits Vercel's serverless functions.
+ * to the caller's API key (or OAuth token built on API keys), which fits Vercel's
+ * serverless functions.
  */
 async function handle(request: Request): Promise<Response> {
-  const ctx = await verifyApiKey(keyFromRequest(request));
-  if (!ctx) return unauthorized();
+  const token = keyFromRequest(request);
+  const ctx = isAccessToken(token) ? await contextFromAccessToken(token) : await verifyApiKey(token);
+  if (!ctx) return unauthorized(request);
 
   const server = createMcpServer(ctx);
   const transport = new WebStandardStreamableHTTPServerTransport({

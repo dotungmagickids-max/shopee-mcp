@@ -211,8 +211,11 @@ This is a demo. Before running it for real sellers, consider:
 - **Concurrent refreshes.** Two requests for the same shop can both refresh an expired token. Add a row lock.
 - **Rate limiting.** There is none per key or shop.
 - **File uploads.** Endpoints that take files (`media.*`, invoice uploads) can't receive binary data as JSON tool arguments.
-- **OAuth-only clients.** Clients like claude.ai custom connectors can't send an API key header and would need
-  an OAuth layer in front of `/api/mcp`.
+- **OAuth.** OAuth-only clients (claude.ai custom connectors) are supported: the server publishes
+  `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, supports dynamic client
+  registration and PKCE (S256), and on the consent page the seller pastes one or more `smcp_` keys. The OAuth
+  session gets the union of those keys' shops (same region only) and write access only if every key has it.
+  Revoking a key also cuts off OAuth sessions built on it. Requires migration `0002_oauth.sql`.
 
 ## License
 
