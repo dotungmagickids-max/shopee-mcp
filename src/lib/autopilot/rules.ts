@@ -24,7 +24,8 @@ interface Camp {
 function targetLabel(c: Camp, useProfit: boolean): string {
   const t = ruleTarget(c, useProfit);
   if (t == null) return "ngưỡng";
-  return useProfit && c.econ?.target ? `${t} (ROAS cho lãi ${c.econ.profit_pct}%)` : String(t);
+  if (!(useProfit && c.econ?.target)) return String(t);
+  return `${t} (${c.econ.target_label ?? `ROAS cho lãi ${c.econ.profit_pct}%`})`;
 }
 
 async function ongoingCampaigns(shopId: number): Promise<Camp[]> {
@@ -365,7 +366,7 @@ export async function proposeRoasTargets(shopId: number) {
     if (goal) {
       // Theo lãi: đưa ROAS mục tiêu dần về mức cần cho lãi mong muốn (mỗi lần tối đa ±maxChange).
       const econ = c.econ!;
-      const basis = `ROAS cho lãi ${econ.profit_pct}%: ${goal}, hòa vốn ${econ.breakeven ?? "-"} (giá vốn ${Math.round(econ.cost_ratio * 100)}% giá bán${econ.source === "shop" ? ", số TB shop" : ""})`;
+      const basis = `ROAS mục tiêu ${econ.target_label ?? `cho lãi ${econ.profit_pct}%`}: ${goal}, hòa vốn ${econ.breakeven ?? "-"} (giá vốn ${Math.round(econ.cost_ratio * 100)}% giá bán${econ.source === "shop" ? ", số TB shop" : ""})`;
       if (target > goal * 1.1) {
         // Đặt cao quá: Shopee thầu quá chặt, mất đơn có lãi. Không cần điều kiện chi tiêu (chiến dịch "không chạy" thường do đây).
         next = Math.max(goal, target * (1 - maxChange));

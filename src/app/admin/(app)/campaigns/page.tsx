@@ -1,5 +1,6 @@
 import { campaignsWithRanking, econSummary, type CampaignRow } from "@/lib/autopilot/dashboard";
 import type { EconSummary } from "@/lib/autopilot/profit";
+import { CLASSES, CLASS_VI } from "@/lib/autopilot/classes";
 import { shops } from "@/lib/autopilot/config";
 import { vnd } from "@/lib/autopilot/telegram";
 import { Proposals } from "../proposals";
@@ -42,6 +43,16 @@ function Edit({ shopId, r }: { shopId: number; r: CampaignRow }) {
           {hidden("edit")}
           <input type="hidden" name="kind" value={r.campaign_status === "paused" ? "resume" : "pause"} />
           <button type="submit" style={small}>{r.campaign_status === "paused" ? "Bật lại" : "Tạm dừng"}</button>
+        </form>
+        <form method="post" action="/api/admin/actions">
+          {hidden("class")}
+          <select name="class" defaultValue={r.econ?.class_source === "manual" ? r.econ.class : "auto"} style={{ ...input, width: 150 }}>
+            <option value="auto">Nhóm tự động{r.econ?.auto_class ? ` (${CLASS_VI[r.econ.auto_class]})` : ""}</option>
+            {CLASSES.map((c) => (
+              <option key={c} value={c}>{CLASS_VI[c]}</option>
+            ))}
+          </select>{" "}
+          <button type="submit" style={small}>Đặt nhóm</button>
         </form>
         <form method="post" action="/api/admin/actions">
           {hidden("exclude")}
@@ -159,10 +170,11 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                   <thead>
                     <tr>
                       <th className="l">Chiến dịch</th>
+                      <th title="Nhóm hàng quyết định ROAS mục tiêu; tồn đủ bán theo Pancake">Nhóm · tồn</th>
                       <th>Trạng thái</th>
                       <th>Ngân sách/ngày</th>
                       <th>ROAS mục tiêu</th>
-                      <th title="ROAS hòa vốn / ROAS cần cho lãi mong muốn (giá vốn Pancake)">Hòa vốn / Theo lãi</th>
+                      <th title="ROAS hòa vốn / ROAS mục tiêu của nhóm hàng (theo số Shopee báo)">Hòa vốn / Mục tiêu</th>
                       <th>Chi hôm nay</th>
                       <th>ROAS hôm nay</th>
                       <th>Chi 7 ngày</th>
@@ -180,6 +192,22 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                           {r.ad_name ?? "(không tên)"}
                           <br />
                           <span className="muted">#{r.campaign_id}{r.bidding_method === "auto" ? " · GMV Max" : ""}</span>
+                        </td>
+                        <td title={r.econ?.class_reason ?? ""}>
+                          {r.econ?.class ? (
+                            <>
+                              <span className={`tag cls-${r.econ.class}`}>{CLASS_VI[r.econ.class]}</span>
+                              {r.econ.class_source === "manual" ? <span className="muted"> (tay)</span> : null}
+                              <br />
+                              <span className="muted">
+                                {r.econ.stock == null
+                                  ? "—"
+                                  : `${r.econ.stock} cái${r.econ.days_of_stock != null ? ` · ${r.econ.days_of_stock >= 9999 ? "không bán" : `${r.econ.days_of_stock} ngày`}` : ""}`}
+                              </span>
+                            </>
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td>{r.campaign_status === "ongoing" ? "Đang chạy" : r.campaign_status === "paused" ? "Tạm dừng" : r.campaign_status}</td>
                         <td>{r.campaign_budget === 0 ? <span className="tag unlimited">Không giới hạn</span> : vnd(r.campaign_budget)}</td>

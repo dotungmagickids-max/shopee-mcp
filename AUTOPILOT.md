@@ -174,6 +174,29 @@ Lệnh Telegram: `/pause_all`, `/resume_all` (đều có nút xác nhận), `/mo
   bật/tắt ROAS theo lãi.
 - **Dashboard Chiến dịch**: cột Hòa vốn / Theo lãi, Lãi 7 ngày ước tính (GMV × lãi trước QC − chi QC). Báo cáo sáng tính lãi bằng giá vốn Pancake.
 
+## Nhóm hàng (`src/lib/autopilot/classes.ts`)
+
+Mỗi sản phẩm (item Shopee) thuộc một nhóm; nhóm quyết định ROAS mục tiêu mà luật dùng (`econ.target`).
+Mã sản phẩm Pancake lấy từ SKU đã bán (`QD26001BE160` → `QD26001`), không có thì từ tên chiến dịch.
+
+| Nhóm | Tự nhận (theo thứ tự) | ROAS mục tiêu |
+|---|---|---|
+| Mới | sản phẩm tạo trên Pancake < 30 ngày | hòa vốn (`profit_new_pct` = 0) |
+| Xả kho | còn ≥ 20 cái và tồn đủ bán ≥ 120 ngày, hoặc trái mùa (Xuân hè tháng 10–2, Thu đông tháng 4–8) | QC ≤ 60% tiền mặt thu về (giá vốn coi như đã chi) |
+| Chủ lực | bán ≥ 60 cái/30 ngày, giá vốn ≤ 36%, tồn đủ ≥ 14 ngày | lãi 8% (`profit_core_pct`) |
+| Thường | còn lại | lãi 10% (`profit_target_pct`) |
+
+Tồn đủ bán = tồn Pancake (mọi kho) / tốc độ bán Pancake (mọi kênh). Anh chọn nhóm tay trên trang Chiến dịch
+(bảng `product_classes`, migration 0011), áp ngay và job đêm giữ nguyên lựa chọn.
+
+## Lộ trình (định hướng 11/2026: vận hành Shopee toàn diện, tiến tới tự động)
+
+1. Nhóm hàng + mục tiêu riêng (xong).
+2. Tư vấn giá và khuyến mại theo nhóm: giá bán, giảm giá sản phẩm, flash sale cho hàng xả, mã giảm giá (theo dõi lượt dùng, chi phí mỗi đơn tăng thêm).
+3. Tạo/sửa thật qua API (luôn duyệt trước, dry-run theo từng loại): giá, mã giảm giá, flash sale, chương trình sàn, tạo chiến dịch, ROAS.
+4. Sổ công cụ marketing: mọi voucher / flash sale / chương trình / KOC / quảng cáo ngoài sàn kèm chi phí, đo "chi phí mỗi đơn tăng thêm".
+5. Kế hoạch tuần do AI đề xuất (Claude), anh duyệt từng mục; dần chuyển sang tự động với trần cứng.
+
 ## Giai đoạn tiếp theo
 - **GĐ2 còn lại**: thử thật `edit_manual_product_ads` trên 1 chiến dịch nhỏ (hỏi anh trước), rồi đặt `AUTOPILOT_DRY_RUN=false`.
 - **GĐ3**: upload giá vốn CSV/XLSX, báo cáo lãi theo ngày/sản phẩm/chiến dịch khớp escrow.

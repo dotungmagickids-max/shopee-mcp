@@ -26,6 +26,15 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   use_profit_roas: "Luật dùng ROAS theo lãi (1 = bật, 0 = dùng ROAS mục tiêu đang đặt)",
   ad_fee_pct: "Phí nạp ví quảng cáo (%): chi QC thật = chi Shopee báo × (1 + %)",
   return_fee_per_order: "Phí mỗi đơn hoàn / giao thất bại (đ)",
+  profit_core_pct: "Nhóm Chủ lực: lãi mong muốn (%)",
+  profit_new_pct: "Nhóm Mới: lãi mong muốn (%, 0 = hòa vốn để học)",
+  clear_ads_share_pct: "Nhóm Xả kho: quảng cáo dùng tối đa (% tiền mặt thu về)",
+  new_days: "Tự phân nhóm Mới: sản phẩm tạo chưa tới (ngày)",
+  clear_stock_days: "Tự phân nhóm Xả kho: tồn đủ bán ≥ (ngày)",
+  clear_min_stock: "…và còn ≥ (cái), áp dụng cả hàng trái mùa",
+  core_min_units: "Tự phân nhóm Chủ lực: bán ≥ (cái / 30 ngày)",
+  core_max_cost_pct: "…giá vốn ≤ (% giá bán)",
+  core_min_stock_days: "…tồn đủ bán ≥ (ngày)",
 };
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {

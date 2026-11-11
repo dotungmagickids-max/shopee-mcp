@@ -1,6 +1,8 @@
 import { db } from "../supabase";
 import { cancelReturnRates, shopFees, type FeeStats } from "./fees";
-import { costOf, loadCostMap } from "./pancake";
+import { classify, daysOfStock, targetForClass, type ClassInput, type ProductClass } from "./classes";
+import { costOf, loadCostMap, loadProductStats, productCode, type ProductStats } from "./pancake";
+import { vnDate } from "./time";
 import { REASON_VI } from "./returns";
 import { INVALID_STATUSES, ordersBetween } from "./report";
 import { loadSettings } from "./settings";
@@ -35,6 +37,15 @@ export interface Econ {
   profit_pct: number; // lãi mong muốn (% giá bán) lúc tính
   source: "item" | "shop"; // số liệu của chính sản phẩm hay TB shop
   at: string;
+  // Nhóm hàng (từ 11/2026): target ở trên là ROAS mục tiêu của nhóm
+  class?: ProductClass;
+  class_source?: "auto" | "manual";
+  class_reason?: string;
+  auto_class?: ProductClass;
+  target_label?: string;
+  product_code?: string | null;
+  stock?: number | null;
+  days_of_stock?: number | null;
 }
 
 export interface EconCtx {
@@ -126,6 +137,7 @@ export async function computeEconomics(shopId: number) {
   type Agg = { revenue: number; units: number; costedRevenue: number; cogs: number; costedUnits: number };
   const empty = (): Agg => ({ revenue: 0, units: 0, costedRevenue: 0, cogs: 0, costedUnits: 0 });
   const byItem = new Map<number, Agg>();
+  const itemCodes = new Map<number, Set<string>>(); // item Shopee → mã sản phẩm Pancake (từ SKU đã bán)
   const shop = empty();
   for (const o of orders) {
     if (INVALID_STATUSES.includes(o.order_status ?? "")) continue;
@@ -136,6 +148,8 @@ export async function computeEconomics(shopId: number) {
       const id = Number(it.item_id);
       const a = byItem.get(id) ?? empty();
       const c = costOf(costs, it);
+      const code = productCode(it.model_sku) ?? productCode(it.item_sku);
+      if (code) itemCodes.set(id, (itemCodes.get(id) ?? new Set()).add(code));
       for (const x of [a, shop]) {
         x.revenue += price * qty;
         x.units += qty;
@@ -164,10 +178,15 @@ export async function computeEconomics(shopId: number) {
 
   const { data: camps, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, item_ids, campaign_status")
+    .select("campaign_id, item_ids, campaign_status, ad_name, start_time")
     .eq("shop_id", shopId)
     .in("campaign_status", ["ongoing", "paused", "scheduled"]);
   if (error) throw new Error(error.message);
+  const stats = await loadProductStats();
+  const { data: manual } = await db().from("product_classes").select("item_id, manual_class").eq("shop_id", shopId);
+  const manualMap = new Map((manual ?? []).filter((m) => m.manual_class).map((m) => [Number(m.item_id), m.manual_class as ProductClass]));
+  const month = Number(vnDate().slice(5, 7));
+  const counts: Record<string, number> = {};
   let item = 0;
   for (const c of camps ?? []) {
     const ids: number[] = (c.item_ids ?? []).map(Number);
@@ -193,9 +212,51 @@ export async function computeEconomics(shopId: number) {
         : ctx;
     const econ = ok ? econFrom(agg, itemCtx, "item") : null;
     if (econ) item++;
+    const base: Econ = econ ?? { ...shopEcon, units: agg.units };
+
+    // Nhóm hàng: mã sản phẩm từ SKU đã bán, không có thì từ tên chiến dịch (vd "... QD26001").
+    const codes = new Set<string>();
+    for (const id of ids) for (const code of itemCodes.get(id) ?? []) codes.add(code);
+    if (!codes.size) {
+      const m = /\b([A-Z]{2,4}\d{5,6})\b/.exec(String(c.ad_name ?? "").toUpperCase());
+      if (m) codes.add(m[1]);
+    }
+    const st = [...codes].map((code) => stats.get(code)).filter(Boolean) as ProductStats[];
+    const stock = st.length ? st.reduce((x, y) => x + y.stock, 0) : null;
+    const pancakeDaily = st.reduce((x, y) => x + y.sellingAvg, 0);
+    const created = st.map((y) => y.created).filter((t): t is number => t != null);
+    const campaignAgeDays = Number(c.start_time) > 0 ? (Date.now() / 1000 - Number(c.start_time)) / 86400 : null;
+    const input: ClassInput = {
+      units30: agg.units,
+      stock,
+      dailySales: pancakeDaily > 0 ? pancakeDaily : agg.units / 30,
+      categories: new Set(st.flatMap((y) => [...y.categories])),
+      ageDays: created.length ? (Date.now() - Math.min(...created)) / 86400_000 : st.length ? null : campaignAgeDays,
+      costRatio: econ ? econ.cost_ratio : null,
+      month,
+    };
+    const auto = classify(input, s.params);
+    const manualCls = ids.map((id) => manualMap.get(id)).find(Boolean);
+    const cls = manualCls ?? auto.cls;
+    const t = targetForClass(base, cls, s.params);
+    const dos = daysOfStock(input);
+    counts[cls] = (counts[cls] ?? 0) + 1;
     await db()
       .from("ads_campaigns")
-      .update({ econ: econ ?? { ...shopEcon, units: agg.units } })
+      .update({
+        econ: {
+          ...base,
+          target: t.target,
+          target_label: t.label,
+          class: cls,
+          class_source: manualCls ? "manual" : "auto",
+          class_reason: manualCls ? "Anh chọn" : auto.reason,
+          auto_class: auto.cls,
+          product_code: [...codes][0] ?? null,
+          stock,
+          days_of_stock: dos == null ? null : dos === Infinity ? 9999 : Math.round(dos),
+        },
+      })
       .eq("shop_id", shopId)
       .eq("campaign_id", c.campaign_id);
   }
@@ -218,6 +279,7 @@ export async function computeEconomics(shopId: number) {
   return {
     campaigns: summary.campaigns,
     item_level: item,
+    classes: counts,
     payout: r3(fees.payout),
     payout_orders: fees.orders,
     cancel_rate: summary.cancel_rate,
@@ -226,6 +288,42 @@ export async function computeEconomics(shopId: number) {
     breakeven: shopEcon.breakeven,
     target: shopEcon.target,
   };
+}
+
+/**
+ * Anh chọn nhóm hàng cho sản phẩm của một chiến dịch (null = trả về tự động). Áp ngay ROAS mục tiêu mới
+ * cho mọi chiến dịch của sản phẩm đó (từ số kinh tế đã lưu), không cần chờ job đêm.
+ */
+export async function setProductClass(shopId: number, campaignId: number, cls: ProductClass | null): Promise<number> {
+  const s = await loadSettings(shopId);
+  const { data: camp } = await db().from("ads_campaigns").select("item_ids").eq("shop_id", shopId).eq("campaign_id", campaignId).maybeSingle();
+  const ids: number[] = (camp?.item_ids ?? []).map(Number);
+  if (!ids.length) return 0;
+  const now = new Date().toISOString();
+  await db()
+    .from("product_classes")
+    .upsert(ids.map((item_id) => ({ shop_id: shopId, item_id, manual_class: cls, updated_at: now })));
+  const { data: camps } = await db()
+    .from("ads_campaigns")
+    .select("campaign_id, item_ids, econ")
+    .eq("shop_id", shopId)
+    .in("campaign_status", ["ongoing", "paused", "scheduled"]);
+  let n = 0;
+  for (const c of camps ?? []) {
+    const e = c.econ as Econ | null;
+    if (!e || !(c.item_ids ?? []).map(Number).some((id: number) => ids.includes(id))) continue;
+    const next = cls ?? e.auto_class ?? "thuong";
+    const t = targetForClass(e, next, s.params);
+    await db()
+      .from("ads_campaigns")
+      .update({
+        econ: { ...e, class: next, class_source: cls ? "manual" : "auto", class_reason: cls ? "Anh chọn" : e.class_reason, target: t.target, target_label: t.label },
+      })
+      .eq("shop_id", shopId)
+      .eq("campaign_id", c.campaign_id);
+    n++;
+  }
+  return n;
 }
 
 /** ROAS luật dùng: ROAS theo lãi nếu bật và tính được, ngược lại ROAS mục tiêu đang đặt. */

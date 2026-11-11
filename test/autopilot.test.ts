@@ -65,6 +65,7 @@ const PK: Record<string, string[]> = {
   alert_state: ["key"],
   pancake_variations: ["sku"],
   shopee_returns: ["return_sn"],
+  product_classes: ["shop_id", "item_id"],
 };
 
 function cmp(a: unknown, b: string): number {
@@ -719,13 +720,47 @@ describe("profit from Pancake costs", () => {
     assert.equal((await rules.evaluateIntraday(111)).proposals, 1);
     const up = tables.autopilot_actions[0];
     assert.equal(up.source, "rule:scale_up");
-    assert.match(up.reason, /ROAS cho lãi 10%/);
+    assert.match(up.reason, /thường: lãi 10%/);
 
     tables.ads_campaign_daily = [];
     await rules.proposeRoasTargets(111);
     const roas = tables.autopilot_actions.find((a) => a.action === "change_roas_target")!;
     assert.deepEqual([roas.before.roas_target, roas.after.roas_target], [10, 8.5], "hạ tối đa 15% mỗi lần, hướng về 5");
     assert.match(roas.after.why, /hòa vốn 3.3/);
+  });
+
+  it("classifies products and sets the ROAS target per class", async () => {
+    const classes = await import("../src/lib/autopilot/classes");
+    const settings = await import("../src/lib/autopilot/settings");
+    const p = settings.DEFAULT_RULE_PARAMS;
+    const base = { units30: 10, stock: 30, dailySales: 1, categories: new Set<string>(), ageDays: 200, costRatio: 0.3, month: 11 };
+    assert.equal(classes.classify({ ...base, ageDays: 10 }, p).cls, "moi");
+    assert.equal(classes.classify({ ...base, stock: 200, dailySales: 1 }, p).cls, "xa_kho", "tồn đủ bán 200 ngày");
+    assert.equal(classes.classify({ ...base, categories: new Set(["Bé trai", "Xuân hè"]) }, p).cls, "xa_kho", "hàng hè vào tháng 11");
+    assert.equal(classes.classify({ ...base, categories: new Set(["Thu đông"]) }, p).cls, "thuong");
+    assert.equal(classes.classify({ ...base, units30: 80, stock: 100, dailySales: 3 }, p).cls, "chu_luc");
+    assert.equal(classes.classify({ ...base, units30: 80, costRatio: 0.45 }, p).cls, "thuong", "giá vốn cao không vào chủ lực");
+
+    // Xả kho: tiền thu về 0,7/1đ GMV, QC được dùng 60% → ROAS 1/0,42 = 2,4
+    const e = { margin: 0.3, cancel_rate: 0, return_rate: 0, payout: 0.7, return_fee_ratio: 0, ad_fee_pct: 0 };
+    assert.equal(classes.targetForClass(e, "xa_kho", p).target, 2.4);
+    assert.equal(classes.targetForClass(e, "moi", p).target, 3.3, "mới: hòa vốn");
+    assert.equal(classes.targetForClass(e, "chu_luc", p).target, 4.5, "chủ lực lãi 8%: 1/(0,3 − 0,08)");
+
+    // Chọn tay trên dashboard: áp ngay ROAS mục tiêu của nhóm mới.
+    const pancake = await import("../src/lib/autopilot/pancake");
+    const profit = await import("../src/lib/autopilot/profit");
+    await pancake.syncPancakeVariations();
+    seedCampaign({ roas_target: 10 });
+    await profit.computeEconomics(111);
+    assert.equal(tables.ads_campaigns[0].econ.class, "thuong");
+    await profit.setProductClass(111, 1, "xa_kho");
+    const econ = tables.ads_campaigns[0].econ;
+    assert.deepEqual([econ.class, econ.class_source, econ.target], ["xa_kho", "manual", 2.4]);
+    await profit.computeEconomics(111);
+    assert.equal(tables.ads_campaigns[0].econ.class, "xa_kho", "job đêm giữ lựa chọn của anh");
+    await profit.setProductClass(111, 1, null);
+    assert.deepEqual([tables.ads_campaigns[0].econ.class, tables.ads_campaigns[0].econ.target], ["thuong", 5]);
   });
 
   it("falls back to the configured ROAS target when profit ROAS is turned off", async () => {
