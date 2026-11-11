@@ -342,7 +342,8 @@ export async function syncEscrow(shopId: number, orderSns: string[]): Promise<nu
           withholding_tax: oi.withholding_tax ?? null,
           shopee_discount: oi.shopee_discount ?? null,
           voucher_from_shopee: oi.voucher_from_shopee ?? null,
-          refund_amount: num(oi.seller_return_refund) + num(oi.drc_adjustable_refund),
+          // Shopee trả số âm (khoản bị trừ); lưu số dương = tiền đã hoàn cho khách.
+          refund_amount: Math.abs(num(oi.seller_return_refund)) + Math.abs(num(oi.drc_adjustable_refund)),
           raw: rawIncome,
           updated_at: now,
         };

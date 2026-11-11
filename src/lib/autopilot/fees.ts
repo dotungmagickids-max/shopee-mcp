@@ -61,7 +61,7 @@ export async function shopFees(shopId: number, days = 45): Promise<FeeStats> {
   const sums = new Map<string, number>();
   for (const r of rows) {
     const s = sellingOf(r.raw);
-    if (!(s > 0) || n(r.refund_amount) > 0) continue;
+    if (!(s > 0) || Math.abs(n(r.refund_amount)) > 0) continue;
     orders++;
     selling += s;
     payout += n(r.escrow_amount);
@@ -179,7 +179,7 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
       .from("order_escrow")
       .select("order_sn, refund_amount")
       .in("order_sn", completed.slice(i, i + 200));
-    for (const r of data ?? []) if (n(r.refund_amount) > 0) refunded.add(r.order_sn);
+    for (const r of data ?? []) if (Math.abs(n(r.refund_amount)) > 0) refunded.add(r.order_sn);
   }
   const returned = kept.filter((o) => RETURN_STATUSES.includes(o.order_status ?? "") || refunded.has(o.order_sn)).length;
   const ret = kept.length ? returned / kept.length : 0;

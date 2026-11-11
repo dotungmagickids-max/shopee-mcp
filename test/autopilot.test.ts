@@ -638,7 +638,8 @@ describe("profit from Pancake costs", () => {
     tables.order_escrow = [
       ...Array.from({ length: 25 }, (_, i) => ({ order_sn: `E${i}`, shop_id: 111, escrow_amount: 69000, refund_amount: 0, raw, updated_at: iso })),
       // Đơn bị hoàn tiền: không tính vào tỉ lệ tiền về (đã tính vào tỉ lệ hoàn).
-      { order_sn: "O7", shop_id: 111, escrow_amount: 0, refund_amount: 100000, raw, updated_at: iso },
+      // (dữ liệu cũ lưu số âm như Shopee trả về)
+      { order_sn: "O7", shop_id: 111, escrow_amount: 0, refund_amount: -100000, raw, updated_at: iso },
     ];
     const old = Math.floor(Date.now() / 1000) - 20 * 86400;
     const statuses = ["CANCELLED", "CANCELLED", "TO_RETURN", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "UNPAID"];
