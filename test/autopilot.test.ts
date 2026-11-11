@@ -27,6 +27,7 @@ let seq = 0;
 let editBodies: any[] = [];
 let createBodies: any[] = [];
 let itemStock = 10;
+let returnList: any[] = [];
 
 function reset() {
   tables = {
@@ -49,6 +50,7 @@ function reset() {
   editBodies = [];
   createBodies = [];
   itemStock = 10;
+  returnList = [];
 }
 
 const json = (body: unknown, status = 200) =>
@@ -62,6 +64,7 @@ const PK: Record<string, string[]> = {
   orders: ["order_sn"],
   alert_state: ["key"],
   pancake_variations: ["sku"],
+  shopee_returns: ["return_sn"],
 };
 
 function cmp(a: unknown, b: string): number {
@@ -171,6 +174,8 @@ function fakeShopee(url: URL, init: RequestInit): Response {
       return ok([{ date: url.searchParams.get("performance_date"), hour: 9, impression: 100, clicks: 5, expense: 20000, broad_order: 1, broad_gmv: 250000, direct_order: 1, direct_gmv: 250000 }]);
     case "/product/get_item_base_info":
       return ok({ item_list: [{ item_id: Number(url.searchParams.get("item_id_list")), item_status: "NORMAL", image: { image_url_list: ["https://cf.shopee.test/file/a.jpg"] }, stock_info_v2: { summary_info: { total_available_stock: itemStock } } }] });
+    case "/returns/get_return_list":
+      return ok({ more: false, return: returnList });
     case "/ads/get_product_recommended_roi_target":
       return ok({ exact: { value: 3.5 } });
     case "/ads/create_manual_product_ads":
@@ -652,6 +657,39 @@ describe("profit from Pancake costs", () => {
       sum.fees.fees.map((f: any) => [f.key, Math.round(f.ratio * 1000) / 1000]),
       [["commission", 0.165], ["service", 0.06], ["transaction", 0.06], ["infra", 0.01], ["tax", 0.015]]
     );
+  });
+
+  it("measures returns by refunded value from the Shopee returns API", async () => {
+    const pancake = await import("../src/lib/autopilot/pancake");
+    const profit = await import("../src/lib/autopilot/profit");
+    const returns = await import("../src/lib/autopilot/returns");
+    await pancake.syncPancakeVariations();
+    const old = Math.floor(Date.now() / 1000) - 20 * 86400;
+    const statuses = ["CANCELLED", "CANCELLED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED"];
+    statuses.forEach((st, i) =>
+      tables.orders.push({ shop_id: 111, order_sn: `O${i}`, create_time: old, order_status: st, items: [{ item_id: 9, model_sku: "BD1TRANG130", qty: 1, price: 250000 }] })
+    );
+    const ret = (sn: string, order: string, status: string, refund: number, extra: Record<string, unknown>) => ({
+      return_sn: sn, order_sn: order, status, refund_amount: refund, reason: "DIFFERENT_DESCRIPTION", create_time: old + 86400, update_time: old + 2 * 86400,
+      needs_logistics: true, return_solution: 0, item: [{ item_id: 9, variation_sku: "BD1TRANG130", amount: 1, refund_amount: refund, item_price: 250000 }], ...extra,
+    });
+    returnList = [
+      ret("R1", "O3", "ACCEPTED", 250000, {}),
+      ret("R2", "O4", "ACCEPTED", 100000, { reason: "WRONG_SIZE", needs_logistics: false, return_solution: 1 }),
+      ret("R3", "O5", "CANCELLED", 250000, {}), // yêu cầu bị hủy: không tính
+    ];
+    assert.deepEqual(await returns.syncReturns(111), { returns: 3 });
+    assert.equal(tables.shopee_returns.find((r) => r.return_sn === "R2")!.create_time, old + 86400);
+
+    seedCampaign({ roas_target: 10 });
+    await profit.computeEconomics(111);
+    const econ = tables.ads_campaigns[0].econ;
+    // hủy 0,2; hoàn 350k / 2tr = 0,175, trong đó có hàng về 250k = 0,125; tiền về ước 0,7; giá vốn 0,4
+    // margin = 0,8 × (0,7 × 0,825 − 0,4 × 0,875) = 0,182 → hòa vốn 5,5; theo lãi 1/(0,182 − 0,8 × 0,825 × 0,1) = 8,6
+    assert.deepEqual([econ.cancel_rate, econ.return_rate, econ.return_back_rate, econ.breakeven, econ.target], [0.2, 0.175, 0.125, 5.5, 8.6]);
+    const sum = tables.autopilot_settings[0].econ_summary;
+    assert.equal(sum.return_source, "returns");
+    assert.deepEqual(sum.return_reasons.map((r: any) => [r.label, r.ratio]), [["Khác mô tả", 0.714], ["Sai size", 0.286]]);
   });
 
   it("uses profit ROAS in rules and walks the ROAS target down toward it", async () => {
