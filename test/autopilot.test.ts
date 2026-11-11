@@ -137,6 +137,7 @@ function fakeShopee(url: URL, init: RequestInit): Response {
     case "/order/get_order_list":
       return ok({ more: false, next_cursor: "", order_list: [{ order_sn: "SN1", order_status: "READY_TO_SHIP" }] });
     case "/order/get_order_detail":
+      assert.equal(url.searchParams.getAll("order_sn_list").length, 1, "order_sn_list must be one comma-joined value");
       return ok({ order_list: [{ order_sn: "SN1", order_status: "READY_TO_SHIP", create_time: 1794400000, total_amount: 250000, item_list: [{ item_id: 9, model_id: 1, model_sku: "V-A-1", model_quantity_purchased: 1, model_discounted_price: 250000 }] }] });
     default:
       return json({ error: "not_found", message: path, request_id: "r" }, 404);

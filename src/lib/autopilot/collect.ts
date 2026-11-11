@@ -250,7 +250,8 @@ async function fetchOrderDetails(shopId: number, orderSns: string[]): Promise<nu
   let count = 0;
   for (const batch of chunk(orderSns, 50)) {
     const res = await callShopee(shopId, "order.get_order_detail", {
-      order_sn_list: batch,
+      // GET: phải nối bằng dấu phẩy; truyền mảng thì Shopee chỉ đọc phần tử đầu.
+      order_sn_list: batch.join(","),
       response_optional_fields: "total_amount,item_list",
     });
     const now = new Date().toISOString();
