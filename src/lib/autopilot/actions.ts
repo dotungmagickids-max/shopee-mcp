@@ -1,8 +1,8 @@
 import { db } from "../supabase";
 import { isDryRun, shopName } from "./config";
-import { automationBlocked, dailyCap, loadSettings, type ShopSettings } from "./settings";
+import { automationBlocked, dailyCap, editsLimit, increaseLimit, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { callShopee, ShopeeCallError } from "./shopee-call";
-import { approveButtons, editTelegram, esc, sendTelegram, sendTelegramMessage, sendTelegramPhoto, vnd } from "./telegram";
+import { approveButtons, editTelegram, esc, sendAlertOnce, sendTelegram, sendTelegramMessage, sendTelegramPhoto, vnd } from "./telegram";
 import { apiDate, vnDate, vnDayStartUnix } from "./time";
 
 export type ActionKind = "change_budget" | "change_roas_target" | "pause" | "resume" | "refresh";
@@ -314,9 +314,10 @@ export async function guardBudget(
 ): Promise<{ budget: number | null; note: string }> {
   let budget = Math.round(wanted / 1000) * 1000;
   const notes: string[] = [];
-  if (current > 0 && budget > current * (1 + s.max_increase_pct / 100)) {
-    budget = Math.floor((current * (1 + s.max_increase_pct / 100)) / 1000) * 1000;
-    notes.push(`giới hạn tăng ${s.max_increase_pct}%`);
+  const maxInc = increaseLimit(s);
+  if (current > 0 && budget > current * (1 + maxInc / 100)) {
+    budget = Math.floor((current * (1 + maxInc / 100)) / 1000) * 1000;
+    notes.push(`giới hạn tăng ${maxInc}%`);
   }
   if (s.campaign_cap && budget > s.campaign_cap) {
     budget = s.campaign_cap;
@@ -334,7 +335,13 @@ export async function guardBudget(
       .reduce((sum, c) => sum + Number(c.campaign_budget ?? 0), 0);
     if (others + budget > cap) {
       budget = Math.max(0, Math.floor((cap - others) / 1000) * 1000);
-      notes.push(`trần tổng/ngày ${vnd(cap)}`);
+      notes.push(`cầu chì tổng/ngày ${vnd(cap)}`);
+      // Cầu chì chỉ để chặn lỗi: chạm là báo anh ngay, không tự giảm gì.
+      await sendAlertOnce(
+        `fuse:${s.shop_id}:${vnDate()}`,
+        `🔌 <b>Chạm cầu chì ngân sách</b> — ${esc(shopName(s.shop_id))}\nTổng ngân sách các chiến dịch sắp vượt ${vnd(cap)} (${SALE_TIER_VI[saleTier(s)]}). Tool dừng tăng thêm, không giảm gì.\nNếu vẫn đang lãi, anh nâng mức cầu chì trong Cài đặt.`,
+        180
+      );
     }
   }
   // 0 nghĩa là "không giới hạn" trên Shopee: không bao giờ để trần ép về 0.
@@ -359,8 +366,8 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
   if (blocked) return { status: await finish(row, "skipped", blocked) };
   if (!row.campaign_id) return { status: await finish(row, "skipped", "Thiếu campaign_id") };
 
-  if ((await editsToday(row.shop_id, row.campaign_id)) >= s.max_edits_per_day) {
-    return { status: await finish(row, "skipped", `Đã chỉnh ${s.max_edits_per_day} lần hôm nay`) };
+  if ((await editsToday(row.shop_id, row.campaign_id)) >= editsLimit(s)) {
+    return { status: await finish(row, "skipped", `Đã chỉnh ${editsLimit(s)} lần hôm nay`) };
   }
 
   if (row.action === "refresh") return executeRefresh(row);

@@ -1,5 +1,5 @@
 import { isDryRun, liveActions, shops } from "@/lib/autopilot/config";
-import { DEFAULT_RULE_PARAMS, formatHours, loadSettings, suggestDays } from "@/lib/autopilot/settings";
+import { DEFAULT_RULE_PARAMS, formatHours, loadSettings, SALE_TIER_VI, saleTier, suggestDays } from "@/lib/autopilot/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,11 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   core_min_units: "Tự phân nhóm Chủ lực: bán ≥ (cái / 30 ngày)",
   core_max_cost_pct: "…giá vốn ≤ (% giá bán)",
   core_min_stock_days: "…tồn đủ bán ≥ (ngày)",
+  peak_scale_spend_ratio: "Ngày cao điểm: tăng khi đã tiêu ≥ (tỉ lệ ngân sách)",
+  peak_scale_step_pct: "Ngày cao điểm: mỗi lần tăng (%)",
+  peak_max_increase_pct: "Ngày cao điểm: trần mỗi lần tăng (%)",
+  peak_cooldown_minutes: "Ngày cao điểm: nghỉ giữa 2 lần chỉnh (phút)",
+  peak_max_edits_per_day: "Ngày cao điểm: số lần chỉnh/chiến dịch/ngày",
 };
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
@@ -93,12 +98,17 @@ export default async function Settings({ searchParams }: { searchParams: Promise
                   <option value="off">Tắt</option>
                 </select>
                 <p className="muted">Đã chạy đề xuất {days.toFixed(1)} ngày.</p>
-                <label>Trần tổng ngân sách/ngày — ngày thường (đ)</label>
-                <input name="daily_cap_normal" inputMode="numeric" defaultValue={st.daily_cap_normal ?? ""} placeholder="vd 15000000" />
-                <label>Trần tổng ngân sách/ngày — ngày sale (đ)</label>
-                <input name="daily_cap_sale" inputMode="numeric" defaultValue={st.daily_cap_sale ?? ""} />
-                <label>Ngày sale thêm (YYYY-MM-DD, cách nhau dấu phẩy; ngày đôi 1/1…12/12 tự tính)</label>
-                <input name="sale_dates" defaultValue={st.sale_dates.join(", ")} placeholder="2026-11-25, 2026-12-25" />
+                <p className="muted">Hôm nay: <b>{SALE_TIER_VI[saleTier(st)]}</b>. Cầu chì chỉ chặn lỗi (chạm thì báo Telegram và dừng tăng, không giảm gì) — không phải mức chi mục tiêu.</p>
+                <label>Cầu chì tổng ngân sách/ngày — ngày thường + sale nhỏ (đ)</label>
+                <input name="daily_cap_normal" inputMode="numeric" defaultValue={st.daily_cap_normal ?? ""} placeholder="vd 30000000" />
+                <label>Cầu chì tổng ngân sách/ngày — ngày sale lớn + ngày trước sale (đ)</label>
+                <input name="daily_cap_sale" inputMode="numeric" defaultValue={st.daily_cap_sale ?? ""} placeholder="vd 80000000" />
+                <label>Ngày sale lớn thêm (YYYY-MM-DD, cách nhau dấu phẩy; ngày đôi 1/1…12/12 tự tính)</label>
+                <input name="sale_dates" defaultValue={st.sale_dates.join(", ")} placeholder="2026-11-27, 2026-12-25" />
+                <label>Số ngày trước ngày sale lớn cũng chạy chế độ cao điểm</label>
+                <input name="pre_sale_days" inputMode="numeric" defaultValue={st.pre_sale_days} />
+                <label>Ngày sale nhỏ hằng tháng (ngày trong tháng)</label>
+                <input name="mini_sale_days" defaultValue={st.mini_sale_days.join(", ")} placeholder="1, 15, 20, 25" />
                 <label>Ngân sách tối đa mỗi chiến dịch (đ)</label>
                 <input name="campaign_cap" inputMode="numeric" defaultValue={st.campaign_cap ?? ""} />
               </div>
