@@ -400,6 +400,16 @@ describe("rules and actions", () => {
     assert.deepEqual([a.action, a.after.until_midnight, a.source], ["pause", true, "rule:cut"]);
   });
 
+  it("does not pause a campaign whose whole day is still good", async (t) => {
+    const hour = time.vnHour();
+    if (hour < 4) return t.skip("cần ≥ 4 giờ trong ngày");
+    seedCampaign({ campaign_budget: 0 });
+    seedHour(hour - 4, { clicks: 50, expense: 200000, broad_gmv: 4_000_000 }); // sáng rất tốt
+    seedHour(hour - 1, { clicks: 40, expense: 80000, broad_gmv: 10000 });
+    seedHour(hour - 2, { clicks: 5, expense: 20000, broad_gmv: 0 });
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
+  });
+
   it("handles Telegram approve buttons only from the configured chat", async () => {
     seedCampaign();
     seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 1_200_000 });

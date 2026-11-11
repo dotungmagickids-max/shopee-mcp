@@ -98,7 +98,9 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const threshold = target ? target * p.cut_roas_ratio : p.cut_roas_floor;
       // Cần chi tiêu ở ≥ 2 giờ trong khung: một giờ đột biến không đủ để phạt.
       const activeHours = win.filter((r) => r.expense > 0).length;
-      if (activeHours >= 2 && wClicks >= p.cut_min_clicks && wExp >= p.cut_min_expense && wRoas < threshold) {
+      // Và cả ngày cũng kém: chiến dịch cả ngày vẫn tốt thì không dừng vì vài giờ chững.
+      const dayThreshold = target ? target * p.cut_day_roas_ratio : p.cut_roas_floor * 2;
+      if (activeHours >= 2 && wClicks >= p.cut_min_clicks && wExp >= p.cut_min_expense && wRoas < threshold && roas < dayThreshold) {
         candidates.push({
           priority: 0,
           shop_id: shopId,
