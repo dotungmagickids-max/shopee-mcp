@@ -1,4 +1,4 @@
-import { isDryRun, shops } from "@/lib/autopilot/config";
+import { isDryRun, liveActions, shops } from "@/lib/autopilot/config";
 import { DEFAULT_RULE_PARAMS, formatHours, loadSettings, suggestDays } from "@/lib/autopilot/settings";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,12 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <h2>Dừng khẩn cấp</h2>
         <p className="muted">
           Tắt toàn bộ tự động (đề xuất và thực thi) cho mọi shop. Không đổi gì trên Shopee.{" "}
-          {isDryRun() ? <b>Đang DRY-RUN: mọi lệnh duyệt chỉ ghi log, chưa gửi Shopee.</b> : null}
+          {isDryRun() ? (
+            <b>
+              Đang DRY-RUN: lệnh duyệt chỉ ghi log, chưa gửi Shopee
+              {liveActions().length ? ` — trừ ${liveActions().join(", ")} (chạy thật)` : ""}.
+            </b>
+          ) : null}
         </p>
         <form method="post" action="/api/admin/settings">
           {stopped ? (

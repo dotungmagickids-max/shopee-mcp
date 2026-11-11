@@ -526,3 +526,32 @@ describe("campaign refresh", () => {
     assert.ok(telegramCalls.some((t) => /HẾT HÀNG/.test(t.body.text ?? "")));
   });
 });
+
+describe("live actions while dry-run", () => {
+  beforeEach(() => {
+    reset();
+    delete process.env.AUTOPILOT_DRY_RUN;
+    process.env.AUTOPILOT_LIVE_ACTIONS = "change_budget";
+    tables.ads_campaigns.push({
+      shop_id: 111, campaign_id: 1, ad_name: "Váy A", campaign_status: "ongoing", bidding_method: "auto",
+      campaign_budget: 0, roas_target: 10, item_ids: [9], start_time: Math.floor(Date.now() / 1000) - 30 * 86400,
+      autopilot_excluded: false,
+    });
+  });
+
+  it("sends only budget changes to Shopee", async () => {
+    const budget = await actions.adminChange({ shop_id: 111, campaign_id: 1, action: "change_budget", before: { budget: 0 }, after: { budget: 200000 }, reason: "t", source: "admin" });
+    assert.equal(budget.status, "executed");
+    assert.deepEqual(editBodies.map((b) => [b.edit_action, b.budget]), [["change_budget", 200000]]);
+    const pause = await actions.adminChange({ shop_id: 111, campaign_id: 1, action: "pause", before: {}, after: {}, reason: "t", source: "admin" });
+    assert.equal(pause.status, "dry_run");
+    tables.ads_campaign_daily = [];
+    await (await import("../src/lib/autopilot/refresh")).proposeRefresh(111);
+    const child = tables.autopilot_actions.find((a) => a.action === "refresh")!;
+    await actions.decide(child.parent_id, true, "telegram");
+    assert.equal(child.status, "dry_run");
+    assert.equal(editBodies.length, 1);
+    assert.equal(createBodies.length, 0);
+    delete process.env.AUTOPILOT_LIVE_ACTIONS;
+  });
+});

@@ -3,8 +3,10 @@
 Phần thêm vào MCP server: tự thu số liệu quảng cáo Shopee 24/7, dashboard `/admin`, báo cáo và cảnh báo Telegram.
 MCP server cũ (`/api/mcp`, trang connect, các tool) giữ nguyên.
 
-**Trạng thái: giai đoạn 2, chế độ đề xuất + DRY-RUN.** Tool đề xuất, anh duyệt trên Telegram/web.
-Khi `AUTOPILOT_DRY_RUN` khác `false`, đề xuất đã duyệt chỉ ghi log (trạng thái `dry_run`), **không gửi gì lên Shopee**.
+**Trạng thái: giai đoạn 2, chế độ đề xuất + DRY-RUN, riêng đổi ngân sách chạy thật.** Tool đề xuất, anh duyệt trên Telegram/web.
+Khi `AUTOPILOT_DRY_RUN` khác `false`, đề xuất đã duyệt chỉ ghi log (trạng thái `dry_run`), **không gửi gì lên Shopee** —
+trừ các hành động liệt kê trong `AUTOPILOT_LIVE_ACTIONS` (hiện `change_budget`, bật 11/11/2026 sau khi thử thật thành công).
+Tạm dừng, bật lại, đổi ROAS mục tiêu, làm mới chiến dịch vẫn dry-run.
 Lệnh ghi duy nhất được phép là `ads.edit_manual_product_ads` (xem mục Giai đoạn 2).
 
 ## Chạy như thế nào
