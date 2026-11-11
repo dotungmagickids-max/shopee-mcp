@@ -218,8 +218,8 @@ globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}
       success: true,
       total_pages: 1,
       data: [
-        { display_id: "BD1 TRANG 130", average_imported_price: 100000, last_imported_price: 90000, retail_price: 250000, product: { name: "Bộ 1" }, variations_warehouses: [{ remain_quantity: 4, selling_avg: 0.5 }, { remain_quantity: 1, selling_avg: 0 }] },
-        { display_id: "BD1TRANG140", average_imported_price: 0, last_imported_price: 100000, retail_price: 250000, product: { name: "Bộ 1" }, variations_warehouses: [] },
+        { display_id: "BD1 TRANG 130", average_imported_price: 9000, last_imported_price: 100000, retail_price: 250000, product: { name: "Bộ 1" }, variations_warehouses: [{ remain_quantity: 4, selling_avg: 0.5 }, { remain_quantity: 1, selling_avg: 0 }] },
+        { display_id: "BD1TRANG140", average_imported_price: 100000, last_imported_price: 0, retail_price: 250000, product: { name: "Bộ 1" }, variations_warehouses: [] },
       ],
     });
   }
@@ -610,8 +610,8 @@ describe("profit from Pancake costs", () => {
     const sync = await pancake.syncPancakeVariations();
     assert.deepEqual(sync, { variations: 2, pages: 1 });
     const v = tables.pancake_variations.find((r) => r.sku === "BD1TRANG130")!;
-    assert.deepEqual([v.cost, v.stock], [100000, 5], "mã chuẩn hóa, tồn cộng các kho");
-    assert.equal(tables.pancake_variations.find((r) => r.sku === "BD1TRANG140")!.cost, 100000, "không có giá bình quân thì dùng giá nhập gần nhất");
+    assert.deepEqual([v.cost, v.stock], [100000, 5], "mã chuẩn hóa, tồn cộng các kho; dùng giá nhập gần nhất, bỏ bình quân bị lệch");
+    assert.equal(tables.pancake_variations.find((r) => r.sku === "BD1TRANG140")!.cost, 100000, "không có giá nhập gần nhất thì dùng bình quân");
 
     seedCampaign({ roas_target: 10 });
     const res: any = await profit.computeEconomics(111);
