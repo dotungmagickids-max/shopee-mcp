@@ -16,9 +16,9 @@ const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
  * Cần PANCAKE_API_KEY; PANCAKE_SHOP_ID mặc định 608127 (magickids).
  */
 export async function syncPancakeVariations(): Promise<{ variations: number; pages: number } | { skipped: string }> {
-  const key = process.env.PANCAKE_API_KEY;
+  const key = process.env.PANCAKE_API_KEY?.trim();
   if (!key) return { skipped: "Chưa đặt PANCAKE_API_KEY" };
-  const shopId = process.env.PANCAKE_SHOP_ID || "608127";
+  const shopId = process.env.PANCAKE_SHOP_ID?.trim() || "608127";
   const bySku = new Map<string, Record<string, unknown>>();
   let pages = 0;
   for (let page = 1; page <= 300; page++) {
