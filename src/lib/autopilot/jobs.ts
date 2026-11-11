@@ -106,7 +106,7 @@ export async function resetJob() {
   return results;
 }
 
-/** Rà chiến dịch cần làm mới (sáng thứ Hai). */
+/** Rà chiến dịch cần làm mới (7h sáng thứ Hai). */
 export async function refreshJob() {
   const results = [];
   for (const shop of shops()) {

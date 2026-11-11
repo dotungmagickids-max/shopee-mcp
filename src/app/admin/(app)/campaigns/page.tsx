@@ -82,7 +82,7 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
               <button type="submit" className="secondary" style={{ padding: "4px 10px", fontSize: 13, margin: 0, border: "1px solid var(--border)" }}>
                 Rà chiến dịch cần làm mới
               </button>{" "}
-              <span className="muted">Tự chạy sáng thứ Hai 8h30; luôn chờ anh duyệt.</span>
+              <span className="muted">Tự chạy 7h sáng thứ Hai; luôn chờ anh duyệt.</span>
             </form>
             {unlimited ? (
               <p className="warning">

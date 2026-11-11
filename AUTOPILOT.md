@@ -124,7 +124,7 @@ Giữ `AUTOPILOT_DRY_RUN=true` cho tới khi có cách sửa được xác nhậ
 - *Hạn mức cho chiến dịch không giới hạn*: nút “Đề xuất hạn mức” trên trang Chiến dịch (hoặc `POST /api/jobs/caps`) → đề xuất gộp,
   hạn mức = chi trung bình/ngày của 7 ngày thường gần nhất, làm tròn lên 10k, thấp nhất mức khởi điểm.
 - *Reset 0h*: ngân sách > mức khởi điểm → về mức khởi điểm; bật lại chiến dịch tool đã dừng. Chiến dịch **không giới hạn** chỉ đưa vào khi tick “Áp dụng cả chiến dịch không giới hạn”.
-- *Làm mới chiến dịch* (`src/lib/autopilot/refresh.ts`, sáng thứ Hai 8h30 hoặc nút “Rà chiến dịch cần làm mới”): xét 14 ngày D-15…D-2,
+- *Làm mới chiến dịch* (`src/lib/autopilot/refresh.ts`, 7h sáng thứ Hai hoặc nút “Rà chiến dịch cần làm mới”): xét 14 ngày D-15…D-2,
   chiến dịch GMV Max đã chạy ≥ 7 ngày và đang chạy:
   *không chạy* (5 ngày gần nhất ngày nào cũng chi < 10k), *có click không ra đơn* (≥ 80 click, 0 đơn), *kém kéo dài* (chi ≥ 500k, ROAS < 50% mục tiêu).
   Kiểm tra sản phẩm trước (`product.get_item_base_info`): hết hàng / không ở trạng thái NORMAL thì không làm mới mà báo anh xem sản phẩm.
