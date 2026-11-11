@@ -61,6 +61,7 @@ const PK: Record<string, string[]> = {
   ads_shop_hourly: ["shop_id", "date", "hour"],
   orders: ["order_sn"],
   alert_state: ["key"],
+  pancake_variations: ["sku"],
 };
 
 function cmp(a: unknown, b: string): number {
@@ -205,6 +206,17 @@ globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}
     const messageId = 900 + telegramCalls.length;
     if (method === "sendPhoto") photoMessages.add(messageId);
     return json({ ok: true, result: { message_id: messageId } });
+  }
+  if (url.hostname === "pos.pages.fm") {
+    assert.equal(url.searchParams.get("api_key"), "pancake-key");
+    return json({
+      success: true,
+      total_pages: 1,
+      data: [
+        { display_id: "BD1 TRANG 130", average_imported_price: 100000, last_imported_price: 90000, retail_price: 250000, product: { name: "Bộ 1" }, variations_warehouses: [{ remain_quantity: 4, selling_avg: 0.5 }, { remain_quantity: 1, selling_avg: 0 }] },
+        { display_id: "BD1TRANG140", average_imported_price: 0, last_imported_price: 100000, retail_price: 250000, product: { name: "Bộ 1" }, variations_warehouses: [] },
+      ],
+    });
   }
   throw new Error(`Unexpected fetch to ${url}`);
 }) as typeof fetch;
@@ -568,5 +580,109 @@ describe("live actions while dry-run", () => {
     assert.equal(editBodies.length, 1);
     assert.equal(createBodies.length, 0);
     delete process.env.AUTOPILOT_LIVE_ACTIONS;
+  });
+});
+
+describe("profit from Pancake costs", () => {
+  beforeEach(() => {
+    reset();
+    delete process.env.AUTOPILOT_DRY_RUN;
+    process.env.PANCAKE_API_KEY = "pancake-key";
+    const now = Math.floor(Date.now() / 1000);
+    tables.orders = Array.from({ length: 10 }, (_, i) => ({
+      shop_id: 111,
+      order_sn: `P${i}`,
+      create_time: now - 86400,
+      order_status: "COMPLETED",
+      total_amount: 250000,
+      items: [{ item_id: 9, model_sku: i % 2 ? "BD1TRANG130" : "bd1trang140", qty: 1, price: 250000 }],
+    }));
+  });
+
+  it("syncs Pancake costs and computes break-even and profit ROAS per campaign", async () => {
+    const pancake = await import("../src/lib/autopilot/pancake");
+    const profit = await import("../src/lib/autopilot/profit");
+    const sync = await pancake.syncPancakeVariations();
+    assert.deepEqual(sync, { variations: 2, pages: 1 });
+    const v = tables.pancake_variations.find((r) => r.sku === "BD1TRANG130")!;
+    assert.deepEqual([v.cost, v.stock], [100000, 5], "mã chuẩn hóa, tồn cộng các kho");
+    assert.equal(tables.pancake_variations.find((r) => r.sku === "BD1TRANG140")!.cost, 100000, "không có giá bình quân thì dùng giá nhập gần nhất");
+
+    seedCampaign({ roas_target: 10 });
+    const res: any = await profit.computeEconomics(111);
+    assert.equal(res.item_level, 1);
+    const econ = tables.ads_campaigns[0].econ;
+    // Chưa có escrow: tiền về ước 70%. Giá vốn 40%, lãi mong muốn 10%: hòa vốn 1/0,30 = 3,3; theo lãi 1/0,20 = 5,0
+    assert.deepEqual([econ.cost_ratio, econ.payout_estimated, econ.breakeven, econ.target, econ.source], [0.4, true, 3.3, 5, "item"]);
+  });
+
+  it("uses real Shopee fees from escrow and cancel/return rates", async () => {
+    const pancake = await import("../src/lib/autopilot/pancake");
+    const profit = await import("../src/lib/autopilot/profit");
+    await pancake.syncPancakeVariations();
+    const iso = new Date().toISOString();
+    const raw = {
+      order_selling_price: 100000,
+      commission_fee: 16500,
+      service_fee: 6000,
+      seller_transaction_fee: 6000,
+      ads_escrow_top_up_fee_or_technical_support_fee: 1000,
+      withholding_vat_tax: 1000,
+      withholding_pit_tax: 500,
+    };
+    tables.order_escrow = [
+      ...Array.from({ length: 25 }, (_, i) => ({ order_sn: `E${i}`, shop_id: 111, escrow_amount: 69000, refund_amount: 0, raw, updated_at: iso })),
+      // Đơn bị hoàn tiền: không tính vào tỉ lệ tiền về (đã tính vào tỉ lệ hoàn).
+      { order_sn: "O7", shop_id: 111, escrow_amount: 0, refund_amount: 100000, raw, updated_at: iso },
+    ];
+    const old = Math.floor(Date.now() / 1000) - 20 * 86400;
+    const statuses = ["CANCELLED", "CANCELLED", "TO_RETURN", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "UNPAID"];
+    statuses.forEach((st, i) => tables.orders.push({ shop_id: 111, order_sn: `O${i}`, create_time: old, order_status: st, items: [] }));
+    seedCampaign({ roas_target: 10 });
+    await profit.computeEconomics(111);
+    const econ = tables.ads_campaigns[0].econ;
+    // tiền về 69%, hủy 2/10, hoàn 2/8 (1 TO_RETURN + 1 hoàn tiền); giữ = 0,8 × 0,75 = 0,6
+    // margin = 0,6 × (0,69 − 0,4) = 0,174 → hòa vốn 5,7; theo lãi 1/(0,174 − 0,06) = 8,8
+    assert.deepEqual(
+      [econ.payout, econ.payout_estimated, econ.cancel_rate, econ.return_rate, econ.breakeven, econ.target],
+      [0.69, false, 0.2, 0.25, 5.7, 8.8]
+    );
+    const sum = tables.autopilot_settings[0].econ_summary;
+    assert.deepEqual(
+      sum.fees.fees.map((f: any) => [f.key, Math.round(f.ratio * 1000) / 1000]),
+      [["commission", 0.165], ["service", 0.06], ["transaction", 0.06], ["infra", 0.01], ["tax", 0.015]]
+    );
+  });
+
+  it("uses profit ROAS in rules and walks the ROAS target down toward it", async () => {
+    const pancake = await import("../src/lib/autopilot/pancake");
+    const profit = await import("../src/lib/autopilot/profit");
+    await pancake.syncPancakeVariations();
+    seedCampaign({ roas_target: 10 });
+    await profit.computeEconomics(111);
+
+    // ROAS hôm nay 5,3: dưới mục tiêu đang đặt (10) nhưng trên ROAS theo lãi (5) → được tăng ngân sách.
+    seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 450000 });
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 1);
+    const up = tables.autopilot_actions[0];
+    assert.equal(up.source, "rule:scale_up");
+    assert.match(up.reason, /ROAS cho lãi 10%/);
+
+    tables.ads_campaign_daily = [];
+    await rules.proposeRoasTargets(111);
+    const roas = tables.autopilot_actions.find((a) => a.action === "change_roas_target")!;
+    assert.deepEqual([roas.before.roas_target, roas.after.roas_target], [10, 8.5], "hạ tối đa 15% mỗi lần, hướng về 5");
+    assert.match(roas.after.why, /hòa vốn 3.3/);
+  });
+
+  it("falls back to the configured ROAS target when profit ROAS is turned off", async () => {
+    tables.autopilot_settings[0].rule_params = { use_profit_roas: 0 };
+    const pancake = await import("../src/lib/autopilot/pancake");
+    const profit = await import("../src/lib/autopilot/profit");
+    await pancake.syncPancakeVariations();
+    seedCampaign({ roas_target: 10 });
+    await profit.computeEconomics(111);
+    seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 450000 });
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
   });
 });

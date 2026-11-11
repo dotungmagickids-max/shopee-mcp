@@ -35,7 +35,8 @@ select cron.schedule('autopilot-collect',      '*/15 * * * *', $$select public.a
 select cron.schedule('autopilot-daily-ads',    '0 18 * * *',   $$select public.autopilot_call('/api/jobs/daily?part=ads')$$);    -- 01:00 VN
 select cron.schedule('autopilot-daily-orders', '5 18 * * *',   $$select public.autopilot_call('/api/jobs/daily?part=orders')$$); -- 01:05 VN
 select cron.schedule('autopilot-daily-escrow', '10 18 * * *',  $$select public.autopilot_call('/api/jobs/daily?part=escrow')$$); -- 01:10 VN
-select cron.schedule('autopilot-reset',        '0 17 * * *',   $$select public.autopilot_call('/api/jobs/reset')$$);             -- 00:00 VN
+select cron.schedule('autopilot-daily-costs',  '15 18 * * *',  $$select public.autopilot_call('/api/jobs/daily?part=costs')$$);  -- 01:15 VN (giá vốn Pancake + lãi)
+select cron.schedule('autopilot-reset',       '0 17 * * *',   $$select public.autopilot_call('/api/jobs/reset')$$);             -- 00:00 VN
 select cron.schedule('autopilot-daily-roas',   '20 18 * * *',  $$select public.autopilot_call('/api/jobs/daily?part=roas')$$);   -- 01:20 VN
 select cron.schedule('autopilot-refresh',      '0 0 * * 1',    $$select public.autopilot_call('/api/jobs/refresh')$$);           -- Thứ Hai 07:00 VN
 select cron.schedule('autopilot-report',     '0 1 * * *',    $$select public.autopilot_call('/api/jobs/report')$$);            -- 08:00 VN

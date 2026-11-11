@@ -357,7 +357,7 @@ export async function syncEscrow(shopId: number, orderSns: string[]): Promise<nu
 }
 
 /** Đơn đã hoàn tất trong 30 ngày mà chưa có escrow (hoặc escrow lấy trước khi hoàn tất). */
-export async function escrowCandidates(shopId: number, limit = 400): Promise<string[]> {
+export async function escrowCandidates(shopId: number, limit = 1000): Promise<string[]> {
   const since = Math.floor(Date.now() / 1000) - 30 * 86400;
   const { data: done } = await db()
     .from("orders")

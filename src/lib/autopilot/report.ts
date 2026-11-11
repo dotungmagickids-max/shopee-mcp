@@ -1,9 +1,10 @@
 import { db } from "../supabase";
+import { shopFees } from "./fees";
+import { costOf, loadCostMap } from "./pancake";
 import { chunk } from "./shopee-call";
 import { addDays, vnDayStartUnix } from "./time";
 
 export const INVALID_STATUSES = ["CANCELLED", "IN_CANCEL", "UNPAID"];
-const DEFAULT_PAYOUT_RATIO = 0.83;
 
 interface OrderRow {
   order_sn: string;
@@ -31,23 +32,10 @@ export async function ordersBetween(shopId: number, fromUnix: number, toUnix: nu
   return out;
 }
 
-/** Tỉ lệ tiền về / khách trả của 30 ngày gần nhất (từ escrow thật), mặc định 83%. */
-export async function payoutRatio(shopId: number): Promise<number> {
-  const { data } = await db()
-    .from("order_escrow")
-    .select("escrow_amount, buyer_total_amount")
-    .eq("shop_id", shopId)
-    .gte("updated_at", new Date(Date.now() - 30 * 86400_000).toISOString())
-    .limit(2000);
-  let paid = 0;
-  let escrow = 0;
-  for (const r of data ?? []) {
-    if (Number(r.buyer_total_amount) > 0 && Number(r.escrow_amount) > 0) {
-      paid += Number(r.buyer_total_amount);
-      escrow += Number(r.escrow_amount);
-    }
-  }
-  return paid > 1_000_000 ? escrow / paid : DEFAULT_PAYOUT_RATIO;
+/** Giá bán sản phẩm của đơn (giá sau giảm giá của shop × số lượng): cùng thước đo với tỉ lệ tiền về. */
+function itemsSubtotal(o: OrderRow): number {
+  const s = (o.items ?? []).reduce((sum, it: any) => sum + Number(it.price ?? 0) * Number(it.qty ?? 1), 0);
+  return s > 0 ? s : Number(o.total_amount ?? 0);
 }
 
 export async function dayReport(shopId: number, date: string) {
@@ -80,12 +68,11 @@ export async function dayReport(shopId: number, date: string) {
   const gmsExpense = (gms ?? []).reduce((s, g) => s + Number(g.expense), 0);
 
   // Lãi: tiền về − giá vốn − chi QC.
-  const { data: costs } = await db().from("sku_costs").select("sku, cost").eq("shop_id", shopId);
+  const costMap = await loadCostMap(shopId);
   let profit: number | null = null;
   let profitNote = "";
-  if (costs?.length) {
-    const costMap = new Map(costs.map((c) => [c.sku, Number(c.cost)]));
-    const ratio = await payoutRatio(shopId);
+  if (costMap.size) {
+    const ratio = (await shopFees(shopId)).payout;
     let payout = 0;
     let cogs = 0;
     let estimated = 0;
@@ -94,11 +81,11 @@ export async function dayReport(shopId: number, date: string) {
       const e = escrow.get(o.order_sn);
       if (e) payout += e.escrow_amount;
       else {
-        payout += Number(o.total_amount ?? 0) * ratio;
+        payout += itemsSubtotal(o) * ratio;
         estimated++;
       }
       for (const it of o.items ?? []) {
-        const c = costMap.get(it.model_sku ?? "") ?? costMap.get(it.item_sku ?? "");
+        const c = costOf(costMap, it);
         if (c == null) missing++;
         else cogs += c * Number(it.qty ?? 1);
       }
