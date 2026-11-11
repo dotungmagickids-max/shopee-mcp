@@ -16,7 +16,7 @@ import { esc, sendAlertOnce, sendTelegram, vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
 import { dayReport } from "./report";
 import { expireOld } from "./actions";
-import { evaluateIntraday, proposeMidnightReset, proposeRoasTargets } from "./rules";
+import { evaluateIntraday, proposeCapsForUnlimited, proposeMidnightReset, proposeRoasTargets } from "./rules";
 
 type Step = [name: string, fn: () => Promise<unknown>];
 
@@ -101,6 +101,15 @@ export async function resetJob() {
   const results = [];
   for (const shop of shops()) {
     results.push(await runSteps("reset", shop, [["reset", () => proposeMidnightReset(shop.shopId)]]));
+  }
+  return results;
+}
+
+/** Đề xuất hạn mức cho chiến dịch không giới hạn (chạy tay hoặc từ dashboard). */
+export async function capsJob() {
+  const results = [];
+  for (const shop of shops()) {
+    results.push(await runSteps("caps", shop, [["caps", () => proposeCapsForUnlimited(shop.shopId)]]));
   }
   return results;
 }

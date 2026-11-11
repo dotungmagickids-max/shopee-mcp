@@ -2,7 +2,7 @@ import { db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
 import { automationBlocked, loadSettings, type ShopSettings } from "./settings";
 import { vnd } from "./telegram";
-import { addDays, vnDate, vnHour } from "./time";
+import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
 
 const n = (v: unknown) => Number(v ?? 0) || 0;
 const MAX_PROPOSALS_PER_RUN = 10;
@@ -14,12 +14,14 @@ interface Camp {
   campaign_budget: number;
   roas_target: number | null;
   tool_paused_at: string | null;
+  throttled_at: string | null;
+  restore_budget: number | null;
 }
 
 async function ongoingCampaigns(shopId: number): Promise<Camp[]> {
   const { data, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, ad_name, campaign_status, campaign_budget, roas_target, tool_paused_at")
+    .select("campaign_id, ad_name, campaign_status, campaign_budget, roas_target, tool_paused_at, throttled_at, restore_budget")
     .eq("shop_id", shopId)
     .eq("campaign_status", "ongoing")
     .eq("autopilot_excluded", false);
@@ -29,7 +31,47 @@ async function ongoingCampaigns(shopId: number): Promise<Camp[]> {
     campaign_id: Number(c.campaign_id),
     campaign_budget: n(c.campaign_budget),
     roas_target: c.roas_target == null ? null : n(c.roas_target),
+    restore_budget: c.restore_budget == null ? null : n(c.restore_budget),
   }));
+}
+
+/**
+ * Khung giờ tốt của shop: giờ có lượng click ≥ 80% trung vị và ROAS ≥ ROAS chung,
+ * tính từ N tuần gần nhất, bỏ ngày sale (ngày đôi). Luôn gồm 0h. Ví dụ Magickids: 0h, 8h–10h.
+ */
+export async function goodHours(shopId: number, weeks: number): Promise<Set<number>> {
+  const today = vnDate();
+  const { data } = await db()
+    .from("ads_shop_hourly")
+    .select("date, hour, clicks, expense, broad_gmv")
+    .eq("shop_id", shopId)
+    .gte("date", addDays(today, -weeks * 7))
+    .lt("date", today)
+    .limit(5000);
+  const agg = Array.from({ length: 24 }, () => ({ c: 0, e: 0, g: 0 }));
+  for (const r of data ?? []) {
+    const [, m, d] = String(r.date).split("-").map(Number);
+    if (m === d) continue;
+    agg[r.hour].c += n(r.clicks);
+    agg[r.hour].e += n(r.expense);
+    agg[r.hour].g += n(r.broad_gmv);
+  }
+  const totalE = agg.reduce((s, a) => s + a.e, 0);
+  if (totalE === 0) return new Set([0, 8, 9, 10]);
+  const overall = agg.reduce((s, a) => s + a.g, 0) / totalE;
+  const median = agg.map((a) => a.c).sort((a, b) => a - b)[12];
+  const good = new Set<number>([0]);
+  agg.forEach((a, h) => {
+    if (a.c >= median * 0.8 && a.e > 0 && a.g / a.e >= overall) good.add(h);
+  });
+  return good;
+}
+
+/** Giờ bắt đầu của khung tốt liền mạch đang chứa giờ hiện tại. */
+function windowStart(good: Set<number>, hour: number): number {
+  let h = hour;
+  while (h > 0 && good.has(h - 1)) h--;
+  return h;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +104,15 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
     byCamp.get(id)!.push({ hour: r.hour, clicks: n(r.clicks), expense: n(r.expense), gmv: n(r.broad_gmv) });
   }
 
+  const good = await goodHours(shopId, p.good_hours_weeks);
+  const { data: restores } = await db()
+    .from("autopilot_actions")
+    .select("campaign_id")
+    .eq("shop_id", shopId)
+    .eq("source", "rule:restore")
+    .gte("created_at", new Date(vnDayStartUnix(today) * 1000).toISOString());
+  const restoredToday = new Set((restores ?? []).map((r) => Number(r.campaign_id)));
+
   const candidates: (ProposalInput & { priority: number })[] = [];
   for (const c of camps) {
     const rows = byCamp.get(c.campaign_id) ?? [];
@@ -69,6 +120,26 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
     const gmv = rows.reduce((s, r) => s + r.gmv, 0);
     const roas = exp > 0 ? gmv / exp : 0;
     const target = c.roas_target;
+
+    // Đang bị siết: chỉ xét nới lại khi sang khung giờ tốt kế tiếp (mỗi ngày nới 1 lần).
+    if (c.throttled_at) {
+      const throttledAt = Date.parse(c.throttled_at);
+      const startOfWindow = Date.parse(`${today}T${String(windowStart(good, hour)).padStart(2, "0")}:00:00+07:00`);
+      if (good.has(hour) && throttledAt < startOfWindow && !restoredToday.has(c.campaign_id)) {
+        const back = Math.max(c.restore_budget ?? 0, s.start_budget);
+        candidates.push({
+          priority: 1,
+          shop_id: shopId,
+          campaign_id: c.campaign_id,
+          action: "change_budget",
+          before: { budget: c.campaign_budget },
+          after: { budget: back, restore: true },
+          reason: `Vào khung giờ tốt (${hour}h): nới lại ngân sách đã siết lúc ${new Date(throttledAt + 7 * 3600_000).toISOString().slice(11, 16)}`,
+          source: "rule:restore",
+        });
+      }
+      continue;
+    }
 
     // Tăng ngân sách: sắp tiêu hết và đang hiệu quả.
     if (c.campaign_budget > 0 && exp >= p.scale_spend_ratio * c.campaign_budget && roas >= (target ?? p.cut_roas_floor * 2)) {
@@ -87,7 +158,7 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       continue;
     }
 
-    // Tạm dừng tới 0h: khung W giờ đã trọn vẹn, đủ click, ROAS quá thấp. Không phạt dựa trên 1–2 giờ.
+    // Siết ngân sách (thay cho tạm dừng): khung W giờ đã trọn vẹn, đủ click, ROAS quá thấp. Không phạt dựa trên 1–2 giờ.
     const W = Math.max(3, p.cut_window_hours);
     if (hour >= W) {
       const win = rows.filter((r) => r.hour >= hour - W && r.hour < hour);
@@ -100,16 +171,20 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const activeHours = win.filter((r) => r.expense > 0).length;
       // Và cả ngày cũng kém: chiến dịch cả ngày vẫn tốt thì không dừng vì vài giờ chững.
       const dayThreshold = target ? target * p.cut_day_roas_ratio : p.cut_roas_floor * 2;
-      if (activeHours >= 2 && wClicks >= p.cut_min_clicks && wExp >= p.cut_min_expense && wRoas < threshold && roas < dayThreshold) {
+      // Siết thay cho tạm dừng: ngân sách = đã chi hôm nay + một khoản nhỏ, chiến dịch vẫn "đang chạy" nên sửa lại được.
+      const throttleTo = Math.ceil((exp + p.throttle_buffer) / 1000) * 1000;
+      const lower = c.campaign_budget === 0 || throttleTo < c.campaign_budget;
+      if (lower && activeHours >= 2 && wClicks >= p.cut_min_clicks && wExp >= p.cut_min_expense && wRoas < threshold && roas < dayThreshold) {
+        const next = [...good].filter((h) => h > hour).sort((a, b) => a - b)[0];
         candidates.push({
           priority: 0,
           shop_id: shopId,
           campaign_id: c.campaign_id,
-          action: "pause",
-          before: { status: "ongoing", budget: c.campaign_budget },
-          after: { status: "paused", until_midnight: true },
-          reason: `${W} giờ qua (${hour - W}h–${hour - 1}h): ${wClicks} click, chi ${vnd(wExp)}, ROAS ${wRoas.toFixed(1)} < ${threshold.toFixed(1)}. Hôm nay: chi ${vnd(exp)}, ROAS ${roas.toFixed(1)}`,
-          source: "rule:cut",
+          action: "change_budget",
+          before: { budget: c.campaign_budget },
+          after: { budget: throttleTo, throttle: true, restore_budget: c.campaign_budget > 0 ? c.campaign_budget : s.start_budget },
+          reason: `Siết ngân sách: ${W} giờ qua (${hour - W}h–${hour - 1}h) ${wClicks} click, chi ${vnd(wExp)}, ROAS ${wRoas.toFixed(1)} < ${threshold.toFixed(1)}; cả ngày chi ${vnd(exp)}, ROAS ${roas.toFixed(1)}. Nới lại ${next != null ? `lúc ${next}h` : "lúc 0h"}.`,
+          source: "rule:throttle",
         });
       }
     }
@@ -138,7 +213,7 @@ export async function proposeMidnightReset(shopId: number) {
   if (blocked) return { skipped: blocked };
   const { data, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, campaign_status, campaign_budget, tool_paused_at")
+    .select("campaign_id, campaign_status, campaign_budget, tool_paused_at, throttled_at")
     .eq("shop_id", shopId)
     .in("campaign_status", ["ongoing", "paused"])
     .eq("autopilot_excluded", false);
@@ -150,19 +225,82 @@ export async function proposeMidnightReset(shopId: number) {
     if (c.campaign_status === "paused" && c.tool_paused_at) {
       items.push({ campaign_id: id, action: "resume", before: { status: "paused" }, after: { status: "ongoing" } });
     }
-    const resetThis = budget > s.start_budget || (budget === 0 && s.reset_unlimited);
+    // Chiến dịch bị siết hôm qua: nới về mức khởi điểm (0h là giờ hiệu quả nhất).
+    const throttled = !!c.throttled_at && budget !== s.start_budget;
+    const resetThis = throttled || budget > s.start_budget || (budget === 0 && s.reset_unlimited);
     if (resetThis && (c.campaign_status === "ongoing" || c.tool_paused_at)) {
-      items.push({ campaign_id: id, action: "change_budget", before: { budget }, after: { budget: s.start_budget } });
+      items.push({ campaign_id: id, action: "change_budget", before: { budget }, after: { budget: s.start_budget, restore: true } });
     }
   }
   const group = await proposeGroup(
     shopId,
-    "Reset 0h: ngân sách về mức khởi điểm, bật lại chiến dịch tool đã dừng",
+    "Reset 0h: ngân sách về mức khởi điểm, nới chiến dịch đã siết, bật lại chiến dịch tool đã dừng",
     items,
     "rule:reset",
     `Ngân sách khởi điểm ${vnd(s.start_budget)}; trong ngày tăng dần theo luật.${s.reset_unlimited ? "" : " (Chiến dịch không giới hạn ngân sách giữ nguyên; bật 'Áp dụng cho chiến dịch không giới hạn' trong Cài đặt để đưa vào.)"}`,
     10 * 60,
     { autoExecute: s.mode === "auto" }
+  );
+  return { items: items.length, group: group?.id ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// Đặt hạn mức cho chiến dịch đang "không giới hạn" (campaign_budget = 0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Hạn mức = chi trung bình/ngày của 7 ngày thường gần nhất (bỏ ngày đôi), làm tròn lên 10k,
+ * thấp nhất bằng ngân sách khởi điểm. Gửi một đề xuất gộp để anh duyệt.
+ */
+export async function proposeCapsForUnlimited(shopId: number, source = "rule:caps") {
+  const s = await loadSettings(shopId);
+  const blocked = automationBlocked(s);
+  if (blocked) return { skipped: blocked };
+  const camps = (await ongoingCampaigns(shopId)).filter((c) => c.campaign_budget === 0);
+  if (!camps.length) return { items: 0 };
+  const today = vnDate();
+  const days: string[] = [];
+  for (let d = 1; days.length < 7 && d <= 14; d++) {
+    const date = addDays(today, -d);
+    const [, m, dd] = date.split("-").map(Number);
+    if (m !== dd && !s.sale_dates.includes(date)) days.push(date);
+  }
+  const { data, error } = await db()
+    .from("ads_campaign_daily")
+    .select("campaign_id, date, expense, broad_gmv")
+    .eq("shop_id", shopId)
+    .in("date", days)
+    .in("campaign_id", camps.map((c) => c.campaign_id))
+    .limit(10000);
+  if (error) throw new Error(error.message);
+  const sum = new Map<number, { e: number; g: number }>();
+  for (const r of data ?? []) {
+    const a = sum.get(Number(r.campaign_id)) ?? { e: 0, g: 0 };
+    a.e += n(r.expense);
+    a.g += n(r.broad_gmv);
+    sum.set(Number(r.campaign_id), a);
+  }
+  const items = camps.map((c) => {
+    const a = sum.get(c.campaign_id) ?? { e: 0, g: 0 };
+    const avg = a.e / days.length;
+    const budget = Math.max(s.start_budget, Math.ceil(avg / 10_000) * 10_000);
+    return {
+      campaign_id: c.campaign_id,
+      action: "change_budget" as const,
+      before: { budget: 0 },
+      after: {
+        budget,
+        why: `chi TB ${vnd(avg)}/ngày, ROAS ${a.e > 0 ? (a.g / a.e).toFixed(1) : "-"} (${days.length} ngày thường)`,
+      },
+    };
+  });
+  const group = await proposeGroup(
+    shopId,
+    `Đặt hạn mức cho ${items.length} chiến dịch đang KHÔNG GIỚI HẠN ngân sách`,
+    items,
+    source,
+    `Hạn mức = chi trung bình/ngày ngày thường, làm tròn lên 10k, thấp nhất ${vnd(s.start_budget)}. Sau đó luật tự tăng khi chiến dịch tiêu hết mà vẫn hiệu quả.`,
+    24 * 60
   );
   return { items: items.length, group: group?.id ?? null };
 }

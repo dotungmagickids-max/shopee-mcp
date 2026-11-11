@@ -379,7 +379,16 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
 
   // Cập nhật bản sao cục bộ để luật lần sau dùng số mới.
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (row.action === "change_budget") patch.campaign_budget = params.budget;
+  if (row.action === "change_budget") {
+    patch.campaign_budget = params.budget;
+    if (row.after?.throttle) {
+      patch.throttled_at = new Date().toISOString();
+      patch.restore_budget = row.after.restore_budget ?? null;
+    } else if (row.after?.restore) {
+      patch.throttled_at = null;
+      patch.restore_budget = null;
+    }
+  }
   if (row.action === "change_roas_target") patch.roas_target = params.roas_target;
   if (row.action === "pause") {
     patch.campaign_status = "paused";

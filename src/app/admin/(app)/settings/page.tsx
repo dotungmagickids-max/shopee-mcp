@@ -13,6 +13,8 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   cut_roas_ratio: "Tạm dừng khi ROAS khung < (tỉ lệ mục tiêu, vd 0,4)",
   cut_roas_floor: "…hoặc < ROAS này nếu không có mục tiêu",
   cut_day_roas_ratio: "…và ROAS cả ngày < (tỉ lệ mục tiêu, vd 0,6)",
+  throttle_buffer: "Siết: ngân sách = đã chi hôm nay + (đ)",
+  good_hours_weeks: "Khung giờ tốt tính theo (tuần gần nhất)",
   cooldown_minutes: "Thời gian chờ giữa 2 lần chỉnh (phút)",
   proposal_ttl_minutes: "Đề xuất hết hạn sau (phút)",
   roas_low_ratio: "ROAS mục tiêu: nâng khi thực tế < (tỉ lệ, vd 0,8)",

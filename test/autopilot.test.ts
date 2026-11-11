@@ -385,7 +385,7 @@ describe("rules and actions", () => {
     assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
   });
 
-  it("pauses until midnight only on a full window of poor hours", async (t) => {
+  it("throttles the budget (instead of pausing) only on a full window of poor hours", async (t) => {
     const hour = time.vnHour();
     if (hour < 3) return t.skip("cần ≥ 3 giờ trọn trong ngày");
     seedCampaign({ campaign_budget: 0 });
@@ -397,7 +397,25 @@ describe("rules and actions", () => {
     // Khung 3 giờ trọn: 50 click, chi 120k, ROAS ~0,08 < 40% × 10.
     assert.equal((await rules.evaluateIntraday(111)).proposals, 1);
     const a = tables.autopilot_actions[0];
-    assert.deepEqual([a.action, a.after.until_midnight, a.source], ["pause", true, "rule:cut"]);
+    // Ngân sách = đã chi hôm nay (120k) + 10k; nhớ mức để nới lại.
+    assert.deepEqual(
+      [a.action, a.after.budget, a.after.throttle, a.after.restore_budget, a.source],
+      ["change_budget", 130000, true, 100000, "rule:throttle"]
+    );
+
+    // Thực thi thật → đánh dấu đang siết; 0h nới về mức khởi điểm.
+    process.env.AUTOPILOT_DRY_RUN = "false";
+    await actions.decide(a.id, true, "test");
+    const camp = tables.ads_campaigns[0];
+    assert.equal(camp.campaign_budget, 130000);
+    assert.ok(camp.throttled_at);
+    assert.deepEqual(editBodies[0], { reference_id: a.reference_id, campaign_id: 1, edit_action: "change_budget", budget: 130000 });
+    // Đang siết thì luật trong ngày không siết/tăng thêm.
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
+    const reset = await rules.proposeMidnightReset(111);
+    assert.equal(reset.items, 1);
+    const child = tables.autopilot_actions.find((r) => r.parent_id === reset.group)!;
+    assert.deepEqual([child.action, child.after.budget, child.after.restore], ["change_budget", 100000, true]);
   });
 
   it("does not pause a campaign whose whole day is still good", async (t) => {

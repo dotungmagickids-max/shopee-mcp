@@ -1,6 +1,7 @@
 import { adminChange, decide, type ActionKind } from "@/lib/autopilot/actions";
 import { adminFromRequest } from "@/lib/autopilot/admin-auth";
 import { shops } from "@/lib/autopilot/config";
+import { proposeCapsForUnlimited } from "@/lib/autopilot/rules";
 import { db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -27,6 +28,11 @@ export async function POST(request: Request) {
   if (op === "decide") {
     const res = await decide(Number(form.get("id")), form.get("approve") === "1", "admin");
     msg = res.message;
+  } else if (op === "caps") {
+    const shopId = Number(form.get("shop_id"));
+    if (!shops().some((s) => s.shopId === shopId)) return new Response("bad shop", { status: 400 });
+    const res = await proposeCapsForUnlimited(shopId, "admin");
+    msg = "items" in res ? `Đã tạo đề xuất hạn mức cho ${res.items} chiến dịch (xem bên dưới / Telegram)` : String(res.skipped);
   } else {
     const shopId = Number(form.get("shop_id"));
     const campaignId = Number(form.get("campaign_id"));

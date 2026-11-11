@@ -14,6 +14,8 @@ export const DEFAULT_RULE_PARAMS = {
   cut_roas_ratio: 0.4, // ROAS khung < 40% mục tiêu
   cut_roas_floor: 3, // hoặc < 3 khi chiến dịch không có mục tiêu
   cut_day_roas_ratio: 0.6, // và ROAS cả ngày hôm nay < 60% mục tiêu (không dừng chiến dịch cả ngày vẫn tốt)
+  throttle_buffer: 10_000, // siết: ngân sách mới = đã chi hôm nay + khoản này
+  good_hours_weeks: 4, // khung giờ tốt tính từ số liệu N tuần gần nhất (bỏ ngày sale)
   // Chung
   cooldown_minutes: 60,
   proposal_ttl_minutes: 90,
