@@ -152,9 +152,14 @@ Lệnh Telegram: `/pause_all`, `/resume_all` (đều có nút xác nhận), `/mo
   (`/api/jobs/daily?part=costs`) vào bảng `pancake_variations`: giá nhập bình quân (không có thì giá nhập gần nhất), tồn, tốc độ bán.
   Mã biến thể Pancake (`display_id`) trùng `model_sku` trên Shopee; so khớp sau khi viết hoa và bỏ khoảng trắng.
   `sku_costs` (nhập tay theo shop) được ưu tiên hơn Pancake.
-- **Kinh tế từng chiến dịch** (`src/lib/autopilot/profit.ts`, lưu `ads_campaigns.econ`): từ đơn 30 ngày của sản phẩm trong chiến dịch,
-  tính lãi trước QC trên 1đ GMV = (1 − tỉ lệ hủy) × (tỉ lệ tiền về − giá vốn/giá bán − chi phí khác/giá bán).
-  **ROAS hòa vốn** = 1 / lãi trước QC; **ROAS theo lãi** = 1 / (lãi trước QC − (1 − tỉ lệ hủy) × lãi mong muốn).
+- **Phí Shopee thật** (`src/lib/autopilot/fees.ts`): tiền về / giá bán sản phẩm (`order_selling_price`) từ escrow các đơn hoàn tất 45 ngày
+  (bỏ đơn bị hoàn tiền), kèm từng khoản: phí cố định, phí dịch vụ, phí thanh toán, phí hạ tầng, hoa hồng liên kết, voucher shop,
+  thuế khấu trừ, ship shop chịu, bảo hiểm vận chuyển, ship hoàn. Chưa đủ 20 đơn có escrow thì ước 70% (đơn mẫu 11/2026: 68%).
+- **Hủy / hoàn**: tính trên đơn tạo từ 45 tới 10 ngày trước. Hủy = CANCELLED/IN_CANCEL (kể cả giao thất bại) / đơn đã đặt;
+  hoàn = TO_RETURN hoặc hoàn tất nhưng bị hoàn tiền / đơn không hủy. Đơn hủy/hoàn không có tiền về, không tốn giá vốn.
+- **Kinh tế từng chiến dịch** (`src/lib/autopilot/profit.ts`, lưu `ads_campaigns.econ`, tóm tắt shop ở `autopilot_settings.econ_summary`):
+  giữ = (1 − hủy) × (1 − hoàn); lãi trước QC trên 1đ GMV = giữ × (tỉ lệ tiền về − giá vốn/giá bán − chi phí khác/giá bán).
+  **ROAS hòa vốn** = 1 / lãi trước QC; **ROAS theo lãi** = 1 / (lãi trước QC − giữ × lãi mong muốn).
   Sản phẩm bán < 5 đơn vị hoặc thiếu giá vốn quá nửa thì dùng số trung bình shop (dấu * trên dashboard).
 - **Luật**: khi `use_profit_roas = 1` (mặc định), tăng/siết ngân sách so với ROAS theo lãi thay cho ROAS mục tiêu đang đặt.
   Đề xuất ROAS mục tiêu (01:20) đưa ROAS mục tiêu dần về ROAS theo lãi, mỗi lần tối đa ±15%: hạ khi đang đặt cao hơn > 10%

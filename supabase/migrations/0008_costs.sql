@@ -14,3 +14,6 @@ alter table pancake_variations enable row level security;
 
 -- Kinh tế từng chiến dịch (tính hằng đêm): giá bán TB, tỉ lệ giá vốn, ROAS hòa vốn, ROAS cần cho lãi mong muốn.
 alter table ads_campaigns add column if not exists econ jsonb;
+
+-- Tóm tắt của shop (phí Shopee thật theo escrow, tỉ lệ hủy/hoàn, số TB shop) để hiển thị trên dashboard.
+alter table autopilot_settings add column if not exists econ_summary jsonb;

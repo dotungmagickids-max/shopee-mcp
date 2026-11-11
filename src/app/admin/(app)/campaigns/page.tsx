@@ -1,4 +1,5 @@
-import { campaignsWithRanking, type CampaignRow } from "@/lib/autopilot/dashboard";
+import { campaignsWithRanking, econSummary, type CampaignRow } from "@/lib/autopilot/dashboard";
+import type { EconSummary } from "@/lib/autopilot/profit";
 import { shops } from "@/lib/autopilot/config";
 import { vnd } from "@/lib/autopilot/telegram";
 import { Proposals } from "../proposals";
@@ -54,9 +55,40 @@ function Edit({ shopId, r }: { shopId: number; r: CampaignRow }) {
   );
 }
 
+const pct = (x: number) => `${(x * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
+
+function EconBox({ econ }: { econ: EconSummary | null }) {
+  if (!econ) return <p className="muted">Lãi: chưa tính (job giá vốn chạy 01:15 mỗi đêm, cần PANCAKE_API_KEY).</p>;
+  const f = econ.fees;
+  return (
+    <details style={{ margin: "8px 0" }}>
+      <summary>
+        <b>Lãi</b>: tiền về {pct(f.payout)} giá bán{f.estimated ? " (ước tính, chưa đủ escrow)" : ` (${f.orders} đơn thật)`} · giá vốn TB{" "}
+        {pct(econ.shop.cost_ratio)} · hủy {pct(econ.cancel_rate)} · hoàn {pct(econ.return_rate)} · ROAS hòa vốn TB{" "}
+        <b>{econ.shop.breakeven ?? "lỗ"}</b> · ROAS cho lãi {econ.shop.profit_pct}%: <b>{econ.shop.target ?? "không đạt"}</b>
+      </summary>
+      <div className="muted" style={{ marginTop: 6 }}>
+        {f.fees.length ? (
+          <>
+            Phí Shopee trên giá bán (escrow {f.orders} đơn hoàn tất 45 ngày):{" "}
+            {f.fees.map((x) => `${x.label} ${pct(x.ratio)}`).join(" · ")}.
+          </>
+        ) : (
+          "Chưa đủ 20 đơn có escrow: tạm dùng tiền về 70% giá bán."
+        )}{" "}
+        Hủy (kể cả giao thất bại) và hoàn tính trên {econ.rate_orders} đơn tạo từ 45 tới 10 ngày trước. Đơn hủy/hoàn không có tiền về và
+        không tốn giá vốn. {econ.item_level}/{econ.campaigns} chiến dịch đủ số liệu riêng, còn lại dùng số TB shop. Cập nhật{" "}
+        {new Date(econ.at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}.
+      </div>
+    </details>
+  );
+}
+
 export default async function Campaigns({ searchParams }: { searchParams: Promise<{ msg?: string }> }) {
   const { msg } = await searchParams;
-  const data = await Promise.all(shops().map(async (s) => ({ shop: s, rows: await campaignsWithRanking(s.shopId) })));
+  const data = await Promise.all(
+    shops().map(async (s) => ({ shop: s, rows: await campaignsWithRanking(s.shopId), econ: await econSummary(s.shopId) }))
+  );
   return (
     <>
       <h1>Chiến dịch</h1>
@@ -67,11 +99,11 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
       </p>
       <p className="muted">
         <b>Hòa vốn / Theo lãi</b>: ROAS (theo số Shopee) để không lỗ và để đạt lãi mong muốn (Cài đặt), tính hằng đêm từ giá vốn
-        Pancake, giá bán, tỉ lệ tiền về và tỉ lệ hủy 30 ngày. <span>*</span> = sản phẩm bán ít, dùng số trung bình shop.
+        Pancake, giá bán 30 ngày, phí Shopee thật (escrow) và tỉ lệ hủy/hoàn. <span>*</span> = sản phẩm bán ít, dùng số trung bình shop.
       </p>
       {msg ? <p className="warning">{msg}</p> : null}
       <Proposals back="/admin/campaigns" />
-      {data.map(({ shop, rows }) => {
+      {data.map(({ shop, rows, econ }) => {
         const sorted = [...rows].sort((a, b) => ORDER[a.verdict] - ORDER[b.verdict] || b.today.expense - a.today.expense);
         const unlimited = rows.filter((r) => r.campaign_budget === 0 && r.campaign_status === "ongoing").length;
         return (
@@ -88,6 +120,7 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
               </button>{" "}
               <span className="muted">Tự chạy 7h sáng thứ Hai; luôn chờ anh duyệt.</span>
             </form>
+            <EconBox econ={econ} />
             {unlimited ? (
               <p className="warning">
                 {unlimited} chiến dịch đang chạy để ngân sách <b>không giới hạn</b> (campaign_budget = 0).{" "}
@@ -132,7 +165,7 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                         <td>{r.campaign_status === "ongoing" ? "Đang chạy" : r.campaign_status === "paused" ? "Tạm dừng" : r.campaign_status}</td>
                         <td>{r.campaign_budget === 0 ? <span className="tag unlimited">Không giới hạn</span> : vnd(r.campaign_budget)}</td>
                         <td>{r.roas_target ?? "-"}</td>
-                        <td title={r.econ ? `Giá bán TB ${vnd(r.econ.price)}, giá vốn ${Math.round(r.econ.cost_ratio * 100)}%, tiền về ${Math.round(r.econ.payout * 100)}%, hủy ${Math.round(r.econ.cancel_rate * 100)}%${r.econ.source === "shop" ? " — số TB shop (sản phẩm bán ít)" : ""}` : "Chưa có giá vốn"}>
+                        <td title={r.econ ? `Giá bán TB ${vnd(r.econ.price)}, giá vốn ${Math.round(r.econ.cost_ratio * 100)}%, tiền về ${Math.round(r.econ.payout * 100)}%, hủy ${Math.round(r.econ.cancel_rate * 100)}%, hoàn ${Math.round((r.econ.return_rate ?? 0) * 100)}%${r.econ.source === "shop" ? " — số TB shop (sản phẩm bán ít)" : ""}` : "Chưa có giá vốn"}>
                           {r.econ ? (
                             <>
                               {r.econ.breakeven ?? "lỗ"} / <b>{r.econ.target ?? "không đạt"}</b>

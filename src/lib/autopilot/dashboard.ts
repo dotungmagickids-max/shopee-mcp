@@ -1,5 +1,5 @@
 import { db } from "../supabase";
-import type { Econ } from "./profit";
+import type { Econ, EconSummary } from "./profit";
 import { INVALID_STATUSES } from "./report";
 import { addDays, vnDate, vnDayStartUnix, vnHourOfUnix, vnWeekday, weekdayOfDate } from "./time";
 
@@ -117,6 +117,12 @@ export interface CampaignRow {
   econ: Econ | null;
   /** Lãi ước tính 7 ngày D-8…D-2 = GMV × lãi trước QC/1đ GMV − chi QC. */
   weekProfit: number | null;
+}
+
+/** Tóm tắt kinh tế shop (phí Shopee thật, hủy/hoàn) do job giá vốn tính hằng đêm. */
+export async function econSummary(shopId: number): Promise<EconSummary | null> {
+  const { data } = await db().from("autopilot_settings").select("econ_summary").eq("shop_id", shopId).maybeSingle();
+  return (data?.econ_summary ?? null) as EconSummary | null;
 }
 
 /**
