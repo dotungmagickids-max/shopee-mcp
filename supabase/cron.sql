@@ -2,14 +2,16 @@
 -- KHÔNG nằm trong migrations/ vì chứa JOB_SECRET: chạy tay một lần trong Supabase → SQL Editor.
 --
 -- 1. Database → Extensions: bật pg_cron và pg_net (hoặc chạy 2 dòng create extension dưới).
--- 2. Thay <JOB_SECRET> bằng giá trị JOB_SECRET đã đặt trên Vercel, rồi chạy cả file.
+-- 2. Chạy cả file. JOB_SECRET được tạo ngẫu nhiên ngay trong Vault (không ai phải gõ tay),
+--    rồi lấy ra đặt lên Vercel:
+--      select decrypted_secret from vault.decrypted_secrets where name = 'autopilot_job_secret';
 -- pg_cron trên Supabase chạy theo giờ UTC: 0h giờ VN = 17h UTC hôm trước.
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
 -- Lưu secret trong Vault thay vì viết thẳng vào lệnh cron.
-select vault.create_secret('<JOB_SECRET>', 'autopilot_job_secret')
+select vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'autopilot_job_secret')
 where not exists (select 1 from vault.secrets where name = 'autopilot_job_secret');
 
 create or replace function public.autopilot_call(path text) returns bigint

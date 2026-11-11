@@ -48,7 +48,8 @@ Supabase → SQL Editor → dán và chạy `supabase/migrations/0003_autopilot.
 (Hoặc `npm run db:migrate` nếu có `SUPABASE_DB_URL`.) Chạy lại nhiều lần không sao.
 
 ### 3. Lịch chạy
-Mở `supabase/cron.sql`, thay `<JOB_SECRET>` bằng đúng giá trị ở bước 1, chạy trong SQL Editor.
+Chạy `supabase/cron.sql` trong SQL Editor. File tự tạo `JOB_SECRET` ngẫu nhiên trong Supabase Vault;
+lấy giá trị đó (câu lệnh ghi ở đầu file) đặt vào biến `JOB_SECRET` trên Vercel.
 Nếu Supabase báo thiếu extension: Database → Extensions → bật `pg_cron`, `pg_net`.
 
 ### 4. Webhook Telegram
