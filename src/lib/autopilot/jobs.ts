@@ -13,8 +13,10 @@ import {
 import { shops, type ShopConf } from "./config";
 import { ShopeeCallError } from "./shopee-call";
 import { esc, sendAlertOnce, sendTelegram, vnd } from "./telegram";
-import { addDays, vnDate, vnHour } from "./time";
+import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
 import { dayReport } from "./report";
+import { expireOld } from "./actions";
+import { evaluateIntraday, proposeMidnightReset, proposeRoasTargets } from "./rules";
 
 type Step = [name: string, fn: () => Promise<unknown>];
 
@@ -76,7 +78,43 @@ export async function collectJob() {
       steps.push(["orders_yesterday", () => syncOrdersForDay(shop.shopId, y)]);
     }
     steps.push(["alerts", () => checkAlerts(shop)]);
-    results.push(await runSteps("collect", shop, steps));
+    const res = await runSteps("collect", shop, steps);
+    // Luật chỉ chạy khi số liệu vừa thu đầy đủ: thiếu số liệu thì không chỉnh.
+    if (res.ok) {
+      try {
+        (res.stats as Record<string, unknown>).rules = await evaluateIntraday(shop.shopId);
+      } catch (err) {
+        await sendAlertOnce(`rules:${shop.shopId}`, `⚠️ Luật autopilot lỗi — ${esc(shop.name)}: <code>${esc(String(err)).slice(0, 500)}</code>`, 60);
+      }
+    }
+    results.push(res);
+  }
+  await expireOld().catch(() => 0);
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Reset 0h, ROAS mục tiêu hằng ngày, nạp bù lịch sử
+// ---------------------------------------------------------------------------
+
+export async function resetJob() {
+  const results = [];
+  for (const shop of shops()) {
+    results.push(await runSteps("reset", shop, [["reset", () => proposeMidnightReset(shop.shopId)]]));
+  }
+  return results;
+}
+
+/** Nạp bù một ngày: QC toàn shop theo giờ + đơn hàng (đủ chi tiết). */
+export async function backfillJob(date: string) {
+  const results = [];
+  for (const shop of shops()) {
+    results.push(
+      await runSteps("backfill", shop, [
+        ["shop_hourly", () => collectShopHourly(shop.shopId, date)],
+        ["orders", () => syncOrders(shop.shopId, "create_time", vnDayStartUnix(date), vnDayStartUnix(addDays(date, 1)) - 1, 3000)],
+      ])
+    );
   }
   return results;
 }
@@ -85,7 +123,7 @@ export async function collectJob() {
 // Job hằng ngày (01:00). Chia 3 phần để mỗi lần gọi nằm trong giới hạn thời gian.
 // ---------------------------------------------------------------------------
 
-export async function dailyJob(part: "ads" | "orders" | "escrow") {
+export async function dailyJob(part: "ads" | "orders" | "escrow" | "roas") {
   const yesterday = addDays(vnDate(), -1);
   const results = [];
   for (const shop of shops()) {
@@ -103,6 +141,8 @@ export async function dailyJob(part: "ads" | "orders" | "escrow") {
       steps.push(["orders_yesterday", () => syncOrdersForDay(shop.shopId, yesterday)]);
       const now = Math.floor(Date.now() / 1000);
       steps.push(["orders_status_3d", () => syncOrders(shop.shopId, "update_time", now - 3 * 86400, now, 500)]);
+    } else if (part === "roas") {
+      steps.push(["roas_targets", () => proposeRoasTargets(shop.shopId)]);
     } else {
       steps.push(["escrow", async () => syncEscrow(shop.shopId, await escrowCandidates(shop.shopId))]);
     }

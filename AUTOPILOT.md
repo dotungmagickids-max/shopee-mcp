@@ -3,8 +3,9 @@
 Phần thêm vào MCP server: tự thu số liệu quảng cáo Shopee 24/7, dashboard `/admin`, báo cáo và cảnh báo Telegram.
 MCP server cũ (`/api/mcp`, trang connect, các tool) giữ nguyên.
 
-**Trạng thái: giai đoạn 1** — chỉ đọc số liệu, xem và báo cáo. Tool **chưa sửa gì** trên Shopee:
-lớp gọi API của autopilot (`src/lib/autopilot/shopee-call.ts`) chặn mọi endpoint ghi.
+**Trạng thái: giai đoạn 2, chế độ đề xuất + DRY-RUN.** Tool đề xuất, anh duyệt trên Telegram/web.
+Khi `AUTOPILOT_DRY_RUN` khác `false`, đề xuất đã duyệt chỉ ghi log (trạng thái `dry_run`), **không gửi gì lên Shopee**.
+Lệnh ghi duy nhất được phép là `ads.edit_manual_product_ads` (xem mục Giai đoạn 2).
 
 ## Chạy như thế nào
 
@@ -18,10 +19,12 @@ Anh Tùng ──► /admin (mật khẩu)   ·   Telegram /status /report /stop
 
 | Lịch (giờ VN) | Job | Việc |
 |---|---|---|
-| mỗi 15 phút | `POST /api/jobs/collect` | Danh sách chiến dịch (làm mới mỗi giờ), hiệu quả theo giờ hôm nay (từng chiến dịch + toàn shop), số dư ví, đơn hôm nay, cảnh báo |
+| mỗi 15 phút | `POST /api/jobs/collect` | Danh sách chiến dịch (làm mới mỗi giờ), hiệu quả theo giờ hôm nay (từng chiến dịch + toàn shop), số dư ví, đơn hôm nay, cảnh báo, rồi **luật trong ngày** (chỉ khi thu đủ số liệu) |
+| 00:00 | `/api/jobs/reset` | Đề xuất reset ngân sách về mức khởi điểm, bật lại chiến dịch tool đã dừng |
 | 01:00 | `/api/jobs/daily?part=ads` | Chốt lại 7 ngày gần nhất (đơn quảng cáo còn được ghi nhận trong 7 ngày), GMV Max cấp shop |
 | 01:05 | `/api/jobs/daily?part=orders` | Đơn hôm qua + cập nhật trạng thái đơn 3 ngày |
 | 01:10 | `/api/jobs/daily?part=escrow` | Tiền về (escrow) các đơn đã hoàn tất |
+| 01:20 | `/api/jobs/daily?part=roas` | Đề xuất ROAS mục tiêu (gộp một tin) |
 | 08:00 | `/api/jobs/report` | Báo cáo sáng gửi Telegram |
 
 Mọi lần chạy ghi vào bảng `job_runs`. Lỗi → Telegram (mỗi loại lỗi tối đa 1 tin/giờ). Lỗi token → dừng job đó ngay.
@@ -99,6 +102,29 @@ view `ads_campaign_daily`, `ads_shop_daily`. Tất cả bật RLS, không policy
   curl -X POST -H "Authorization: Bearer <JOB_SECRET>" https://magickids-shopee.vercel.app/api/jobs/collect
   ```
 
+## Giai đoạn 2: luật và duyệt
+
+**Endpoint sửa.** Chiến dịch GMV Max theo sản phẩm (`ad_type = "manual"`, `bidding_method = "auto"`) sửa qua
+`ads.edit_manual_product_ads` với `edit_action` = `change_budget` (`budget`), `change_roas_target` (`roas_target`), `pause`, `resume`,
+kèm `reference_id` (UUID lưu trong `autopilot_actions`). `ads.edit_gms_item_product_campaign` chỉ thêm/bớt sản phẩm của GMV Max cấp shop,
+không dùng. **Chưa thử thật** — kết quả thử trên 1 chiến dịch nhỏ sẽ ghi vào đây.
+
+**Luật** (`src/lib/autopilot/rules.ts`, tham số sửa ở Cài đặt):
+- *Tăng ngân sách*: đã tiêu ≥ 80% ngân sách ngày **và** ROAS hôm nay ≥ mục tiêu → +20% (ít nhất 50.000đ).
+- *Tạm dừng tới 0h*: trong 3 giờ trọn gần nhất (không tính giờ đang chạy), chi ở ≥ 2 giờ, ≥ 30 click, ≥ 50.000đ, ROAS < 40% mục tiêu.
+- *Reset 0h*: ngân sách > mức khởi điểm → về mức khởi điểm; bật lại chiến dịch tool đã dừng. Chiến dịch **không giới hạn** chỉ đưa vào khi tick “Áp dụng cả chiến dịch không giới hạn”.
+- *ROAS mục tiêu (1h20 sáng)*: 7 ngày D-8…D-2 và 3 ngày D-4…D-2 đều < 80% mục tiêu → nâng mục tiêu +15%; đều > 120% mục tiêu và còn dư ngân sách → hạ 10%. Mỗi lần tối đa ±15%.
+
+**Rào chắn** (`src/lib/autopilot/actions.ts`, kiểm tra lại ngay trước khi gửi):
+dừng khẩn cấp / chế độ tắt → bỏ qua; trần ngân sách mỗi chiến dịch; trần tổng/ngày (ngày thường / ngày sale; ngày đôi 1/1…12/12 tự tính là sale);
+mỗi lần tăng ≤ 30%; số lần chỉnh/chiến dịch/ngày; thời gian chờ 60 phút; đề xuất hết hạn sau 90 phút; dry-run; duyệt nguyên tử (bấm 2 lần chỉ chạy 1 lần);
+không tự thử lại lệnh ghi; lỗi token / rate limit / mạng → **tự dừng shop** và báo Telegram (gỡ bằng `/release`).
+
+**Duyệt**: nút Đồng ý / Bỏ qua trên Telegram và trên `/admin`. Trang Chiến dịch có nút sửa ngân sách, ROAS, tạm dừng/bật lại, loại khỏi tự động.
+Lệnh Telegram: `/pause_all`, `/resume_all` (đều có nút xác nhận), `/mode suggest|off|auto`. Chế độ `auto` chỉ bật được sau ≥ 7 ngày đề xuất.
+
+**Nạp bù lịch sử**: `POST /api/jobs/backfill?date=YYYY-MM-DD` (QC toàn shop theo giờ + đơn của ngày đó).
+
 ## Giai đoạn tiếp theo
-- **GĐ2**: kiểm chứng endpoint sửa ngân sách/ROAS cho GMV Max sản phẩm (ứng viên: `ads.edit_gms_item_product_campaign`) trên 1 chiến dịch nhỏ, **hỏi anh trước**; engine luật, trần cứng, cooldown, dry-run, duyệt bằng nút Telegram; reset 0h.
+- **GĐ2 còn lại**: thử thật `edit_manual_product_ads` trên 1 chiến dịch nhỏ (hỏi anh trước), rồi đặt `AUTOPILOT_DRY_RUN=false`.
 - **GĐ3**: upload giá vốn CSV/XLSX, báo cáo lãi theo ngày/sản phẩm/chiến dịch khớp escrow.

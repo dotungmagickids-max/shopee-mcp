@@ -2,6 +2,7 @@ import { collectCoverage, todayOverview } from "@/lib/autopilot/dashboard";
 import { shops } from "@/lib/autopilot/config";
 import { vnd } from "@/lib/autopilot/telegram";
 import { vnHour } from "@/lib/autopilot/time";
+import { Proposals } from "./proposals";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,8 @@ function fmtTime(iso: string | null | undefined) {
   return new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 }
 
-export default async function Overview() {
+export default async function Overview({ searchParams }: { searchParams: Promise<{ msg?: string }> }) {
+  const { msg } = await searchParams;
   const nowHour = vnHour();
   const [coverage, ...data] = await Promise.all([
     collectCoverage(48),
@@ -33,6 +35,8 @@ export default async function Overview() {
         Số liệu quảng cáo Shopee báo (ROAS cao hơn thực tế ~25%, giờ gần nhất còn tăng do ghi nhận 7 ngày).
         Thu thập 48h qua: {coverage.missing === 0 ? <span className="ok">đủ mọi giờ</span> : <span className="error">thiếu {coverage.missing} giờ</span>}.
       </p>
+      {msg ? <p className="warning">{msg}</p> : null}
+      <Proposals back="/admin" />
       {data.map(({ shop, o }) => {
         const maxExp = Math.max(1, ...o.byHour.map((h) => h.expense));
         return (

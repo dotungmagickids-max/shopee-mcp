@@ -1,25 +1,67 @@
 import { db } from "../supabase";
 
-/** Gửi tin Telegram (HTML). Không có TELEGRAM_BOT_TOKEN/CHAT_ID thì bỏ qua. */
+async function tg(method: string, body: Record<string, unknown>): Promise<any | null> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  return res.json().catch(() => null);
+}
+
+/** Gửi tin Telegram (HTML). Trả về message_id, hoặc null nếu chưa cấu hình / lỗi. */
+export async function sendTelegramMessage(
+  text: string,
+  opts: { chatId?: string | number; replyMarkup?: unknown } = {}
+): Promise<number | null> {
+  const chatId = opts.chatId ?? process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return null;
+  const r = await tg("sendMessage", {
+    chat_id: chatId,
+    text: text.slice(0, 4000),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    ...(opts.replyMarkup ? { reply_markup: opts.replyMarkup } : {}),
+  });
+  return r?.result?.message_id ?? null;
+}
+
 export async function sendTelegram(
   text: string,
   opts: { chatId?: string | number; replyMarkup?: unknown } = {}
 ): Promise<boolean> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = opts.chatId ?? process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return false;
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text.slice(0, 4000),
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      ...(opts.replyMarkup ? { reply_markup: opts.replyMarkup } : {}),
-    }),
-  }).catch(() => null);
-  return !!res?.ok;
+  return (await sendTelegramMessage(text, opts)) != null;
+}
+
+/** Sửa nội dung tin (bỏ nút bấm). */
+export async function editTelegram(messageId: number, text: string): Promise<void> {
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return;
+  await tg("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text.slice(0, 4000),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  });
+}
+
+export async function answerCallback(callbackQueryId: string, text: string): Promise<void> {
+  await tg("answerCallbackQuery", { callback_query_id: callbackQueryId, text: text.slice(0, 190) });
+}
+
+export function approveButtons(actionId: number) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Đồng ý", callback_data: `a:${actionId}` },
+        { text: "✖️ Bỏ qua", callback_data: `r:${actionId}` },
+      ],
+    ],
+  };
 }
 
 /**
