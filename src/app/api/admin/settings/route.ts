@@ -1,0 +1,73 @@
+import { adminFromRequest } from "@/lib/autopilot/admin-auth";
+import { shops } from "@/lib/autopilot/config";
+import { esc, sendTelegram } from "@/lib/autopilot/telegram";
+import { db } from "@/lib/supabase";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * Form POST từ dashboard:
+ *   action=emergency_stop | emergency_release  (toàn bộ shop)
+ *   action=save, shop_id, mode, daily_cap_normal, daily_cap_sale, campaign_cap, max_increase_pct,
+ *          max_edits_per_day, start_budget
+ */
+export async function POST(request: Request) {
+  if (!adminFromRequest(request)) return new Response("unauthorized", { status: 401 });
+  const url = new URL(request.url);
+  const origin = request.headers.get("origin");
+  if (origin && origin !== url.origin) return new Response("bad origin", { status: 403 });
+
+  const form = await request.formData();
+  const action = String(form.get("action") ?? "");
+  const now = new Date().toISOString();
+
+  if (action === "emergency_stop" || action === "emergency_release") {
+    const stop = action === "emergency_stop";
+    const ids = shops().map((s) => s.shopId);
+    await db().from("autopilot_settings").update({ emergency_stop: stop, updated_at: now }).in("shop_id", ids);
+    await log(stop ? "emergency_stop" : "emergency_release", null, null, null);
+    await sendTelegram(stop ? "🛑 <b>DỪNG KHẨN CẤP</b> đã bật trên dashboard: tắt toàn bộ tự động." : "✅ Đã gỡ dừng khẩn cấp trên dashboard.");
+  } else if (action === "save") {
+    const shopId = Number(form.get("shop_id"));
+    if (!shops().some((s) => s.shopId === shopId)) return new Response("bad shop", { status: 400 });
+    const numOrNull = (k: string) => {
+      const v = String(form.get(k) ?? "").replace(/[.,\s]/g, "");
+      return v === "" ? null : Number(v);
+    };
+    const mode = String(form.get("mode"));
+    const { data: before } = await db().from("autopilot_settings").select("*").eq("shop_id", shopId).maybeSingle();
+    const after = {
+      // Giai đoạn 1-2: chưa cho bật auto từ web (phải chạy suggest ≥ 7 ngày trước).
+      mode: mode === "off" ? "off" : "suggest",
+      daily_cap_normal: numOrNull("daily_cap_normal"),
+      daily_cap_sale: numOrNull("daily_cap_sale"),
+      campaign_cap: numOrNull("campaign_cap"),
+      max_increase_pct: Math.min(30, numOrNull("max_increase_pct") ?? 30),
+      max_edits_per_day: numOrNull("max_edits_per_day") ?? 6,
+      start_budget: numOrNull("start_budget") ?? 100000,
+      updated_at: now,
+    };
+    await db().from("autopilot_settings").update(after).eq("shop_id", shopId);
+    await log("settings", shopId, before, after);
+    await sendTelegram(`⚙️ Cài đặt autopilot của shop ${esc(String(shopId))} vừa được sửa trên dashboard.`);
+  } else {
+    return new Response("bad action", { status: 400 });
+  }
+  return Response.redirect(`${url.origin}/admin/settings?saved=1`, 303);
+}
+
+async function log(action: string, shopId: number | null, before: unknown, after: unknown) {
+  await db()
+    .from("autopilot_actions")
+    .insert({
+      shop_id: shopId ?? 0,
+      action,
+      before,
+      after,
+      reason: "Sửa trên dashboard",
+      source: "admin",
+      status: "executed",
+      executed_at: new Date().toISOString(),
+    });
+}

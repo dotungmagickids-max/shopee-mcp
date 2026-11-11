@@ -1,0 +1,231 @@
+import { db } from "../supabase";
+import {
+  collectBalance,
+  collectCampaignHourly,
+  collectGmsDaily,
+  collectShopHourly,
+  escrowCandidates,
+  refreshCampaigns,
+  syncEscrow,
+  syncOrders,
+  syncOrdersForDay,
+} from "./collect";
+import { shops, type ShopConf } from "./config";
+import { ShopeeCallError } from "./shopee-call";
+import { esc, sendAlertOnce, sendTelegram, vnd } from "./telegram";
+import { addDays, vnDate, vnHour } from "./time";
+import { dayReport } from "./report";
+
+type Step = [name: string, fn: () => Promise<unknown>];
+
+/**
+ * Chạy các bước của một job cho một shop, ghi job_runs. Một bước lỗi không chặn bước khác,
+ * trừ lỗi xác thực (token): dừng ngay và báo Telegram.
+ */
+async function runSteps(job: string, shop: ShopConf, steps: Step[]) {
+  const { data: run } = await db().from("job_runs").insert({ job, shop_id: shop.shopId }).select("id").single();
+  const stats: Record<string, unknown> = {};
+  const errors: string[] = [];
+  for (const [name, fn] of steps) {
+    try {
+      stats[name] = await fn();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${name}: ${msg}`);
+      if (err instanceof ShopeeCallError && err.kind === "auth") break;
+    }
+  }
+  const ok = errors.length === 0;
+  if (run) {
+    await db()
+      .from("job_runs")
+      .update({ finished_at: new Date().toISOString(), ok, error: ok ? null : errors.join("\n").slice(0, 4000), stats })
+      .eq("id", run.id);
+  }
+  if (!ok) {
+    await sendAlertOnce(
+      `job:${job}:${shop.shopId}`,
+      `⚠️ <b>Job ${esc(job)} lỗi</b> — ${esc(shop.name)} (${shop.shopId})\n<code>${esc(errors.join("\n").slice(0, 1500))}</code>\nTool sẽ không tự chỉnh quảng cáo cho tới khi hết lỗi.`,
+      60
+    );
+  }
+  return { shop_id: shop.shopId, ok, errors, stats };
+}
+
+// ---------------------------------------------------------------------------
+// Job 15 phút
+// ---------------------------------------------------------------------------
+
+export async function collectJob() {
+  const today = vnDate();
+  const hour = vnHour();
+  const results = [];
+  for (const shop of shops()) {
+    const steps: Step[] = [
+      ["campaigns", () => refreshCampaigns(shop.shopId)],
+      ["campaign_hourly", () => collectCampaignHourly(shop.shopId, today)],
+      ["shop_hourly", () => collectShopHourly(shop.shopId, today)],
+      ["balance", () => collectBalance(shop.shopId)],
+      ["orders_today", () => syncOrdersForDay(shop.shopId, today)],
+    ];
+    // Đầu ngày: chốt nốt giờ cuối của hôm qua.
+    if (hour === 0) {
+      const y = addDays(today, -1);
+      steps.push(["campaign_hourly_yesterday", () => collectCampaignHourly(shop.shopId, y)]);
+      steps.push(["shop_hourly_yesterday", () => collectShopHourly(shop.shopId, y)]);
+      steps.push(["orders_yesterday", () => syncOrdersForDay(shop.shopId, y)]);
+    }
+    steps.push(["alerts", () => checkAlerts(shop)]);
+    results.push(await runSteps("collect", shop, steps));
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Job hằng ngày (01:00). Chia 3 phần để mỗi lần gọi nằm trong giới hạn thời gian.
+// ---------------------------------------------------------------------------
+
+export async function dailyJob(part: "ads" | "orders" | "escrow") {
+  const yesterday = addDays(vnDate(), -1);
+  const results = [];
+  for (const shop of shops()) {
+    const steps: Step[] = [];
+    if (part === "ads") {
+      steps.push(["campaigns", () => refreshCampaigns(shop.shopId, 0)]);
+      // Ghi nhận đơn kéo dài 7 ngày: lấy lại 7 ngày gần nhất để ROAS lịch sử được cập nhật.
+      for (let d = 1; d <= 7; d++) {
+        const date = addDays(vnDate(), -d);
+        steps.push([`shop_hourly_${date}`, () => collectShopHourly(shop.shopId, date)]);
+        steps.push([`campaign_hourly_${date}`, async () => collectCampaignHourly(shop.shopId, date, await campaignsOnDate(shop.shopId, date))]);
+      }
+      steps.push(["gms_daily", () => collectGmsDaily(shop.shopId, yesterday)]);
+    } else if (part === "orders") {
+      steps.push(["orders_yesterday", () => syncOrdersForDay(shop.shopId, yesterday)]);
+      const now = Math.floor(Date.now() / 1000);
+      steps.push(["orders_status_3d", () => syncOrders(shop.shopId, "update_time", now - 3 * 86400, now, 500)]);
+    } else {
+      steps.push(["escrow", async () => syncEscrow(shop.shopId, await escrowCandidates(shop.shopId))]);
+    }
+    results.push(await runSteps(`daily_${part}`, shop, steps));
+  }
+  return results;
+}
+
+/** Chiến dịch đang chạy + chiến dịch đã có số liệu ngày đó (có thể đã dừng sau đó). */
+async function campaignsOnDate(shopId: number, date: string): Promise<number[]> {
+  const ids = new Set<number>();
+  const { data: active } = await db()
+    .from("ads_campaigns")
+    .select("campaign_id")
+    .eq("shop_id", shopId)
+    .in("campaign_status", ["ongoing", "paused", "scheduled"]);
+  for (const r of active ?? []) ids.add(Number(r.campaign_id));
+  const { data: had } = await db()
+    .from("ads_campaign_hourly")
+    .select("campaign_id")
+    .eq("shop_id", shopId)
+    .eq("date", date)
+    .gt("impression", 0);
+  for (const r of had ?? []) ids.add(Number(r.campaign_id));
+  return [...ids];
+}
+
+// ---------------------------------------------------------------------------
+// Cảnh báo
+// ---------------------------------------------------------------------------
+
+export async function checkAlerts(shop: ShopConf) {
+  const today = vnDate();
+  const hour = vnHour();
+  const out: Record<string, unknown> = {};
+
+  // 1. Số dư ví sắp hết: dự báo theo tốc độ tiêu.
+  const { data: snaps } = await db()
+    .from("ads_balance_snapshots")
+    .select("total_balance, created_at")
+    .eq("shop_id", shop.shopId)
+    .gte("created_at", new Date(Date.now() - 80 * 60_000).toISOString())
+    .order("created_at", { ascending: true });
+  const { data: hours } = await db()
+    .from("ads_shop_hourly")
+    .select("hour, expense")
+    .eq("shop_id", shop.shopId)
+    .eq("date", today);
+  const expenseByHour = new Map((hours ?? []).map((h) => [h.hour, Number(h.expense)]));
+  const lastFullHour = hour > 0 ? expenseByHour.get(hour - 1) ?? 0 : 0;
+  let burnPerHour = lastFullHour;
+  if (snaps && snaps.length >= 2) {
+    const first = snaps[0];
+    const last = snaps[snaps.length - 1];
+    const hrs = (Date.parse(last.created_at) - Date.parse(first.created_at)) / 3_600_000;
+    const drop = Number(first.total_balance) - Number(last.total_balance);
+    if (hrs >= 0.4 && drop > 0) burnPerHour = Math.max(burnPerHour, drop / hrs);
+  }
+  const balance = snaps?.length ? Number(snaps[snaps.length - 1].total_balance) : null;
+  if (balance != null && burnPerHour > 0) {
+    const hoursLeft = balance / burnPerHour;
+    out.hours_left = Math.round(hoursLeft * 10) / 10;
+    if (hoursLeft < 3) {
+      await sendAlertOnce(
+        `balance:${shop.shopId}`,
+        `💸 <b>Ví quảng cáo sắp hết</b> — ${esc(shop.name)}\nSố dư: <b>${vnd(balance)}</b>\nĐang tiêu ~${vnd(burnPerHour)}/giờ → hết sau khoảng <b>${hoursLeft.toFixed(1)} giờ</b>.\n(Tool không tự nạp tiền.)`,
+        90
+      );
+    }
+  }
+
+  // 2. Chi vượt trần ngày (nếu đã cấu hình).
+  const { data: settings } = await db()
+    .from("autopilot_settings")
+    .select("daily_cap_normal")
+    .eq("shop_id", shop.shopId)
+    .maybeSingle();
+  const spent = [...expenseByHour.values()].reduce((a, b) => a + b, 0);
+  out.spent_today = spent;
+  const cap = settings?.daily_cap_normal ? Number(settings.daily_cap_normal) : null;
+  if (cap && spent > cap) {
+    await sendAlertOnce(
+      `overcap:${shop.shopId}:${today}`,
+      `🚨 <b>Chi quảng cáo vượt trần ngày</b> — ${esc(shop.name)}\nĐã chi ${vnd(spent)} / trần ${vnd(cap)}.`,
+      24 * 60
+    );
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Báo cáo sáng 8h
+// ---------------------------------------------------------------------------
+
+export async function morningReportJob() {
+  const yesterday = addDays(vnDate(), -1);
+  const parts: string[] = [`☀️ <b>Báo cáo ngày ${yesterday.split("-").reverse().join("/")}</b>`];
+  for (const shop of shops()) {
+    const r = await dayReport(shop.shopId, yesterday);
+    const lines = [
+      `\n<b>${esc(shop.name)}</b> (${shop.shopId})`,
+      `• Đơn hợp lệ: <b>${r.orders}</b> (hủy ${r.cancelled}) — khách trả ${vnd(r.revenue)}`,
+    ];
+    if (r.adExpense > 0) {
+      lines.push(
+        `• Chi QC: <b>${vnd(r.adExpense)}</b> — GMV QC ${vnd(r.adGmv)} — ROAS Shopee <b>${r.roasShopee.toFixed(1)}</b>`,
+        `• Doanh số hợp lệ / chi QC: <b>${r.roasReal.toFixed(1)}</b> — chi phí/đơn QC ${vnd(r.costPerOrder)}`
+      );
+      if (r.gmsExpense > 0) lines.push(`  (trong đó GMV Max cấp shop: ${vnd(r.gmsExpense)})`);
+    } else {
+      lines.push(`• Không chạy quảng cáo`);
+    }
+    if (r.profit != null) {
+      lines.push(`• Lãi sau QC (ước tính): <b>${vnd(r.profit)}</b>${r.profitNote ? ` <i>${esc(r.profitNote)}</i>` : ""}`);
+    } else {
+      lines.push(`• Lãi: <i>chưa có bảng giá vốn</i>`);
+    }
+    if (r.balance != null) lines.push(`• Số dư ví QC: ${vnd(r.balance)}`);
+    parts.push(lines.join("\n"));
+  }
+  const dash = process.env.APP_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
+  if (dash) parts.push(`\n<a href="${dash}/admin">Mở dashboard</a>`);
+  const text = parts.join("\n");
+  const sent = await sendTelegram(text);
+  return { sent, text };
+}
