@@ -86,6 +86,8 @@ export function econFrom(
 export interface EconSummary {
   fees: FeeStats;
   cancel_rate: number;
+  cancel_before_ship_rate?: number;
+  failed_delivery_rate?: number;
   return_rate: number;
   return_back_rate: number;
   return_source: "returns" | "status";
@@ -188,6 +190,8 @@ export async function computeEconomics(shopId: number) {
   const summary: EconSummary = {
     fees,
     cancel_rate: r3(rates.cancel),
+    cancel_before_ship_rate: r3(rates.cancelBeforeShip),
+    failed_delivery_rate: r3(rates.failedDelivery),
     return_rate: r3(rates.ret),
     return_back_rate: r3(rates.retBack),
     return_source: rates.source,

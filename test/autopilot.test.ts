@@ -644,8 +644,13 @@ describe("profit from Pancake costs", () => {
     const old = Math.floor(Date.now() / 1000) - 20 * 86400;
     const statuses = ["CANCELLED", "CANCELLED", "TO_RETURN", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "UNPAID"];
     statuses.forEach((st, i) => tables.orders.push({ shop_id: 111, order_sn: `O${i}`, create_time: old, order_status: st, items: [] }));
+    tables.orders.find((o) => o.order_sn === "O0")!.pickup_done_time = old + 3600; // giao thất bại
+    // Hủy vì không thanh toán: không tính là đơn đã đặt.
+    tables.orders.push({ shop_id: 111, order_sn: "OU", create_time: old, order_status: "CANCELLED", cancel_reason: "Unpaid Order", items: [] });
     seedCampaign({ roas_target: 10 });
     await profit.computeEconomics(111);
+    const s0 = tables.autopilot_settings[0].econ_summary;
+    assert.deepEqual([s0.cancel_rate, s0.cancel_before_ship_rate, s0.failed_delivery_rate], [0.2, 0.1, 0.1]);
     const econ = tables.ads_campaigns[0].econ;
     // tiền về 69%, hủy 2/10, hoàn 2/8 (1 TO_RETURN + 1 hoàn tiền); giữ = 0,8 × 0,75 = 0,6
     // margin = 0,6 × (0,69 − 0,4) = 0,174 → hòa vốn 5,7; theo lãi 1/(0,174 − 0,06) = 8,8

@@ -87,7 +87,9 @@ export interface ItemReturn {
 }
 
 export interface Rates {
-  cancel: number; // đơn hủy / đơn đã đặt
+  cancel: number; // đơn hủy / đơn đã đặt (= hủy ngang + giao thất bại)
+  cancelBeforeShip: number; // hủy trước khi giao vận chuyển / đơn đã đặt
+  failedDelivery: number; // đã lấy hàng rồi giao thất bại / đơn đã đặt
   ret: number; // tiền hoàn / giá bán của đơn không hủy
   retBack: number; // phần tiền hoàn có hàng gửi về shop (thu hồi giá vốn) / giá bán
   orders: number;
@@ -107,11 +109,17 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
   const now = Math.floor(Date.now() / 1000);
   const from = now - 45 * 86400;
   const to = now - 10 * 86400;
-  const rows: { order_sn: string; order_status: string | null; items: any[] | null }[] = [];
+  const rows: {
+    order_sn: string;
+    order_status: string | null;
+    items: any[] | null;
+    cancel_reason?: string | null;
+    pickup_done_time?: number | null;
+  }[] = [];
   for (let page = 0; page < 30; page++) {
     const { data, error } = await db()
       .from("orders")
-      .select("order_sn, order_status, items")
+      .select("order_sn, order_status, items, cancel_reason, pickup_done_time")
       .eq("shop_id", shopId)
       .gte("create_time", from)
       .lt("create_time", to)
@@ -120,10 +128,14 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
     rows.push(...((data ?? []) as any[]));
     if (!data || data.length < 1000) break;
   }
-  const placed = rows.filter((o) => o.order_status !== "UNPAID");
+  // Đơn hủy vì không thanh toán chưa bao giờ là đơn thật: bỏ khỏi mẫu như UNPAID.
+  const placed = rows.filter((o) => o.order_status !== "UNPAID" && o.cancel_reason !== "Unpaid Order");
   const cancelled = placed.filter((o) => CANCEL_STATUSES.includes(o.order_status ?? ""));
+  const failed = cancelled.filter((o) => Number(o.pickup_done_time ?? 0) > 0 || o.cancel_reason === "Failed Delivery");
   const kept = placed.filter((o) => !CANCEL_STATUSES.includes(o.order_status ?? ""));
   const cancel = placed.length ? cancelled.length / placed.length : 0;
+  const failedDelivery = placed.length ? failed.length / placed.length : 0;
+  const cancelBeforeShip = cancel - failedDelivery;
 
   const { count: haveReturns } = await db()
     .from("shopee_returns")
@@ -161,6 +173,8 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
     }
     return {
       cancel,
+      cancelBeforeShip,
+      failedDelivery,
       ret: selling ? Math.min(1, refund / selling) : 0,
       retBack: selling ? Math.min(1, back / selling) : 0,
       orders: placed.length,
@@ -183,5 +197,5 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
   }
   const returned = kept.filter((o) => RETURN_STATUSES.includes(o.order_status ?? "") || refunded.has(o.order_sn)).length;
   const ret = kept.length ? returned / kept.length : 0;
-  return { cancel, ret, retBack: ret, orders: placed.length, source: "status", items: new Map(), reasons: [] };
+  return { cancel, cancelBeforeShip, failedDelivery, ret, retBack: ret, orders: placed.length, source: "status", items: new Map(), reasons: [] };
 }
