@@ -17,6 +17,7 @@ import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
 import { dayReport } from "./report";
 import { expireOld } from "./actions";
 import { evaluateIntraday, proposeCapsForUnlimited, proposeMidnightReset, proposeRoasTargets } from "./rules";
+import { proposeRefresh } from "./refresh";
 
 type Step = [name: string, fn: () => Promise<unknown>];
 
@@ -105,6 +106,15 @@ export async function resetJob() {
   return results;
 }
 
+/** Rà chiến dịch cần làm mới (7h sáng thứ Hai). */
+export async function refreshJob() {
+  const results = [];
+  for (const shop of shops()) {
+    results.push(await runSteps("refresh", shop, [["refresh", () => proposeRefresh(shop.shopId)]]));
+  }
+  return results;
+}
+
 /** Đề xuất hạn mức cho chiến dịch không giới hạn (chạy tay hoặc từ dashboard). */
 export async function capsJob() {
   const results = [];
@@ -121,6 +131,7 @@ export async function backfillJob(date: string) {
     results.push(
       await runSteps("backfill", shop, [
         ["shop_hourly", () => collectShopHourly(shop.shopId, date)],
+        ["campaign_hourly", async () => collectCampaignHourly(shop.shopId, date, await campaignsOnDate(shop.shopId, date))],
         ["orders", () => syncOrders(shop.shopId, "create_time", vnDayStartUnix(date), vnDayStartUnix(addDays(date, 1)) - 1, 3000)],
       ])
     );

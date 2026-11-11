@@ -3,9 +3,12 @@ import { isDryRun, shopName } from "./config";
 import { automationBlocked, dailyCap, loadSettings, type ShopSettings } from "./settings";
 import { callShopee, ShopeeCallError } from "./shopee-call";
 import { approveButtons, editTelegram, esc, sendTelegram, sendTelegramMessage, vnd } from "./telegram";
-import { vnDate, vnDayStartUnix } from "./time";
+import { apiDate, vnDate, vnDayStartUnix } from "./time";
 
-export type ActionKind = "change_budget" | "change_roas_target" | "pause" | "resume";
+export type ActionKind = "change_budget" | "change_roas_target" | "pause" | "resume" | "refresh";
+
+/** Tạo chiến dịch GMV Max theo sản phẩm (đặt giá thầu tự động). */
+export const CREATE_ENDPOINT = "ads.create_manual_product_ads";
 
 /** Endpoint sửa chiến dịch sản phẩm (GMV Max theo sản phẩm: ad_type "manual", bidding auto). */
 export const EDIT_ENDPOINT = "ads.edit_manual_product_ads";
@@ -35,6 +38,7 @@ export interface ActionRow {
   parent_id: number | null;
   expires_at: string | null;
   telegram_message_id: number | null;
+  decided_by?: string | null;
   created_at: string;
 }
 
@@ -63,6 +67,10 @@ export function describeChange(action: string, before: any, after: any): string 
       return `<b>Tạm dừng</b>${after?.until_midnight ? " tới 0h" : ""}`;
     case "resume":
       return `<b>Bật lại</b>`;
+    case "refresh":
+      return `<b>Làm mới</b>: dừng hẳn, tạo chiến dịch mới NS ${vnd(after?.budget)}, ROAS ${after?.roas_target ?? "-"}${
+        after?.why ? ` <i>(${esc(after.why)})</i>` : ""
+      }${after?.new_campaign_id ? ` → #${after.new_campaign_id}` : ""}`;
     default:
       return action;
   }
@@ -327,6 +335,8 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
     return { status: await finish(row, "skipped", `Đã chỉnh ${s.max_edits_per_day} lần hôm nay`) };
   }
 
+  if (row.action === "refresh") return executeRefresh(row);
+
   // Shopee trả error_server khi sửa ngân sách/ROAS của chiến dịch đang tạm dừng (thử 11/11/2026).
   if (row.action === "change_budget" || row.action === "change_roas_target") {
     const { data: camp } = await db()
@@ -406,6 +416,94 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
     campaign_budget: patch.campaign_budget ?? null,
     roas_target: patch.roas_target ?? null,
   });
+  return { status: await finish(row, "executed", null, after) };
+}
+
+/**
+ * Làm mới: dừng hẳn chiến dịch cũ (không hoàn tác được) rồi tạo chiến dịch GMV Max mới cho cùng sản phẩm.
+ * Không bao giờ chạy ở chế độ auto: phải có người duyệt.
+ */
+async function executeRefresh(row: ActionRow): Promise<{ status: string; halted?: boolean }> {
+  if (row.decided_by === "auto") return { status: await finish(row, "skipped", "Làm mới chiến dịch luôn cần anh duyệt") };
+  const itemId = Number(row.after?.item_id);
+  const budget = Number(row.after?.budget);
+  if (!itemId || !(budget > 0)) return { status: await finish(row, "skipped", "Thiếu item_id hoặc ngân sách") };
+  const { data: camp } = await db()
+    .from("ads_campaigns")
+    .select("campaign_status, ad_name")
+    .eq("shop_id", row.shop_id)
+    .eq("campaign_id", row.campaign_id)
+    .maybeSingle();
+  if (camp?.campaign_status !== "ongoing") {
+    return { status: await finish(row, "skipped", "Chiến dịch không còn ở trạng thái đang chạy") };
+  }
+  if (isDryRun()) return { status: await finish(row, "dry_run", null) };
+
+  // reference_id riêng cho lệnh tạo, lưu trước khi gửi để không bao giờ tạo trùng.
+  const createRef = row.after?.create_reference_id ?? crypto.randomUUID();
+  let after = { ...row.after, create_reference_id: createRef };
+  await db().from("autopilot_actions").update({ after }).eq("id", row.id);
+
+  if (!row.after?.stopped) {
+    try {
+      await callShopee(row.shop_id, EDIT_ENDPOINT, { reference_id: row.reference_id, campaign_id: row.campaign_id, edit_action: "stop" }, { allowWrite: true });
+    } catch (err) {
+      const e = err instanceof ShopeeCallError ? err : new ShopeeCallError(String(err), "network");
+      await finish(row, "failed", `Dừng chiến dịch cũ lỗi: ${e.message.slice(0, 400)}`, after);
+      if (e.kind !== "api") {
+        await halt(row.shop_id, `Lỗi ${e.kind} khi dừng chiến dịch #${row.campaign_id}`);
+        return { status: "failed", halted: true };
+      }
+      return { status: "failed" };
+    }
+    after = { ...after, stopped: true };
+    await db().from("autopilot_actions").update({ after }).eq("id", row.id);
+    await db().from("ads_campaigns").update({ campaign_status: "ended", updated_at: new Date().toISOString() }).eq("shop_id", row.shop_id).eq("campaign_id", row.campaign_id);
+  }
+
+  let newId: number | null = null;
+  try {
+    const params: Record<string, unknown> = {
+      reference_id: createRef,
+      budget,
+      start_date: apiDate(vnDate()),
+      bidding_method: "auto",
+      item_id: itemId,
+    };
+    if (row.after?.roas_target) params.roas_target = Number(row.after.roas_target);
+    const res = await callShopee(row.shop_id, CREATE_ENDPOINT, params, { allowWrite: true });
+    const r = Array.isArray(res.response) ? res.response[0] : res.response;
+    newId = r?.campaign_id ? Number(r.campaign_id) : null;
+  } catch (err) {
+    const e = err instanceof ShopeeCallError ? err : new ShopeeCallError(String(err), "network");
+    await finish(row, "failed", `ĐÃ DỪNG chiến dịch cũ nhưng TẠO MỚI LỖI: ${e.message.slice(0, 300)}`, after);
+    await sendTelegram(
+      `🚨 <b>Sản phẩm đang không có quảng cáo</b> — ${esc(shopName(row.shop_id))}\n${esc(camp?.ad_name ?? "")}\nĐã dừng chiến dịch #${row.campaign_id} nhưng tạo chiến dịch mới lỗi:\n<code>${esc(e.message.slice(0, 300))}</code>\nAnh tạo lại trên Shopee giúp em.`
+    );
+    if (e.kind !== "api") {
+      await halt(row.shop_id, `Lỗi ${e.kind} khi tạo chiến dịch mới cho sản phẩm ${itemId}`);
+      return { status: "failed", halted: true };
+    }
+    return { status: "failed" };
+  }
+
+  after = { ...after, new_campaign_id: newId };
+  if (newId) {
+    await db().from("ads_campaigns").upsert({
+      shop_id: row.shop_id,
+      campaign_id: newId,
+      ad_type: "manual",
+      ad_name: camp?.ad_name ?? null,
+      bidding_method: "auto",
+      campaign_placement: "all",
+      campaign_status: "ongoing",
+      campaign_budget: budget,
+      roas_target: row.after?.roas_target ?? null,
+      item_ids: [itemId],
+      start_time: Math.floor(Date.now() / 1000),
+      updated_at: new Date().toISOString(),
+    });
+  }
   return { status: await finish(row, "executed", null, after) };
 }
 

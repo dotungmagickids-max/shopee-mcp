@@ -37,7 +37,8 @@ select cron.schedule('autopilot-daily-orders', '5 18 * * *',   $$select public.a
 select cron.schedule('autopilot-daily-escrow', '10 18 * * *',  $$select public.autopilot_call('/api/jobs/daily?part=escrow')$$); -- 01:10 VN
 select cron.schedule('autopilot-reset',        '0 17 * * *',   $$select public.autopilot_call('/api/jobs/reset')$$);             -- 00:00 VN
 select cron.schedule('autopilot-daily-roas',   '20 18 * * *',  $$select public.autopilot_call('/api/jobs/daily?part=roas')$$);   -- 01:20 VN
-select cron.schedule('autopilot-report',      '0 1 * * *',    $$select public.autopilot_call('/api/jobs/report')$$);            -- 08:00 VN
+select cron.schedule('autopilot-refresh',      '0 0 * * 1',    $$select public.autopilot_call('/api/jobs/refresh')$$);           -- Thứ Hai 07:00 VN
+select cron.schedule('autopilot-report',     '0 1 * * *',    $$select public.autopilot_call('/api/jobs/report')$$);            -- 08:00 VN
 
 -- Dọn bảng phụ hằng tuần (giữ 30 ngày job_runs, 14 ngày snapshot ví, 7 ngày phản hồi pg_net).
 select cron.schedule('autopilot-cleanup', '30 19 * * 0', $$

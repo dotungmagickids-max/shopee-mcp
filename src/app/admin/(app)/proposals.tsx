@@ -7,6 +7,7 @@ function change(action: string, before: any, after: any): string {
   if (action === "change_roas_target") return `ROAS mục tiêu ${before?.roas_target ?? "-"} → ${after?.roas_target}`;
   if (action === "pause") return `Tạm dừng${after?.until_midnight ? " tới 0h" : ""}`;
   if (action === "resume") return "Bật lại";
+  if (action === "refresh") return `Làm mới: dừng hẳn, tạo chiến dịch mới NS ${vnd(after?.budget)}, ROAS ${after?.roas_target ?? "-"}`;
   return action;
 }
 

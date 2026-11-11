@@ -124,6 +124,14 @@ Giữ `AUTOPILOT_DRY_RUN=true` cho tới khi có cách sửa được xác nhậ
 - *Hạn mức cho chiến dịch không giới hạn*: nút “Đề xuất hạn mức” trên trang Chiến dịch (hoặc `POST /api/jobs/caps`) → đề xuất gộp,
   hạn mức = chi trung bình/ngày của 7 ngày thường gần nhất, làm tròn lên 10k, thấp nhất mức khởi điểm.
 - *Reset 0h*: ngân sách > mức khởi điểm → về mức khởi điểm; bật lại chiến dịch tool đã dừng. Chiến dịch **không giới hạn** chỉ đưa vào khi tick “Áp dụng cả chiến dịch không giới hạn”.
+- *Làm mới chiến dịch* (`src/lib/autopilot/refresh.ts`, 7h sáng thứ Hai hoặc nút “Rà chiến dịch cần làm mới”): xét 14 ngày D-15…D-2,
+  chiến dịch GMV Max đã chạy ≥ 7 ngày và đang chạy:
+  *không chạy* (5 ngày gần nhất ngày nào cũng chi < 10k), *có click không ra đơn* (≥ 80 click, 0 đơn), *kém kéo dài* (chi ≥ 500k, ROAS < 50% mục tiêu).
+  Kiểm tra sản phẩm trước (`product.get_item_base_info`): hết hàng / không ở trạng thái NORMAL thì không làm mới mà báo anh xem sản phẩm.
+  Làm mới = `edit_manual_product_ads` `stop` (không hoàn tác) rồi `create_manual_product_ads` (bidding auto, cùng item, ngân sách khởi điểm,
+  ROAS mục tiêu giữ mức cũ; chiến dịch không chạy hạ 15%; hiện kèm mức Shopee gợi ý từ `get_product_recommended_roi_target`).
+  **Luôn chờ anh duyệt**, kể cả chế độ auto. Tối đa 5 chiến dịch/tuần, mỗi sản phẩm 1 lần/14 ngày; chiến dịch mới vẫn kém thì không làm mới vòng 2 mà báo xem lại sản phẩm.
+  Nếu dừng xong mà tạo mới lỗi: báo Telegram ngay để anh tạo lại bằng tay. `stop` và `create` **chưa thử thật**.
 - *ROAS mục tiêu (1h20 sáng)*: 7 ngày D-8…D-2 và 3 ngày D-4…D-2 đều < 80% mục tiêu → nâng mục tiêu +15%; đều > 120% mục tiêu và còn dư ngân sách → hạ 10%. Mỗi lần tối đa ±15%.
 
 **Rào chắn** (`src/lib/autopilot/actions.ts`, kiểm tra lại ngay trước khi gửi):
