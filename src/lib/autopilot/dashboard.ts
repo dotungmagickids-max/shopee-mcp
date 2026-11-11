@@ -106,6 +106,8 @@ export interface CampaignRow {
   campaign_budget: number;
   roas_target: number | null;
   item_ids: number[];
+  excluded: boolean;
+  toolPaused: boolean;
   today: { expense: number; gmv: number; orders: number; clicks: number };
   week: { expense: number; gmv: number; orders: number; clicks: number; roas: number };
   verdict: "tăng" | "giữ" | "giảm" | "tắt" | "chờ số liệu";
@@ -120,7 +122,7 @@ export async function campaignsWithRanking(shopId: number, noOrderClicks = 40): 
   const today = vnDate();
   const { data: camps, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, ad_name, campaign_status, bidding_method, campaign_budget, roas_target, item_ids")
+    .select("campaign_id, ad_name, campaign_status, bidding_method, campaign_budget, roas_target, item_ids, autopilot_excluded, tool_paused_at")
     .eq("shop_id", shopId)
     .in("campaign_status", ["ongoing", "paused", "scheduled"])
     .order("campaign_id", { ascending: false });
@@ -186,6 +188,8 @@ export async function campaignsWithRanking(shopId: number, noOrderClicks = 40): 
       campaign_budget: n(c.campaign_budget),
       roas_target: target,
       item_ids: c.item_ids ?? [],
+      excluded: !!c.autopilot_excluded,
+      toolPaused: !!c.tool_paused_at,
       today: a.today,
       week: a.week,
       verdict,
@@ -295,4 +299,44 @@ export async function collectCoverage(hours = 48) {
     if (!buckets.has(key)) missing++;
   }
   return { hours, missing, runs: data?.length ?? 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Đề xuất đang chờ duyệt
+// ---------------------------------------------------------------------------
+
+export async function pendingProposals() {
+  const { data } = await db()
+    .from("autopilot_actions")
+    .select("*")
+    .eq("status", "proposed")
+    .is("parent_id", null)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const rows = data ?? [];
+  const groupIds = rows.filter((r) => r.action === "group").map((r) => r.id);
+  const children = new Map<number, any[]>();
+  if (groupIds.length) {
+    const { data: kids } = await db().from("autopilot_actions").select("*").in("parent_id", groupIds).order("id");
+    for (const k of kids ?? []) {
+      if (!children.has(k.parent_id)) children.set(k.parent_id, []);
+      children.get(k.parent_id)!.push(k);
+    }
+  }
+  const ids = new Set<string>();
+  for (const r of [...rows, ...[...children.values()].flat()]) if (r.campaign_id) ids.add(`${r.shop_id}:${r.campaign_id}`);
+  const names = new Map<string, string>();
+  if (ids.size) {
+    const { data: camps } = await db()
+      .from("ads_campaigns")
+      .select("shop_id, campaign_id, ad_name")
+      .in("campaign_id", [...ids].map((k) => Number(k.split(":")[1])));
+    for (const c of camps ?? []) names.set(`${c.shop_id}:${c.campaign_id}`, c.ad_name ?? "");
+  }
+  return rows.map((r) => ({
+    ...r,
+    name: names.get(`${r.shop_id}:${r.campaign_id}`) ?? "",
+    children: (children.get(r.id) ?? []).map((k) => ({ ...k, name: names.get(`${k.shop_id}:${k.campaign_id}`) ?? "" })),
+  }));
 }

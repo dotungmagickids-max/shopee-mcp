@@ -1,6 +1,7 @@
 import { adminFromRequest } from "@/lib/autopilot/admin-auth";
 import { shops } from "@/lib/autopilot/config";
 import { esc, sendTelegram } from "@/lib/autopilot/telegram";
+import { DEFAULT_RULE_PARAMS, suggestDays } from "@/lib/autopilot/settings";
 import { db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
   if (action === "emergency_stop" || action === "emergency_release") {
     const stop = action === "emergency_stop";
     const ids = shops().map((s) => s.shopId);
-    await db().from("autopilot_settings").update({ emergency_stop: stop, updated_at: now }).in("shop_id", ids);
+    await db().from("autopilot_settings").update({ emergency_stop: stop, halt_reason: null, updated_at: now }).in("shop_id", ids);
     await log(stop ? "emergency_stop" : "emergency_release", null, null, null);
     await sendTelegram(stop ? "🛑 <b>DỪNG KHẨN CẤP</b> đã bật trên dashboard: tắt toàn bộ tự động." : "✅ Đã gỡ dừng khẩn cấp trên dashboard.");
   } else if (action === "save") {
@@ -35,17 +36,37 @@ export async function POST(request: Request) {
       const v = String(form.get(k) ?? "").replace(/[.,\s]/g, "");
       return v === "" ? null : Number(v);
     };
-    const mode = String(form.get("mode"));
+    const decimal = (k: string) => {
+      const v = String(form.get(k) ?? "").trim().replace(",", ".");
+      return v === "" ? null : Number(v);
+    };
+    const wantMode = String(form.get("mode"));
+    // Chỉ bật auto khi đã chạy đề xuất ≥ 7 ngày.
+    const mode =
+      wantMode === "off" ? "off" : wantMode === "auto" && (await suggestDays(shopId)) >= 7 ? "auto" : "suggest";
     const { data: before } = await db().from("autopilot_settings").select("*").eq("shop_id", shopId).maybeSingle();
+    const params: Record<string, number> = {};
+    for (const key of Object.keys(DEFAULT_RULE_PARAMS) as (keyof typeof DEFAULT_RULE_PARAMS)[]) {
+      const v = decimal(`p_${key}`);
+      if (v != null && Number.isFinite(v) && v !== DEFAULT_RULE_PARAMS[key]) params[key] = v;
+    }
+    if (params.cut_window_hours != null) params.cut_window_hours = Math.max(3, params.cut_window_hours);
+    if (params.roas_max_change_pct != null) params.roas_max_change_pct = Math.min(15, params.roas_max_change_pct);
+    const saleDates = String(form.get("sale_dates") ?? "")
+      .split(/[\s,;]+/)
+      .map((d) => d.trim())
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
     const after = {
-      // Giai đoạn 1-2: chưa cho bật auto từ web (phải chạy suggest ≥ 7 ngày trước).
-      mode: mode === "off" ? "off" : "suggest",
+      mode,
       daily_cap_normal: numOrNull("daily_cap_normal"),
       daily_cap_sale: numOrNull("daily_cap_sale"),
       campaign_cap: numOrNull("campaign_cap"),
       max_increase_pct: Math.min(30, numOrNull("max_increase_pct") ?? 30),
       max_edits_per_day: numOrNull("max_edits_per_day") ?? 6,
       start_budget: numOrNull("start_budget") ?? 100000,
+      reset_unlimited: form.get("reset_unlimited") === "on",
+      sale_dates: saleDates,
+      rule_params: params,
       updated_at: now,
     };
     await db().from("autopilot_settings").update(after).eq("shop_id", shopId);

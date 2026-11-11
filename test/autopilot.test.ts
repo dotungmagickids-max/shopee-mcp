@@ -12,12 +12,18 @@ process.env.SHOPEE_PARTNER_KEY = "partner-key";
 process.env.TOKEN_ENC_KEY = "test-encryption-key-0123456789abcdef";
 process.env.JOB_SECRET = "job-secret";
 process.env.AUTOPILOT_SHOPS = "111:Shop A";
-delete process.env.TELEGRAM_BOT_TOKEN;
+process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+process.env.TELEGRAM_CHAT_ID = "42";
+process.env.TELEGRAM_WEBHOOK_SECRET = "wh-secret";
+delete process.env.AUTOPILOT_DRY_RUN;
 
 type Row = Record<string, any>;
 let tables: Record<string, Row[]>;
 let shopeeCalls: string[];
 let refreshCalls = 0;
+let telegramCalls: { method: string; body: any }[] = [];
+let seq = 0;
+let editBodies: any[] = [];
 
 function reset() {
   tables = {
@@ -30,11 +36,14 @@ function reset() {
     orders: [],
     job_runs: [],
     alert_state: [],
-    autopilot_settings: [{ shop_id: 111, daily_cap_normal: null }],
+    autopilot_settings: [{ shop_id: 111, daily_cap_normal: null, mode: "suggest", emergency_stop: false, max_increase_pct: 30, max_edits_per_day: 6, start_budget: 100000, rule_params: {} }],
+    autopilot_actions: [],
     audit_log: [],
   };
   shopeeCalls = [];
   refreshCalls = 0;
+  telegramCalls = [];
+  editBodies = [];
 }
 
 const json = (body: unknown, status = 200) =>
@@ -49,8 +58,19 @@ const PK: Record<string, string[]> = {
   alert_state: ["key"],
 };
 
+function cmp(a: unknown, b: string): number {
+  const na = Number(a);
+  const nb = Number(b);
+  if (a != null && a !== "" && Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+  return String(a) < b ? -1 : String(a) > b ? 1 : 0;
+}
+
 function match(row: Row, col: string, expr: string): boolean {
   if (expr.startsWith("eq.")) return String(row[col]) === expr.slice(3);
+  if (expr.startsWith("gt.")) return row[col] != null && cmp(row[col], expr.slice(3)) > 0;
+  if (expr.startsWith("lt.")) return row[col] != null && cmp(row[col], expr.slice(3)) < 0;
+  if (expr.startsWith("lte.")) return row[col] != null && cmp(row[col], expr.slice(4)) <= 0;
+  if (expr.startsWith("like.")) return new RegExp("^" + expr.slice(5).replace(/[%*]/g, ".*") + "$").test(String(row[col] ?? ""));
   if (expr.startsWith("in.(")) return expr.slice(4, -1).split(",").map((s) => s.replace(/"/g, "")).includes(String(row[col]));
   if (expr.startsWith("gte.")) return String(row[col]) >= expr.slice(4);
   if (expr === "is.null") return row[col] == null;
@@ -83,6 +103,10 @@ async function fakeSupabase(url: URL, init: RequestInit): Promise<Response> {
   const rows = (tables[table] ??= []);
   const method = init.method ?? "GET";
   const wantsObject = new Headers(init.headers).get("accept")?.includes("vnd.pgrst.object");
+  if (method === "HEAD") {
+    const found = filterRows(rows, url.searchParams);
+    return new Response(null, { status: 200, headers: { "Content-Range": `0-0/${found.length}` } });
+  }
   if (method === "GET") {
     const found = filterRows(rows, url.searchParams);
     return wantsObject ? (found[0] ? json(found[0]) : json(null)) : json(found);
@@ -92,6 +116,13 @@ async function fakeSupabase(url: URL, init: RequestInit): Promise<Response> {
     const items = Array.isArray(body) ? body : [body];
     for (const item of items) {
       if (table === "job_runs" && item.id == null) item.id = rows.length + 1;
+      if (table === "autopilot_actions") {
+        item.id ??= ++seq;
+        item.reference_id ??= `ref-${item.id}`;
+        item.created_at ??= new Date().toISOString();
+        item.parent_id ??= null;
+        item.telegram_message_id ??= null;
+      }
       const pk = PK[table];
       if (pk) {
         const i = rows.findIndex((r) => pk.every((k) => String(r[k]) === String(item[k])));
@@ -132,6 +163,9 @@ function fakeShopee(url: URL, init: RequestInit): Response {
       return ok([{ campaign_list: [{ campaign_id: 1, metrics_list: [{ date: url.searchParams.get("performance_date"), hour: 9, impression: 100, clicks: 5, expense: 20000, broad_order: 1, broad_gmv: 250000, direct_order: 1, direct_gmv: 250000 }] }] }]);
     case "/ads/get_all_cpc_ads_hourly_performance":
       return ok([{ date: url.searchParams.get("performance_date"), hour: 9, impression: 100, clicks: 5, expense: 20000, broad_order: 1, broad_gmv: 250000, direct_order: 1, direct_gmv: 250000 }]);
+    case "/ads/edit_manual_product_ads":
+      editBodies.push(JSON.parse(String(init.body)));
+      return ok([{ campaign_id: 1 }]);
     case "/ads/get_total_balance":
       return ok({ data_timestamp: 1794400000, total_balance: 30000 });
     case "/order/get_order_list":
@@ -148,6 +182,10 @@ globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}
   const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
   if (url.hostname === "supabase.test") return fakeSupabase(url, init);
   if (url.hostname === "partner.shopeemobile.com") return fakeShopee(url, init);
+  if (url.hostname === "api.telegram.org") {
+    telegramCalls.push({ method: url.pathname.split("/").pop()!, body: JSON.parse(String(init.body ?? "{}")) });
+    return json({ ok: true, result: { message_id: 900 + telegramCalls.length } });
+  }
   throw new Error(`Unexpected fetch to ${url}`);
 }) as typeof fetch;
 
@@ -157,6 +195,9 @@ const { collectJob } = await import("../src/lib/autopilot/jobs");
 const { callShopee } = await import("../src/lib/autopilot/shopee-call");
 const jobsRoute = await import("../src/app/api/jobs/[job]/route");
 const time = await import("../src/lib/autopilot/time");
+const actions = await import("../src/lib/autopilot/actions");
+const rules = await import("../src/lib/autopilot/rules");
+const webhook = await import("../src/app/api/telegram/webhook/route");
 
 describe("token encryption", () => {
   beforeEach(reset);
@@ -251,5 +292,132 @@ describe("time helpers", () => {
     assert.equal(time.vnHour(d), 0);
     assert.equal(time.apiDate("2026-11-11"), "11-11-2026");
     assert.equal(time.vnDayStartUnix("2026-11-11"), Date.parse("2026-11-10T17:00:00Z") / 1000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Giai đoạn 2: luật, duyệt, thực thi
+// ---------------------------------------------------------------------------
+
+function seedCampaign(over: Row = {}) {
+  tables.ads_campaigns.push({
+    shop_id: 111,
+    campaign_id: 1,
+    ad_name: "Váy A",
+    campaign_status: "ongoing",
+    bidding_method: "auto",
+    campaign_budget: 100000,
+    roas_target: 10,
+    autopilot_excluded: false,
+    tool_paused_at: null,
+    ...over,
+  });
+}
+
+function seedHour(hour: number, m: Row) {
+  tables.ads_campaign_hourly.push({ shop_id: 111, campaign_id: 1, date: time.vnDate(), hour, impression: 100, clicks: 0, expense: 0, broad_gmv: 0, ...m });
+}
+
+describe("rules and actions", () => {
+  beforeEach(() => {
+    reset();
+    delete process.env.AUTOPILOT_DRY_RUN;
+  });
+
+  it("proposes a budget increase with Telegram buttons, never sending writes in suggest mode", async () => {
+    seedCampaign();
+    seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 1_200_000 });
+    const res = await rules.evaluateIntraday(111);
+    assert.equal(res.proposals, 1);
+    const a = tables.autopilot_actions[0];
+    assert.deepEqual([a.action, a.status, a.before.budget, a.after.budget, a.source], ["change_budget", "proposed", 100000, 150000, "rule:scale_up"]);
+    const msg = telegramCalls.find((t) => t.method === "sendMessage")!;
+    assert.deepEqual(msg.body.reply_markup.inline_keyboard[0].map((b: any) => b.callback_data), [`a:${a.id}`, `r:${a.id}`]);
+    assert.equal(editBodies.length, 0);
+    // Chạy lại ngay: cooldown, không đề xuất trùng.
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
+  });
+
+  it("approves in dry-run without calling Shopee and caps the increase", async () => {
+    seedCampaign();
+    seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 1_200_000 });
+    await rules.evaluateIntraday(111);
+    const a = tables.autopilot_actions[0];
+    const res = await actions.decide(a.id, true, "test");
+    assert.ok(res.ok);
+    assert.equal(a.status, "dry_run");
+    assert.equal(a.after.budget, 130000, "+50% bị giới hạn còn +30%");
+    assert.equal(editBodies.length, 0);
+    assert.ok(telegramCalls.some((t) => t.method === "editMessageText"));
+  });
+
+  it("executes once with reference_id when dry-run is off, even if approved twice", async () => {
+    process.env.AUTOPILOT_DRY_RUN = "false";
+    seedCampaign();
+    seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 1_200_000 });
+    await rules.evaluateIntraday(111);
+    const a = tables.autopilot_actions[0];
+    await Promise.all([actions.decide(a.id, true, "web"), actions.decide(a.id, true, "telegram")]);
+    assert.equal(editBodies.length, 1);
+    assert.deepEqual(editBodies[0], { reference_id: a.reference_id, campaign_id: 1, edit_action: "change_budget", budget: 130000 });
+    assert.equal(a.status, "executed");
+    assert.equal(tables.ads_campaigns[0].campaign_budget, 130000);
+  });
+
+  it("respects campaign cap, daily cap and emergency stop", async () => {
+    process.env.AUTOPILOT_DRY_RUN = "false";
+    seedCampaign({ campaign_budget: 200000 });
+    seedCampaign({ campaign_id: 2, campaign_budget: 300000 });
+    Object.assign(tables.autopilot_settings[0], { campaign_cap: 220000, daily_cap_normal: 600000, daily_cap_sale: 600000 });
+    const s = await (await import("../src/lib/autopilot/settings")).loadSettings(111);
+    assert.equal((await actions.guardBudget(s, 1, 200000, 260000)).budget, 220000);
+    tables.autopilot_settings[0].campaign_cap = null;
+    const s2 = await (await import("../src/lib/autopilot/settings")).loadSettings(111);
+    assert.equal((await actions.guardBudget(s2, 1, 200000, 400000)).budget, 260000, "tối đa +30%");
+    Object.assign(tables.autopilot_settings[0], { daily_cap_normal: 450000, daily_cap_sale: 450000 });
+    const s3 = await (await import("../src/lib/autopilot/settings")).loadSettings(111);
+    assert.equal((await actions.guardBudget(s3, 1, 200000, 260000)).budget, null, "trần tổng: 300k + 200k đã vượt 450k");
+
+    tables.autopilot_settings[0].emergency_stop = true;
+    const row = (await actions.adminChange({ shop_id: 111, campaign_id: 1, action: "pause", before: {}, after: {}, reason: "t", source: "admin" }));
+    assert.equal(row.status, "skipped");
+    assert.equal(editBodies.length, 0);
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
+  });
+
+  it("pauses until midnight only on a full window of poor hours", async (t) => {
+    const hour = time.vnHour();
+    if (hour < 3) return t.skip("cần ≥ 3 giờ trọn trong ngày");
+    seedCampaign({ campaign_budget: 0 });
+    // Chỉ 1 giờ xấu: không phạt.
+    seedHour(hour - 1, { clicks: 40, expense: 80000, broad_gmv: 10000 });
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
+    seedHour(hour - 2, { clicks: 5, expense: 20000, broad_gmv: 0 });
+    seedHour(hour - 3, { clicks: 5, expense: 20000, broad_gmv: 0 });
+    // Khung 3 giờ trọn: 50 click, chi 120k, ROAS ~0,08 < 40% × 10.
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 1);
+    const a = tables.autopilot_actions[0];
+    assert.deepEqual([a.action, a.after.until_midnight, a.source], ["pause", true, "rule:cut"]);
+  });
+
+  it("handles Telegram approve buttons only from the configured chat", async () => {
+    seedCampaign();
+    seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 1_200_000 });
+    await rules.evaluateIntraday(111);
+    const a = tables.autopilot_actions[0];
+    const call = (chat: number, secret = "wh-secret") =>
+      webhook.POST(
+        new Request("https://app.test/api/telegram/webhook", {
+          method: "POST",
+          headers: { "X-Telegram-Bot-Api-Secret-Token": secret },
+          body: JSON.stringify({ callback_query: { id: "cb1", data: `a:${a.id}`, message: { chat: { id: chat } } } }),
+        })
+      );
+    assert.equal((await call(42, "bad")).status, 403);
+    await call(7);
+    assert.equal(a.status, "proposed");
+    await call(42);
+    assert.equal(a.status, "dry_run");
+    assert.ok(telegramCalls.some((t) => t.method === "answerCallbackQuery"));
   });
 });
