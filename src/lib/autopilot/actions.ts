@@ -327,6 +327,19 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
     return { status: await finish(row, "skipped", `Đã chỉnh ${s.max_edits_per_day} lần hôm nay`) };
   }
 
+  // Shopee trả error_server khi sửa ngân sách/ROAS của chiến dịch đang tạm dừng (thử 11/11/2026).
+  if (row.action === "change_budget" || row.action === "change_roas_target") {
+    const { data: camp } = await db()
+      .from("ads_campaigns")
+      .select("campaign_status")
+      .eq("shop_id", row.shop_id)
+      .eq("campaign_id", row.campaign_id)
+      .maybeSingle();
+    if (camp?.campaign_status && camp.campaign_status !== "ongoing") {
+      return { status: await finish(row, "skipped", "Chiến dịch không ở trạng thái đang chạy: Shopee không cho sửa") };
+    }
+  }
+
   const params: Record<string, unknown> = {
     reference_id: row.reference_id,
     campaign_id: row.campaign_id,
@@ -366,7 +379,16 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
 
   // Cập nhật bản sao cục bộ để luật lần sau dùng số mới.
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (row.action === "change_budget") patch.campaign_budget = params.budget;
+  if (row.action === "change_budget") {
+    patch.campaign_budget = params.budget;
+    if (row.after?.throttle) {
+      patch.throttled_at = new Date().toISOString();
+      patch.restore_budget = row.after.restore_budget ?? null;
+    } else if (row.after?.restore) {
+      patch.throttled_at = null;
+      patch.restore_budget = null;
+    }
+  }
   if (row.action === "change_roas_target") patch.roas_target = params.roas_target;
   if (row.action === "pause") {
     patch.campaign_status = "paused";

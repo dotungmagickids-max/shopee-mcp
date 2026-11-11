@@ -77,7 +77,13 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
             </h2>
             {unlimited ? (
               <p className="warning">
-                {unlimited} chiến dịch đang chạy để ngân sách <b>không giới hạn</b> (campaign_budget = 0).
+                {unlimited} chiến dịch đang chạy để ngân sách <b>không giới hạn</b> (campaign_budget = 0).{" "}
+                <form method="post" action="/api/admin/actions" style={{ display: "inline" }}>
+                  <input type="hidden" name="op" value="caps" />
+                  <input type="hidden" name="shop_id" value={shop.shopId} />
+                  <input type="hidden" name="back" value="/admin/campaigns" />
+                  <button type="submit" style={{ padding: "4px 10px", fontSize: 13 }}>Đề xuất hạn mức</button>
+                </form>
               </p>
             ) : null}
             {rows.length === 0 ? (
@@ -121,6 +127,7 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                           <span className={`tag ${TAG[r.verdict] ?? ""}`}>{r.verdict}</span> <span className="muted">{r.reason}</span>
                           {r.excluded ? <> <span className="tag">không tự động</span></> : null}
                           {r.toolPaused ? <> <span className="tag">tool dừng tới 0h</span></> : null}
+                          {r.throttled ? <> <span className="tag giam">đang siết ngân sách</span></> : null}
                         </td>
                         <td><Edit shopId={shop.shopId} r={r} /></td>
                       </tr>

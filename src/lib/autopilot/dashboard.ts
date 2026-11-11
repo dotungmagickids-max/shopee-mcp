@@ -108,6 +108,7 @@ export interface CampaignRow {
   item_ids: number[];
   excluded: boolean;
   toolPaused: boolean;
+  throttled: boolean;
   today: { expense: number; gmv: number; orders: number; clicks: number };
   week: { expense: number; gmv: number; orders: number; clicks: number; roas: number };
   verdict: "tăng" | "giữ" | "giảm" | "tắt" | "chờ số liệu";
@@ -122,7 +123,7 @@ export async function campaignsWithRanking(shopId: number, noOrderClicks = 40): 
   const today = vnDate();
   const { data: camps, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, ad_name, campaign_status, bidding_method, campaign_budget, roas_target, item_ids, autopilot_excluded, tool_paused_at")
+    .select("campaign_id, ad_name, campaign_status, bidding_method, campaign_budget, roas_target, item_ids, autopilot_excluded, tool_paused_at, throttled_at")
     .eq("shop_id", shopId)
     .in("campaign_status", ["ongoing", "paused", "scheduled"])
     .order("campaign_id", { ascending: false });
@@ -190,6 +191,7 @@ export async function campaignsWithRanking(shopId: number, noOrderClicks = 40): 
       item_ids: c.item_ids ?? [],
       excluded: !!c.autopilot_excluded,
       toolPaused: !!c.tool_paused_at,
+      throttled: !!c.throttled_at,
       today: a.today,
       week: a.week,
       verdict,

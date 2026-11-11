@@ -1,5 +1,5 @@
 import { isDryRun, shops } from "@/lib/autopilot/config";
-import { DEFAULT_RULE_PARAMS, loadSettings, suggestDays } from "@/lib/autopilot/settings";
+import { DEFAULT_RULE_PARAMS, formatHours, loadSettings, suggestDays } from "@/lib/autopilot/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,9 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   cut_min_expense: "Tạm dừng: chi tối thiểu trong khung (đ)",
   cut_roas_ratio: "Tạm dừng khi ROAS khung < (tỉ lệ mục tiêu, vd 0,4)",
   cut_roas_floor: "…hoặc < ROAS này nếu không có mục tiêu",
+  cut_day_roas_ratio: "…và ROAS cả ngày < (tỉ lệ mục tiêu, vd 0,6)",
+  throttle_buffer: "Siết: ngân sách = đã chi hôm nay + (đ)",
+  good_hours_weeks: "Khung giờ tốt tính theo (tuần gần nhất)",
   cooldown_minutes: "Thời gian chờ giữa 2 lần chỉnh (phút)",
   proposal_ttl_minutes: "Đề xuất hết hạn sau (phút)",
   roas_low_ratio: "ROAS mục tiêu: nâng khi thực tế < (tỉ lệ, vd 0,8)",
@@ -87,6 +90,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
                 <input name="max_edits_per_day" inputMode="numeric" defaultValue={st.max_edits_per_day} />
                 <label>Ngân sách khởi điểm lúc 0h (đ)</label>
                 <input name="start_budget" inputMode="numeric" defaultValue={st.start_budget} />
+                <label>Khung giờ tốt — nới lại ngân sách đã siết (vd: 0, 8-12, 20-22; trống = tự tính)</label>
+                <input name="good_hours" defaultValue={st.good_hours.length ? formatHours(st.good_hours).replace(/h/g, "").replace(/–/g, "-") : ""} placeholder="0, 8-12, 20-22" />
                 <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input type="checkbox" name="reset_unlimited" defaultChecked={st.reset_unlimited} style={{ width: "auto" }} />
                   Reset 0h áp dụng cả chiến dịch đang <b>không giới hạn</b> ngân sách

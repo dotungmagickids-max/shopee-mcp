@@ -107,11 +107,22 @@ view `ads_campaign_daily`, `ads_shop_daily`. Tất cả bật RLS, không policy
 **Endpoint sửa.** Chiến dịch GMV Max theo sản phẩm (`ad_type = "manual"`, `bidding_method = "auto"`) sửa qua
 `ads.edit_manual_product_ads` với `edit_action` = `change_budget` (`budget`), `change_roas_target` (`roas_target`), `pause`, `resume`,
 kèm `reference_id` (UUID lưu trong `autopilot_actions`). `ads.edit_gms_item_product_campaign` chỉ thêm/bớt sản phẩm của GMV Max cấp shop,
-không dùng. **Chưa thử thật** — kết quả thử trên 1 chiến dịch nhỏ sẽ ghi vào đây.
+không dùng.
+
+**Kết quả thử thật (11/11/2026, anh Tùng đồng ý):** chiến dịch đang tạm dừng #205830397 (Quần Kaki QD25012 [2], ngân sách 100.000đ, ROAS mục tiêu 10,3).
+Gửi `change_budget` 100.000 → 110.000 hai lần (reference_id khác nhau, lần 2 là UUID chuẩn): cả hai trả `error_server` “Something wrong. Please try later.”;
+đọc lại thấy ngân sách vẫn 100.000đ. **Chưa kiểm chứng được** — có thể endpoint không nhận chiến dịch GMV Max theo sản phẩm, hoặc không sửa được khi đang tạm dừng.
+Giữ `AUTOPILOT_DRY_RUN=true` cho tới khi có cách sửa được xác nhận.
 
 **Luật** (`src/lib/autopilot/rules.ts`, tham số sửa ở Cài đặt):
 - *Tăng ngân sách*: đã tiêu ≥ 80% ngân sách ngày **và** ROAS hôm nay ≥ mục tiêu → +20% (ít nhất 50.000đ).
-- *Tạm dừng tới 0h*: trong 3 giờ trọn gần nhất (không tính giờ đang chạy), chi ở ≥ 2 giờ, ≥ 30 click, ≥ 50.000đ, ROAS < 40% mục tiêu.
+- *Siết ngân sách* (thay cho tạm dừng, vì chiến dịch tạm dừng thì Shopee không cho sửa): trong 3 giờ trọn gần nhất (không tính giờ đang chạy),
+  chi ở ≥ 2 giờ, ≥ 30 click, ≥ 50.000đ, ROAS < 40% mục tiêu, **và** ROAS cả ngày < 60% mục tiêu → ngân sách = đã chi hôm nay + 10.000đ.
+  Chiến dịch vẫn “đang chạy”, chỉ hết tiền tiêu. Áp dụng cả chiến dịch đang không giới hạn.
+- *Nới lại ở khung giờ tốt kế tiếp*: khung tốt do anh đặt trong Cài đặt — mặc định **0h, 8h–12h, 20h–22h** (anh Tùng chọn 11/11/2026).
+  Để trống thì tool tự tính từ 4 tuần gần nhất (bỏ ngày đôi): giờ có click ≥ 80% trung vị và ROAS ≥ ROAS chung, luôn gồm 0h. Vào khung tốt kế tiếp sau lúc siết → đề xuất nới về mức cũ (thấp nhất mức khởi điểm). Mỗi ngày nới 1 lần; siết lại thì chờ 0h.
+- *Hạn mức cho chiến dịch không giới hạn*: nút “Đề xuất hạn mức” trên trang Chiến dịch (hoặc `POST /api/jobs/caps`) → đề xuất gộp,
+  hạn mức = chi trung bình/ngày của 7 ngày thường gần nhất, làm tròn lên 10k, thấp nhất mức khởi điểm.
 - *Reset 0h*: ngân sách > mức khởi điểm → về mức khởi điểm; bật lại chiến dịch tool đã dừng. Chiến dịch **không giới hạn** chỉ đưa vào khi tick “Áp dụng cả chiến dịch không giới hạn”.
 - *ROAS mục tiêu (1h20 sáng)*: 7 ngày D-8…D-2 và 3 ngày D-4…D-2 đều < 80% mục tiêu → nâng mục tiêu +15%; đều > 120% mục tiêu và còn dư ngân sách → hạ 10%. Mỗi lần tối đa ±15%.
 
