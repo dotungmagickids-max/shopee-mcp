@@ -1,4 +1,5 @@
 import { db } from "../supabase";
+import { refundsForOrders } from "./returns";
 
 /**
  * Phí Shopee thật, tính từ escrow (tiền về) của đơn đã hoàn tất, quy về % giá bán sản phẩm
@@ -79,20 +80,38 @@ export async function shopFees(shopId: number, days = 45): Promise<FeeStats> {
 export const CANCEL_STATUSES = ["CANCELLED", "IN_CANCEL"];
 export const RETURN_STATUSES = ["TO_RETURN"];
 
+export interface ItemReturn {
+  selling: number; // giá bán của sản phẩm trong các đơn không hủy
+  refund: number; // tiền hoàn
+  back: number; // tiền hoàn mà hàng được gửi về shop
+}
+
+export interface Rates {
+  cancel: number; // đơn hủy / đơn đã đặt
+  ret: number; // tiền hoàn / giá bán của đơn không hủy
+  retBack: number; // phần tiền hoàn có hàng gửi về shop (thu hồi giá vốn) / giá bán
+  orders: number;
+  source: "returns" | "status"; // từ API trả hàng hay ước theo trạng thái đơn
+  items: Map<number, ItemReturn>;
+  reasons: { reason: string; ratio: number }[]; // lý do hoàn: tiền hoàn / tổng tiền hoàn
+}
+
 /**
  * Tỉ lệ hủy và hoàn của đơn tạo từ 45 tới 10 ngày trước (đủ lâu để đã giao xong):
  *   hủy = đơn hủy (kể cả giao thất bại) / đơn đã đặt (trừ chưa thanh toán)
- *   hoàn = đơn trả hàng (TO_RETURN hoặc hoàn tất nhưng bị hoàn tiền) / đơn không hủy
+ *   hoàn = tiền hoàn (yêu cầu trả hàng được chấp nhận hoặc đang xử lý) / giá bán của đơn không hủy,
+ *          tách phần hàng gửi về shop (thu hồi giá vốn) và phần chỉ hoàn tiền (mất hàng).
+ * Chưa có dữ liệu trả hàng thì ước theo trạng thái đơn (TO_RETURN / escrow bị hoàn tiền).
  */
-export async function cancelReturnRates(shopId: number): Promise<{ cancel: number; ret: number; orders: number }> {
+export async function cancelReturnRates(shopId: number): Promise<Rates> {
   const now = Math.floor(Date.now() / 1000);
   const from = now - 45 * 86400;
   const to = now - 10 * 86400;
-  const rows: { order_sn: string; order_status: string | null }[] = [];
+  const rows: { order_sn: string; order_status: string | null; items: any[] | null }[] = [];
   for (let page = 0; page < 30; page++) {
     const { data, error } = await db()
       .from("orders")
-      .select("order_sn, order_status")
+      .select("order_sn, order_status, items")
       .eq("shop_id", shopId)
       .gte("create_time", from)
       .lt("create_time", to)
@@ -104,6 +123,55 @@ export async function cancelReturnRates(shopId: number): Promise<{ cancel: numbe
   const placed = rows.filter((o) => o.order_status !== "UNPAID");
   const cancelled = placed.filter((o) => CANCEL_STATUSES.includes(o.order_status ?? ""));
   const kept = placed.filter((o) => !CANCEL_STATUSES.includes(o.order_status ?? ""));
+  const cancel = placed.length ? cancelled.length / placed.length : 0;
+
+  const { count: haveReturns } = await db()
+    .from("shopee_returns")
+    .select("return_sn", { count: "exact", head: true })
+    .eq("shop_id", shopId);
+  if (haveReturns) {
+    const items = new Map<number, ItemReturn>();
+    let selling = 0;
+    for (const o of kept) {
+      for (const it of o.items ?? []) {
+        const v = n(it.price) * n(it.qty ?? 1);
+        selling += v;
+        const id = Number(it.item_id);
+        const a = items.get(id) ?? { selling: 0, refund: 0, back: 0 };
+        a.selling += v;
+        items.set(id, a);
+      }
+    }
+    let refund = 0;
+    let back = 0;
+    const byReason = new Map<string, number>();
+    const refunds = await refundsForOrders(shopId, kept.map((o) => o.order_sn));
+    for (const r of refunds) {
+      const goodsBack = r.needs_logistics !== false && r.return_solution !== 1;
+      const amount = n(r.refund_amount);
+      refund += amount;
+      if (goodsBack) back += amount;
+      byReason.set(r.reason ?? "NONE", (byReason.get(r.reason ?? "NONE") ?? 0) + amount);
+      for (const it of r.items ?? []) {
+        const a = items.get(Number(it.item_id));
+        if (!a) continue;
+        a.refund += n(it.refund_amount);
+        if (goodsBack) a.back += n(it.refund_amount);
+      }
+    }
+    return {
+      cancel,
+      ret: selling ? Math.min(1, refund / selling) : 0,
+      retBack: selling ? Math.min(1, back / selling) : 0,
+      orders: placed.length,
+      source: "returns",
+      items,
+      reasons: refund
+        ? [...byReason.entries()].map(([reason, v]) => ({ reason, ratio: v / refund })).sort((a, b) => b.ratio - a.ratio)
+        : [],
+    };
+  }
+
   const refunded = new Set<string>();
   const completed = kept.filter((o) => o.order_status === "COMPLETED").map((o) => o.order_sn);
   for (let i = 0; i < completed.length; i += 200) {
@@ -114,9 +182,6 @@ export async function cancelReturnRates(shopId: number): Promise<{ cancel: numbe
     for (const r of data ?? []) if (n(r.refund_amount) > 0) refunded.add(r.order_sn);
   }
   const returned = kept.filter((o) => RETURN_STATUSES.includes(o.order_status ?? "") || refunded.has(o.order_sn)).length;
-  return {
-    cancel: placed.length ? cancelled.length / placed.length : 0,
-    ret: kept.length ? returned / kept.length : 0,
-    orders: placed.length,
-  };
+  const ret = kept.length ? returned / kept.length : 0;
+  return { cancel, ret, retBack: ret, orders: placed.length, source: "status", items: new Map(), reasons: [] };
 }

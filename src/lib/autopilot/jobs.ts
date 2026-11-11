@@ -20,6 +20,7 @@ import { evaluateIntraday, proposeCapsForUnlimited, proposeMidnightReset, propos
 import { proposeRefresh } from "./refresh";
 import { syncPancakeVariations } from "./pancake";
 import { computeEconomics } from "./profit";
+import { syncReturns } from "./returns";
 
 type Step = [name: string, fn: () => Promise<unknown>];
 
@@ -153,6 +154,7 @@ export async function dailyJob(part: "ads" | "orders" | "escrow" | "costs" | "ro
     if (part === "costs") {
       // Giá vốn Pancake dùng chung cho mọi shop: đồng bộ một lần, rồi tính kinh tế từng shop.
       if (i === 0) steps.push(["pancake", () => syncPancakeVariations()]);
+      steps.push(["returns", () => syncReturns(shop.shopId)]);
       steps.push(["economics", () => computeEconomics(shop.shopId)]);
     } else if (part === "ads") {
       steps.push(["campaigns", () => refreshCampaigns(shop.shopId, 0)]);

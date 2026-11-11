@@ -1,15 +1,17 @@
 import { db } from "../supabase";
 import { cancelReturnRates, shopFees, type FeeStats } from "./fees";
 import { costOf, loadCostMap } from "./pancake";
+import { REASON_VI } from "./returns";
 import { INVALID_STATUSES, ordersBetween } from "./report";
 import { loadSettings } from "./settings";
 
 /**
  * Kinh tế của một sản phẩm, quy về 1đ GMV quảng cáo (cùng thước đo với ROAS Shopee).
- * Chỉ đơn giao thành công mới có tiền và tốn giá vốn:
- *   giữ     = (1 − tỉ lệ hủy) × (1 − tỉ lệ hoàn)
- *   margin  = giữ × (tỉ lệ tiền về − giá vốn/giá bán − chi phí khác/giá bán)   lãi trước QC trên 1đ GMV
- *   allow   = margin − giữ × lãi mong muốn                                     tiền QC được phép trên 1đ GMV
+ * Đơn hủy không có tiền và không tốn giá vốn. Phần bị hoàn tiền mất doanh thu; hàng gửi trả về thì thu lại giá vốn,
+ * chỉ hoàn tiền (không gửi trả) thì mất cả hàng:
+ *   c = tỉ lệ hủy, r = tiền hoàn / giá bán, rb = phần hoàn có hàng gửi về / giá bán
+ *   margin  = (1 − c) × (tiền về × (1 − r) − giá vốn/giá bán × (1 − rb) − chi phí khác/giá bán)   lãi trước QC trên 1đ GMV
+ *   allow   = margin − (1 − c) × (1 − r) × lãi mong muốn                                       tiền QC được phép trên 1đ GMV
  *   ROAS hòa vốn = 1 / margin;  ROAS theo lãi = 1 / allow (null nếu không thể đạt lãi mong muốn)
  * Tỉ lệ tiền về lấy từ escrow thật (đã trừ mọi phí Shopee, voucher shop, thuế, ship shop chịu).
  */
@@ -20,7 +22,9 @@ export interface Econ {
   payout: number; // tiền về / giá bán
   payout_estimated: boolean; // chưa đủ escrow thật
   cancel_rate: number;
-  return_rate: number;
+  return_rate: number; // tiền hoàn / giá bán
+  return_back_rate: number; // phần hoàn có hàng gửi về shop
+  return_source: "item" | "shop"; // tỉ lệ hoàn của chính sản phẩm hay TB shop
   margin: number; // lãi trước QC trên 1đ GMV
   breakeven: number | null; // ROAS hòa vốn
   target: number | null; // ROAS cần để đạt lãi mong muốn
@@ -34,9 +38,14 @@ export interface EconCtx {
   payoutEstimated: boolean;
   cancelRate: number;
   returnRate: number;
+  returnBackRate: number;
+  returnSource?: "item" | "shop";
   profitPct: number;
   extraPerUnit: number;
 }
+
+/** Sản phẩm cần ít nhất ngần này doanh số (đơn không hủy, 45→10 ngày trước) để dùng tỉ lệ hoàn riêng. */
+const MIN_ITEM_RETURN_SELLING = 3_000_000;
 
 const MIN_UNITS = 5;
 const MIN_COVERAGE = 0.5;
@@ -51,9 +60,10 @@ export function econFrom(
   if (a.units <= 0 || a.costedRevenue <= 0) return null;
   const price = a.revenue / a.units;
   const costRatio = a.cogs / a.costedRevenue;
-  const keep = (1 - ctx.cancelRate) * (1 - ctx.returnRate);
-  const margin = keep * (ctx.payout - costRatio - ctx.extraPerUnit / price);
-  const allow = margin - keep * (ctx.profitPct / 100);
+  const keepC = 1 - ctx.cancelRate;
+  const margin =
+    keepC * (ctx.payout * (1 - ctx.returnRate) - costRatio * (1 - ctx.returnBackRate) - ctx.extraPerUnit / price);
+  const allow = margin - keepC * (1 - ctx.returnRate) * (ctx.profitPct / 100);
   return {
     price: Math.round(price),
     units: a.units,
@@ -62,6 +72,8 @@ export function econFrom(
     payout_estimated: ctx.payoutEstimated,
     cancel_rate: r3(ctx.cancelRate),
     return_rate: r3(ctx.returnRate),
+    return_back_rate: r3(ctx.returnBackRate),
+    return_source: ctx.returnSource ?? "shop",
     margin: r3(margin),
     breakeven: margin > 0 ? round1(1 / margin) : null,
     target: allow > 0 ? round1(1 / allow) : null,
@@ -75,6 +87,9 @@ export interface EconSummary {
   fees: FeeStats;
   cancel_rate: number;
   return_rate: number;
+  return_back_rate: number;
+  return_source: "returns" | "status";
+  return_reasons: { reason: string; label: string; ratio: number }[];
   rate_orders: number;
   shop: Econ;
   campaigns: number;
@@ -126,6 +141,7 @@ export async function computeEconomics(shopId: number) {
     payoutEstimated: fees.estimated,
     cancelRate: rates.cancel,
     returnRate: rates.ret,
+    returnBackRate: rates.retBack,
     profitPct: s.params.profit_target_pct,
     extraPerUnit: s.params.extra_cost_per_unit,
   };
@@ -147,7 +163,21 @@ export async function computeEconomics(shopId: number) {
       return m;
     }, empty());
     const ok = agg.units >= MIN_UNITS && agg.costedUnits / agg.units >= MIN_COVERAGE;
-    const econ = ok ? econFrom(agg, ctx, "item") : null;
+    // Tỉ lệ hoàn riêng của sản phẩm khi đủ doanh số, ngược lại dùng TB shop.
+    const ret = ids.reduce((m, id) => {
+      const a = rates.items.get(id);
+      if (a) {
+        m.selling += a.selling;
+        m.refund += a.refund;
+        m.back += a.back;
+      }
+      return m;
+    }, { selling: 0, refund: 0, back: 0 });
+    const itemCtx: EconCtx =
+      ret.selling >= MIN_ITEM_RETURN_SELLING
+        ? { ...ctx, returnRate: Math.min(1, ret.refund / ret.selling), returnBackRate: Math.min(1, ret.back / ret.selling), returnSource: "item" }
+        : ctx;
+    const econ = ok ? econFrom(agg, itemCtx, "item") : null;
     if (econ) item++;
     await db()
       .from("ads_campaigns")
@@ -159,6 +189,9 @@ export async function computeEconomics(shopId: number) {
     fees,
     cancel_rate: r3(rates.cancel),
     return_rate: r3(rates.ret),
+    return_back_rate: r3(rates.retBack),
+    return_source: rates.source,
+    return_reasons: rates.reasons.slice(0, 6).map((x) => ({ reason: x.reason, label: REASON_VI[x.reason] ?? x.reason, ratio: r3(x.ratio) })),
     rate_orders: rates.orders,
     shop: shopEcon,
     campaigns: camps?.length ?? 0,

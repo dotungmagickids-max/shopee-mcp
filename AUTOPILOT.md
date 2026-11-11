@@ -155,8 +155,10 @@ Lệnh Telegram: `/pause_all`, `/resume_all` (đều có nút xác nhận), `/mo
 - **Phí Shopee thật** (`src/lib/autopilot/fees.ts`): tiền về / giá bán sản phẩm (`order_selling_price`) từ escrow các đơn hoàn tất 45 ngày
   (bỏ đơn bị hoàn tiền), kèm từng khoản: phí cố định, phí dịch vụ, phí thanh toán, phí hạ tầng, hoa hồng liên kết, voucher shop,
   thuế khấu trừ, ship shop chịu, bảo hiểm vận chuyển, ship hoàn. Chưa đủ 20 đơn có escrow thì ước 70% (đơn mẫu 11/2026: 68%).
-- **Hủy / hoàn**: tính trên đơn tạo từ 45 tới 10 ngày trước. Hủy = CANCELLED/IN_CANCEL (kể cả giao thất bại) / đơn đã đặt;
-  hoàn = TO_RETURN hoặc hoàn tất nhưng bị hoàn tiền / đơn không hủy. Đơn hủy/hoàn không có tiền về, không tốn giá vốn.
+- **Hủy / hoàn**: tính trên đơn tạo từ 45 tới 10 ngày trước. Hủy = CANCELLED/IN_CANCEL (kể cả giao thất bại) / đơn đã đặt.
+  Hoàn lấy từ API trả hàng (`returns.get_return_list`, đồng bộ 45 ngày mỗi đêm vào `shopee_returns`, migration 0009):
+  tiền hoàn của yêu cầu được chấp nhận hoặc đang xử lý / giá bán của đơn không hủy; tách phần hàng gửi về shop (thu lại giá vốn)
+  và phần chỉ hoàn tiền (mất hàng). Sản phẩm có doanh số ≥ 3tr trong khung dùng tỉ lệ hoàn riêng. Dashboard hiện lý do hoàn.
 - **Kinh tế từng chiến dịch** (`src/lib/autopilot/profit.ts`, lưu `ads_campaigns.econ`, tóm tắt shop ở `autopilot_settings.econ_summary`):
   giữ = (1 − hủy) × (1 − hoàn); lãi trước QC trên 1đ GMV = giữ × (tỉ lệ tiền về − giá vốn/giá bán − chi phí khác/giá bán).
   **ROAS hòa vốn** = 1 / lãi trước QC; **ROAS theo lãi** = 1 / (lãi trước QC − giữ × lãi mong muốn).
