@@ -1,4 +1,5 @@
 import { db } from "../supabase";
+import type { Econ } from "./profit";
 import { INVALID_STATUSES } from "./report";
 import { addDays, vnDate, vnDayStartUnix, vnHourOfUnix, vnWeekday, weekdayOfDate } from "./time";
 
@@ -113,6 +114,9 @@ export interface CampaignRow {
   week: { expense: number; gmv: number; orders: number; clicks: number; roas: number };
   verdict: "tăng" | "giữ" | "giảm" | "tắt" | "chờ số liệu";
   reason: string;
+  econ: Econ | null;
+  /** Lãi ước tính 7 ngày D-8…D-2 = GMV × lãi trước QC/1đ GMV − chi QC. */
+  weekProfit: number | null;
 }
 
 /**
@@ -123,7 +127,7 @@ export async function campaignsWithRanking(shopId: number, noOrderClicks = 40): 
   const today = vnDate();
   const { data: camps, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, ad_name, campaign_status, bidding_method, campaign_budget, roas_target, item_ids, autopilot_excluded, tool_paused_at, throttled_at")
+    .select("campaign_id, ad_name, campaign_status, bidding_method, campaign_budget, roas_target, item_ids, autopilot_excluded, tool_paused_at, throttled_at, econ")
     .eq("shop_id", shopId)
     .in("campaign_status", ["ongoing", "paused", "scheduled"])
     .order("campaign_id", { ascending: false });
@@ -196,6 +200,8 @@ export async function campaignsWithRanking(shopId: number, noOrderClicks = 40): 
       week: a.week,
       verdict,
       reason,
+      econ: (c.econ ?? null) as Econ | null,
+      weekProfit: c.econ && a.week.expense > 0 ? Math.round(a.week.gmv * Number(c.econ.margin) - a.week.expense) : null,
     };
   });
 }

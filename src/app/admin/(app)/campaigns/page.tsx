@@ -65,6 +65,10 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
         Xếp hạng dựa trên 7 ngày D-8…D-2 (bỏ 2 ngày gần nhất vì đơn còn được ghi nhận thêm).
         Sửa trên trang này vẫn qua trần cứng; khi DRY-RUN chỉ ghi log, chưa gửi Shopee.
       </p>
+      <p className="muted">
+        <b>Hòa vốn / Theo lãi</b>: ROAS (theo số Shopee) để không lỗ và để đạt lãi mong muốn (Cài đặt), tính hằng đêm từ giá vốn
+        Pancake, giá bán, tỉ lệ tiền về và tỉ lệ hủy 30 ngày. <span>*</span> = sản phẩm bán ít, dùng số trung bình shop.
+      </p>
       {msg ? <p className="warning">{msg}</p> : null}
       <Proposals back="/admin/campaigns" />
       {data.map(({ shop, rows }) => {
@@ -106,10 +110,12 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                       <th>Trạng thái</th>
                       <th>Ngân sách/ngày</th>
                       <th>ROAS mục tiêu</th>
+                      <th title="ROAS hòa vốn / ROAS cần cho lãi mong muốn (giá vốn Pancake)">Hòa vốn / Theo lãi</th>
                       <th>Chi hôm nay</th>
                       <th>ROAS hôm nay</th>
                       <th>Chi 7 ngày</th>
                       <th>ROAS 7 ngày</th>
+                      <th title="GMV × lãi trước QC − chi QC, 7 ngày D-8…D-2">Lãi 7 ngày (ước)</th>
                       <th>Đơn 7 ngày</th>
                       <th>Click 7 ngày</th>
                       <th className="l">Đề xuất</th><th></th>
@@ -126,10 +132,21 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                         <td>{r.campaign_status === "ongoing" ? "Đang chạy" : r.campaign_status === "paused" ? "Tạm dừng" : r.campaign_status}</td>
                         <td>{r.campaign_budget === 0 ? <span className="tag unlimited">Không giới hạn</span> : vnd(r.campaign_budget)}</td>
                         <td>{r.roas_target ?? "-"}</td>
+                        <td title={r.econ ? `Giá bán TB ${vnd(r.econ.price)}, giá vốn ${Math.round(r.econ.cost_ratio * 100)}%, tiền về ${Math.round(r.econ.payout * 100)}%, hủy ${Math.round(r.econ.cancel_rate * 100)}%${r.econ.source === "shop" ? " — số TB shop (sản phẩm bán ít)" : ""}` : "Chưa có giá vốn"}>
+                          {r.econ ? (
+                            <>
+                              {r.econ.breakeven ?? "lỗ"} / <b>{r.econ.target ?? "không đạt"}</b>
+                              {r.econ.source === "shop" ? <span className="muted"> *</span> : null}
+                            </>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
                         <td>{vnd(r.today.expense)}</td>
                         <td>{r.today.expense > 0 ? (r.today.gmv / r.today.expense).toFixed(1) : "-"}</td>
                         <td>{vnd(r.week.expense)}</td>
                         <td>{r.week.expense > 0 ? r.week.roas.toFixed(1) : "-"}</td>
+                        <td className={r.weekProfit != null && r.weekProfit < 0 ? "neg" : undefined}>{r.weekProfit == null ? "-" : vnd(r.weekProfit)}</td>
                         <td>{r.week.orders}</td>
                         <td>{r.week.clicks}</td>
                         <td className="l">

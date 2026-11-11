@@ -146,6 +146,22 @@ Lệnh Telegram: `/pause_all`, `/resume_all` (đều có nút xác nhận), `/mo
 
 **Nạp bù lịch sử**: `POST /api/jobs/backfill?date=YYYY-MM-DD` (QC toàn shop theo giờ + đơn của ngày đó).
 
+## Lãi theo giá vốn Pancake
+
+- **Nguồn giá vốn**: Pancake POS (`PANCAKE_API_KEY`, `PANCAKE_SHOP_ID` mặc định 608127 = magickids), đồng bộ 01:15 mỗi đêm
+  (`/api/jobs/daily?part=costs`) vào bảng `pancake_variations`: giá nhập bình quân (không có thì giá nhập gần nhất), tồn, tốc độ bán.
+  Mã biến thể Pancake (`display_id`) trùng `model_sku` trên Shopee; so khớp sau khi viết hoa và bỏ khoảng trắng.
+  `sku_costs` (nhập tay theo shop) được ưu tiên hơn Pancake.
+- **Kinh tế từng chiến dịch** (`src/lib/autopilot/profit.ts`, lưu `ads_campaigns.econ`): từ đơn 30 ngày của sản phẩm trong chiến dịch,
+  tính lãi trước QC trên 1đ GMV = (1 − tỉ lệ hủy) × (tỉ lệ tiền về − giá vốn/giá bán − chi phí khác/giá bán).
+  **ROAS hòa vốn** = 1 / lãi trước QC; **ROAS theo lãi** = 1 / (lãi trước QC − (1 − tỉ lệ hủy) × lãi mong muốn).
+  Sản phẩm bán < 5 đơn vị hoặc thiếu giá vốn quá nửa thì dùng số trung bình shop (dấu * trên dashboard).
+- **Luật**: khi `use_profit_roas = 1` (mặc định), tăng/siết ngân sách so với ROAS theo lãi thay cho ROAS mục tiêu đang đặt.
+  Đề xuất ROAS mục tiêu (01:20) đưa ROAS mục tiêu dần về ROAS theo lãi, mỗi lần tối đa ±15%: hạ khi đang đặt cao hơn > 10%
+  (không cần điều kiện chi tiêu), nâng khi đặt thấp hơn > 10% và ROAS 7 ngày thực tế dưới mức lãi.
+- **Cài đặt**: lãi mong muốn (% giá bán, mặc định 10), chi phí khác mỗi sản phẩm (đ), bật/tắt ROAS theo lãi.
+- **Dashboard Chiến dịch**: cột Hòa vốn / Theo lãi, Lãi 7 ngày ước tính (GMV × lãi trước QC − chi QC). Báo cáo sáng tính lãi bằng giá vốn Pancake.
+
 ## Giai đoạn tiếp theo
 - **GĐ2 còn lại**: thử thật `edit_manual_product_ads` trên 1 chiến dịch nhỏ (hỏi anh trước), rồi đặt `AUTOPILOT_DRY_RUN=false`.
 - **GĐ3**: upload giá vốn CSV/XLSX, báo cáo lãi theo ngày/sản phẩm/chiến dịch khớp escrow.

@@ -1,4 +1,5 @@
 import { db } from "../supabase";
+import { costOf, loadCostMap } from "./pancake";
 import { chunk } from "./shopee-call";
 import { addDays, vnDayStartUnix } from "./time";
 
@@ -80,11 +81,10 @@ export async function dayReport(shopId: number, date: string) {
   const gmsExpense = (gms ?? []).reduce((s, g) => s + Number(g.expense), 0);
 
   // Lãi: tiền về − giá vốn − chi QC.
-  const { data: costs } = await db().from("sku_costs").select("sku, cost").eq("shop_id", shopId);
+  const costMap = await loadCostMap(shopId);
   let profit: number | null = null;
   let profitNote = "";
-  if (costs?.length) {
-    const costMap = new Map(costs.map((c) => [c.sku, Number(c.cost)]));
+  if (costMap.size) {
     const ratio = await payoutRatio(shopId);
     let payout = 0;
     let cogs = 0;
@@ -98,7 +98,7 @@ export async function dayReport(shopId: number, date: string) {
         estimated++;
       }
       for (const it of o.items ?? []) {
-        const c = costMap.get(it.model_sku ?? "") ?? costMap.get(it.item_sku ?? "");
+        const c = costOf(costMap, it);
         if (c == null) missing++;
         else cogs += c * Number(it.qty ?? 1);
       }

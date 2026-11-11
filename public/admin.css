@@ -44,3 +44,4 @@ form.settings input, form.settings select { width: 100%; max-width: 280px; paddi
   .hours { font-size: 8px; }
   .bars { height: 100px; }
 }
+td.neg { color: var(--error); font-weight: 600; }

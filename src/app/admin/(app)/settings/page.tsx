@@ -21,6 +21,9 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   roas_high_ratio: "ROAS mục tiêu: hạ khi thực tế > (tỉ lệ, vd 1,2)",
   roas_max_change_pct: "ROAS mục tiêu: đổi tối đa mỗi lần (%, ≤ 15)",
   roas_min_week_expense: "ROAS mục tiêu: chỉ xét khi chi 7 ngày ≥ (đ)",
+  profit_target_pct: "Lãi mong muốn sau quảng cáo (% giá bán)",
+  extra_cost_per_unit: "Chi phí khác mỗi sản phẩm bán ra (đ: đóng gói, nhân công…)",
+  use_profit_roas: "Luật dùng ROAS theo lãi (1 = bật, 0 = dùng ROAS mục tiêu đang đặt)",
 };
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {

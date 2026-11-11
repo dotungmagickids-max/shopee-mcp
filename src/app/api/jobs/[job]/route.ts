@@ -5,13 +5,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PARTS = ["ads", "orders", "escrow", "roas"] as const;
+const PARTS = ["ads", "orders", "escrow", "costs", "roas"] as const;
 
 /**
  * Job do Supabase pg_cron gọi (xem supabase/cron.sql):
  *   POST /api/jobs/collect                              mỗi 15 phút (thu số liệu + luật trong ngày)
  *   POST /api/jobs/reset                                00:00 (reset ngân sách, bật lại chiến dịch tool dừng)
- *   POST /api/jobs/daily?part=ads|orders|escrow|roas    01:00 / 01:05 / 01:10 / 01:20
+ *   POST /api/jobs/daily?part=ads|orders|escrow|costs|roas  01:00 / 01:05 / 01:10 / 01:15 / 01:20
  *   POST /api/jobs/report                               08:00
  *   POST /api/jobs/backfill?date=YYYY-MM-DD             chạy tay để nạp bù lịch sử
  * Header bắt buộc: Authorization: Bearer <JOB_SECRET>

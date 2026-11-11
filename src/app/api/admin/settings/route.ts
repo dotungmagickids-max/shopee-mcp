@@ -52,6 +52,9 @@ export async function POST(request: Request) {
     }
     if (params.cut_window_hours != null) params.cut_window_hours = Math.max(3, params.cut_window_hours);
     if (params.roas_max_change_pct != null) params.roas_max_change_pct = Math.min(15, params.roas_max_change_pct);
+    if (params.profit_target_pct != null) params.profit_target_pct = Math.min(60, Math.max(0, params.profit_target_pct));
+    if (params.extra_cost_per_unit != null) params.extra_cost_per_unit = Math.max(0, params.extra_cost_per_unit);
+    if (params.use_profit_roas != null) params.use_profit_roas = params.use_profit_roas ? 1 : 0;
     const saleDates = String(form.get("sale_dates") ?? "")
       .split(/[\s,;]+/)
       .map((d) => d.trim())

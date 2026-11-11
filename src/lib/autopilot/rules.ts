@@ -1,5 +1,6 @@
 import { db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
+import { ruleTarget, type Econ } from "./profit";
 import { automationBlocked, loadSettings, type ShopSettings } from "./settings";
 import { vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
@@ -16,12 +17,20 @@ interface Camp {
   tool_paused_at: string | null;
   throttled_at: string | null;
   restore_budget: number | null;
+  econ: Econ | null;
+}
+
+/** Mô tả ngưỡng ROAS dùng trong lý do đề xuất. */
+function targetLabel(c: Camp, useProfit: boolean): string {
+  const t = ruleTarget(c, useProfit);
+  if (t == null) return "ngưỡng";
+  return useProfit && c.econ?.target ? `${t} (ROAS cho lãi ${c.econ.profit_pct}%)` : String(t);
 }
 
 async function ongoingCampaigns(shopId: number): Promise<Camp[]> {
   const { data, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, ad_name, campaign_status, campaign_budget, roas_target, tool_paused_at, throttled_at, restore_budget")
+    .select("campaign_id, ad_name, campaign_status, campaign_budget, roas_target, tool_paused_at, throttled_at, restore_budget, econ")
     .eq("shop_id", shopId)
     .eq("campaign_status", "ongoing")
     .eq("autopilot_excluded", false);
@@ -32,6 +41,7 @@ async function ongoingCampaigns(shopId: number): Promise<Camp[]> {
     campaign_budget: n(c.campaign_budget),
     roas_target: c.roas_target == null ? null : n(c.roas_target),
     restore_budget: c.restore_budget == null ? null : n(c.restore_budget),
+    econ: (c.econ ?? null) as Econ | null,
   }));
 }
 
@@ -120,7 +130,9 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
     const exp = rows.reduce((s, r) => s + r.expense, 0);
     const gmv = rows.reduce((s, r) => s + r.gmv, 0);
     const roas = exp > 0 ? gmv / exp : 0;
-    const target = c.roas_target;
+    // Ngưỡng: ROAS theo lãi (giá vốn Pancake) nếu bật và tính được, ngược lại ROAS mục tiêu đang đặt.
+    const useProfit = !!p.use_profit_roas;
+    const target = ruleTarget(c, useProfit);
 
     // Đang bị siết: chỉ xét nới lại khi sang khung giờ tốt kế tiếp (mỗi ngày nới 1 lần).
     if (c.throttled_at) {
@@ -153,7 +165,7 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
         action: "change_budget",
         before: { budget: c.campaign_budget },
         after: { budget: wanted },
-        reason: `Đã tiêu ${vnd(exp)} (${Math.round((exp / c.campaign_budget) * 100)}% ngân sách), ROAS hôm nay ${roas.toFixed(1)} ≥ ${target ?? "ngưỡng"}`,
+        reason: `Đã tiêu ${vnd(exp)} (${Math.round((exp / c.campaign_budget) * 100)}% ngân sách), ROAS hôm nay ${roas.toFixed(1)} ≥ ${targetLabel(c, useProfit)}`,
         source: "rule:scale_up",
       });
       continue;
@@ -184,7 +196,7 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
           action: "change_budget",
           before: { budget: c.campaign_budget },
           after: { budget: throttleTo, throttle: true, restore_budget: c.campaign_budget > 0 ? c.campaign_budget : s.start_budget },
-          reason: `Siết ngân sách: ${W} giờ qua (${hour - W}h–${hour - 1}h) ${wClicks} click, chi ${vnd(wExp)}, ROAS ${wRoas.toFixed(1)} < ${threshold.toFixed(1)}; cả ngày chi ${vnd(exp)}, ROAS ${roas.toFixed(1)}. Nới lại ${next != null ? `lúc ${next}h` : "lúc 0h"}.`,
+          reason: `Siết ngân sách: ${W} giờ qua (${hour - W}h–${hour - 1}h) ${wClicks} click, chi ${vnd(wExp)}, ROAS ${wRoas.toFixed(1)} < ${threshold.toFixed(1)} (${Math.round(p.cut_roas_ratio * 100)}% của ${targetLabel(c, useProfit)}); cả ngày chi ${vnd(exp)}, ROAS ${roas.toFixed(1)}. Nới lại ${next != null ? `lúc ${next}h` : "lúc 0h"}.`,
           source: "rule:throttle",
         });
       }
@@ -343,14 +355,29 @@ export async function proposeRoasTargets(shopId: number) {
   const items: { campaign_id: number; action: ProposalInput["action"]; before: any; after: any }[] = [];
   const maxChange = p.roas_max_change_pct / 100;
   for (const c of camps) {
-    const a = agg.get(c.campaign_id);
-    if (!a || a.e < p.roas_min_week_expense) continue;
+    const a = agg.get(c.campaign_id) ?? { e: 0, g: 0, re: 0, rg: 0 };
     const target = c.roas_target!;
-    const week = a.g / a.e;
+    const week = a.e > 0 ? a.g / a.e : 0;
     const recent = a.re > 0 ? a.rg / a.re : week;
     let next: number | null = null;
     let why = "";
-    if (week < target * p.roas_low_ratio && recent < target * p.roas_low_ratio) {
+    const goal = p.use_profit_roas ? c.econ?.target ?? null : null;
+    if (goal) {
+      // Theo lãi: đưa ROAS mục tiêu dần về mức cần cho lãi mong muốn (mỗi lần tối đa ±maxChange).
+      const econ = c.econ!;
+      const basis = `ROAS cho lãi ${econ.profit_pct}%: ${goal}, hòa vốn ${econ.breakeven ?? "-"} (giá vốn ${Math.round(econ.cost_ratio * 100)}% giá bán${econ.source === "shop" ? ", số TB shop" : ""})`;
+      if (target > goal * 1.1) {
+        // Đặt cao quá: Shopee thầu quá chặt, mất đơn có lãi. Không cần điều kiện chi tiêu (chiến dịch "không chạy" thường do đây).
+        next = Math.max(goal, target * (1 - maxChange));
+        why = `Đang đặt cao hơn mức cần. ${basis}`;
+      } else if (target < goal * 0.9 && a.e >= p.roas_min_week_expense && week < goal) {
+        // Đặt thấp và thực tế dưới mức lãi: nâng để thầu chặt hơn.
+        next = Math.min(goal, target * (1 + maxChange));
+        why = `ROAS 7 ngày ${week.toFixed(1)} dưới mức lãi. ${basis}`;
+      }
+    } else if (a.e < p.roas_min_week_expense) {
+      continue;
+    } else if (week < target * p.roas_low_ratio && recent < target * p.roas_low_ratio) {
       // Thực tế thấp hơn mục tiêu > 20% liên tục: nâng mục tiêu để Shopee thầu chặt hơn.
       next = target * (1 + maxChange);
       why = `ROAS 7 ngày ${week.toFixed(1)}, 3 ngày ${recent.toFixed(1)} < ${Math.round(p.roas_low_ratio * 100)}% mục tiêu`;
@@ -366,10 +393,10 @@ export async function proposeRoasTargets(shopId: number) {
   }
   const group = await proposeGroup(
     shopId,
-    "Đề xuất ROAS mục tiêu (theo 7 ngày D-8…D-2)",
+    p.use_profit_roas ? `Đề xuất ROAS mục tiêu theo lãi mong muốn ${p.profit_target_pct}%` : "Đề xuất ROAS mục tiêu (theo 7 ngày D-8…D-2)",
     items,
     "rule:roas_target",
-    `Mỗi lần đổi tối đa ±${p.roas_max_change_pct}%. Duyệt từng chiến dịch trên dashboard nếu muốn chọn lọc.`,
+    `Mỗi lần đổi tối đa ±${p.roas_max_change_pct}%, đi dần qua nhiều ngày để Shopee kịp học. Giá vốn lấy từ Pancake; sửa lãi mong muốn trong Cài đặt.`,
     12 * 60
   );
   return { items: items.length, group: group?.id ?? null };

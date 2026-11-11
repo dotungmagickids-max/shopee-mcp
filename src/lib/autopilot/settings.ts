@@ -24,6 +24,10 @@ export const DEFAULT_RULE_PARAMS = {
   roas_high_ratio: 1.2,
   roas_max_change_pct: 15,
   roas_min_week_expense: 200_000,
+  // Lãi (giá vốn từ Pancake): ROAS cần = 1 / (lãi trước QC trên 1đ GMV − lãi mong muốn)
+  profit_target_pct: 10, // lãi mong muốn sau quảng cáo, % giá bán
+  extra_cost_per_unit: 0, // chi phí khác mỗi sản phẩm bán ra (đóng gói, nhân công…), đ
+  use_profit_roas: 1, // 1 = luật dùng ROAS theo lãi thay cho ROAS mục tiêu đang đặt; 0 = tắt
 };
 
 export type RuleParams = typeof DEFAULT_RULE_PARAMS;

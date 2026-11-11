@@ -18,6 +18,8 @@ import { dayReport } from "./report";
 import { expireOld } from "./actions";
 import { evaluateIntraday, proposeCapsForUnlimited, proposeMidnightReset, proposeRoasTargets } from "./rules";
 import { proposeRefresh } from "./refresh";
+import { syncPancakeVariations } from "./pancake";
+import { computeEconomics } from "./profit";
 
 type Step = [name: string, fn: () => Promise<unknown>];
 
@@ -143,12 +145,16 @@ export async function backfillJob(date: string) {
 // Job hằng ngày (01:00). Chia 3 phần để mỗi lần gọi nằm trong giới hạn thời gian.
 // ---------------------------------------------------------------------------
 
-export async function dailyJob(part: "ads" | "orders" | "escrow" | "roas") {
+export async function dailyJob(part: "ads" | "orders" | "escrow" | "costs" | "roas") {
   const yesterday = addDays(vnDate(), -1);
   const results = [];
-  for (const shop of shops()) {
+  for (const [i, shop] of shops().entries()) {
     const steps: Step[] = [];
-    if (part === "ads") {
+    if (part === "costs") {
+      // Giá vốn Pancake dùng chung cho mọi shop: đồng bộ một lần, rồi tính kinh tế từng shop.
+      if (i === 0) steps.push(["pancake", () => syncPancakeVariations()]);
+      steps.push(["economics", () => computeEconomics(shop.shopId)]);
+    } else if (part === "ads") {
       steps.push(["campaigns", () => refreshCampaigns(shop.shopId, 0)]);
       // Ghi nhận đơn kéo dài 7 ngày: lấy lại 7 ngày gần nhất để ROAS lịch sử được cập nhật.
       for (let d = 1; d <= 7; d++) {
