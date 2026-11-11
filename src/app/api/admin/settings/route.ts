@@ -55,6 +55,8 @@ export async function POST(request: Request) {
     if (params.profit_target_pct != null) params.profit_target_pct = Math.min(60, Math.max(0, params.profit_target_pct));
     if (params.extra_cost_per_unit != null) params.extra_cost_per_unit = Math.max(0, params.extra_cost_per_unit);
     if (params.use_profit_roas != null) params.use_profit_roas = params.use_profit_roas ? 1 : 0;
+    if (params.ad_fee_pct != null) params.ad_fee_pct = Math.min(50, Math.max(0, params.ad_fee_pct));
+    if (params.return_fee_per_order != null) params.return_fee_per_order = Math.max(0, params.return_fee_per_order);
     const saleDates = String(form.get("sale_dates") ?? "")
       .split(/[\s,;]+/)
       .map((d) => d.trim())

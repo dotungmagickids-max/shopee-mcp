@@ -207,7 +207,10 @@ export async function campaignsWithRanking(shopId: number, noOrderClicks = 40): 
       verdict,
       reason,
       econ: (c.econ ?? null) as Econ | null,
-      weekProfit: c.econ && a.week.expense > 0 ? Math.round(a.week.gmv * Number(c.econ.margin) - a.week.expense) : null,
+      weekProfit:
+        c.econ && a.week.expense > 0
+          ? Math.round(a.week.gmv * Number(c.econ.margin) - a.week.expense * (1 + Number(c.econ.ad_fee_pct ?? 0) / 100))
+          : null,
     };
   });
 }

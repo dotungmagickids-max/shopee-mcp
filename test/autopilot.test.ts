@@ -593,6 +593,8 @@ describe("profit from Pancake costs", () => {
     reset();
     delete process.env.AUTOPILOT_DRY_RUN;
     process.env.PANCAKE_API_KEY = "pancake-key";
+    // Các phép tính cơ bản không có phí nạp / phí hoàn; test riêng bên dưới bật lại.
+    tables.autopilot_settings[0].rule_params = { ad_fee_pct: 0, return_fee_per_order: 0 };
     const now = Math.floor(Date.now() / 1000);
     tables.orders = Array.from({ length: 10 }, (_, i) => ({
       shop_id: 111,
@@ -696,6 +698,13 @@ describe("profit from Pancake costs", () => {
     const sum = tables.autopilot_settings[0].econ_summary;
     assert.equal(sum.return_source, "returns");
     assert.deepEqual(sum.return_reasons.map((r: any) => [r.label, r.ratio]), [["Khác mô tả", 0.714], ["Sai size", 0.286]]);
+
+    // Bật phí nạp ví 8% và phí hoàn 2.700đ/đơn (1 đơn có hàng gửi về trên 2tr giá bán = 0,135%).
+    tables.autopilot_settings[0].rule_params = { ad_fee_pct: 8, return_fee_per_order: 2700 };
+    await profit.computeEconomics(111);
+    const e2 = tables.ads_campaigns[0].econ;
+    // margin = 0,8 × (0,5775 − 0,35 − 0,00135) = 0,1809 → hòa vốn 1,08/0,1809 = 6,0; theo lãi 1,08/(0,1809 − 0,066) = 9,4
+    assert.deepEqual([e2.return_fee_ratio, e2.ad_fee_pct, e2.breakeven, e2.target], [0.0014, 8, 6, 9.4]);
   });
 
   it("uses profit ROAS in rules and walks the ROAS target down toward it", async () => {

@@ -24,6 +24,8 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   profit_target_pct: "Lãi mong muốn sau quảng cáo (% giá bán)",
   extra_cost_per_unit: "Chi phí khác mỗi sản phẩm bán ra (đ: đóng gói, nhân công…)",
   use_profit_roas: "Luật dùng ROAS theo lãi (1 = bật, 0 = dùng ROAS mục tiêu đang đặt)",
+  ad_fee_pct: "Phí nạp ví quảng cáo (%): chi QC thật = chi Shopee báo × (1 + %)",
+  return_fee_per_order: "Phí mỗi đơn hoàn / giao thất bại (đ)",
 };
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {

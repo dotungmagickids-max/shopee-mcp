@@ -11,6 +11,8 @@ export interface FeeStats {
   payout: number; // tiền về / giá bán
   fees: { key: string; label: string; ratio: number }[]; // từng khoản phí / giá bán
   estimated: boolean; // true = chưa đủ đơn có escrow, dùng tỉ lệ ước tính
+  discount_of_original?: number; // giảm giá shop / giá gốc (đã nằm trong giá bán)
+  shopee_voucher?: number; // voucher Shopee tài trợ / giá bán (không phải chi phí shop)
 }
 
 /** Ước tính khi chưa có escrow: đơn mẫu 11/2026 tiền về ~68% giá bán. */
@@ -58,6 +60,8 @@ export async function shopFees(shopId: number, days = 45): Promise<FeeStats> {
   let selling = 0;
   let payout = 0;
   let orders = 0;
+  let original = 0;
+  let shopeeVoucher = 0;
   const sums = new Map<string, number>();
   for (const r of rows) {
     const s = sellingOf(r.raw);
@@ -65,6 +69,8 @@ export async function shopFees(shopId: number, days = 45): Promise<FeeStats> {
     orders++;
     selling += s;
     payout += n(r.escrow_amount);
+    original += n(r.raw?.order_original_price) || s;
+    shopeeVoucher += n(r.raw?.voucher_from_shopee);
     for (const f of FEE_FIELDS) sums.set(f.key, (sums.get(f.key) ?? 0) + f.get(r.raw));
   }
   if (orders < MIN_ORDERS || selling <= 0) {
@@ -74,7 +80,15 @@ export async function shopFees(shopId: number, days = 45): Promise<FeeStats> {
   const listed = fees.reduce((s, f) => s + f.ratio, 0);
   const other = 1 - payout / selling - listed;
   if (Math.abs(other) > 0.0005) fees.push({ key: "other", label: other > 0 ? "Khác" : "Khác (Shopee trợ giá)", ratio: other });
-  return { orders, selling, payout: payout / selling, fees, estimated: false };
+  return {
+    orders,
+    selling,
+    payout: payout / selling,
+    fees,
+    estimated: false,
+    discount_of_original: original > 0 ? 1 - selling / original : 0,
+    shopee_voucher: shopeeVoucher / selling,
+  };
 }
 
 export const CANCEL_STATUSES = ["CANCELLED", "IN_CANCEL"];
@@ -93,6 +107,8 @@ export interface Rates {
   ret: number; // tiền hoàn / giá bán của đơn không hủy
   retBack: number; // phần tiền hoàn có hàng gửi về shop (thu hồi giá vốn) / giá bán
   orders: number;
+  keptSelling: number; // giá bán của các đơn không hủy trong khung
+  returnEvents: number; // số đơn hàng quay về shop (hoàn có gửi hàng + giao thất bại): mỗi đơn tốn phí hoàn
   source: "returns" | "status"; // từ API trả hàng hay ước theo trạng thái đơn
   items: Map<number, ItemReturn>;
   reasons: { reason: string; ratio: number }[]; // lý do hoàn: tiền hoàn / tổng tiền hoàn
@@ -137,32 +153,37 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
   const failedDelivery = placed.length ? failed.length / placed.length : 0;
   const cancelBeforeShip = cancel - failedDelivery;
 
+  const items = new Map<number, ItemReturn>();
+  let selling = 0;
+  for (const o of kept) {
+    for (const it of o.items ?? []) {
+      const v = n(it.price) * n(it.qty ?? 1);
+      selling += v;
+      const id = Number(it.item_id);
+      const a = items.get(id) ?? { selling: 0, refund: 0, back: 0 };
+      a.selling += v;
+      items.set(id, a);
+    }
+  }
+
   const { count: haveReturns } = await db()
     .from("shopee_returns")
     .select("return_sn", { count: "exact", head: true })
     .eq("shop_id", shopId);
   if (haveReturns) {
-    const items = new Map<number, ItemReturn>();
-    let selling = 0;
-    for (const o of kept) {
-      for (const it of o.items ?? []) {
-        const v = n(it.price) * n(it.qty ?? 1);
-        selling += v;
-        const id = Number(it.item_id);
-        const a = items.get(id) ?? { selling: 0, refund: 0, back: 0 };
-        a.selling += v;
-        items.set(id, a);
-      }
-    }
     let refund = 0;
     let back = 0;
+    const backOrders = new Set<string>();
     const byReason = new Map<string, number>();
     const refunds = await refundsForOrders(shopId, kept.map((o) => o.order_sn));
     for (const r of refunds) {
       const goodsBack = r.needs_logistics !== false && r.return_solution !== 1;
       const amount = n(r.refund_amount);
       refund += amount;
-      if (goodsBack) back += amount;
+      if (goodsBack) {
+        back += amount;
+        backOrders.add(r.order_sn);
+      }
       byReason.set(r.reason ?? "NONE", (byReason.get(r.reason ?? "NONE") ?? 0) + amount);
       for (const it of r.items ?? []) {
         const a = items.get(Number(it.item_id));
@@ -178,6 +199,8 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
       ret: selling ? Math.min(1, refund / selling) : 0,
       retBack: selling ? Math.min(1, back / selling) : 0,
       orders: placed.length,
+      keptSelling: selling,
+      returnEvents: backOrders.size + failed.length,
       source: "returns",
       items,
       reasons: refund
@@ -197,5 +220,17 @@ export async function cancelReturnRates(shopId: number): Promise<Rates> {
   }
   const returned = kept.filter((o) => RETURN_STATUSES.includes(o.order_status ?? "") || refunded.has(o.order_sn)).length;
   const ret = kept.length ? returned / kept.length : 0;
-  return { cancel, cancelBeforeShip, failedDelivery, ret, retBack: ret, orders: placed.length, source: "status", items: new Map(), reasons: [] };
+  return {
+    cancel,
+    cancelBeforeShip,
+    failedDelivery,
+    ret,
+    retBack: ret,
+    orders: placed.length,
+    keptSelling: selling,
+    returnEvents: returned + failed.length,
+    source: "status",
+    items: new Map(),
+    reasons: [],
+  };
 }

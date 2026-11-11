@@ -73,6 +73,14 @@ function EconBox({ econ }: { econ: EconSummary | null }) {
           <>
             Phí Shopee trên giá bán (escrow {f.orders} đơn hoàn tất 45 ngày):{" "}
             {f.fees.map((x) => `${x.label} ${pct(x.ratio)}`).join(" · ")}.
+            {f.discount_of_original != null ? (
+              <>
+                {" "}Giảm giá shop: {pct(f.discount_of_original)} giá gốc (đã nằm trong giá bán). Voucher Shopee tài trợ{" "}
+                {pct(f.shopee_voucher ?? 0)} giá bán (Shopee chịu, không trừ của shop).
+              </>
+            ) : null}
+            {econ.shop.ad_fee_pct ? <> Chi QC thật = chi Shopee báo × {1 + econ.shop.ad_fee_pct / 100} (phí nạp ví).</> : null}
+            {econ.shop.return_fee_ratio ? <> Phí hoàn {pct(econ.shop.return_fee_ratio)} giá bán.</> : null}
           </>
         ) : (
           "Chưa đủ 20 đơn có escrow: tạm dùng tiền về 70% giá bán."

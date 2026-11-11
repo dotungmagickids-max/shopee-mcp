@@ -28,6 +28,8 @@ export const DEFAULT_RULE_PARAMS = {
   profit_target_pct: 10, // lãi mong muốn sau quảng cáo, % giá bán
   extra_cost_per_unit: 0, // chi phí khác mỗi sản phẩm bán ra (đóng gói, nhân công…), đ
   use_profit_roas: 1, // 1 = luật dùng ROAS theo lãi thay cho ROAS mục tiêu đang đặt; 0 = tắt
+  ad_fee_pct: 8, // phí nạp ví quảng cáo: chi QC thật = chi Shopee báo × (1 + %)
+  return_fee_per_order: 2_700, // phí mỗi đơn hoàn / giao thất bại (đ)
 };
 
 export type RuleParams = typeof DEFAULT_RULE_PARAMS;

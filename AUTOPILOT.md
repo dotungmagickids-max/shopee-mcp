@@ -166,7 +166,12 @@ Lệnh Telegram: `/pause_all`, `/resume_all` (đều có nút xác nhận), `/mo
 - **Luật**: khi `use_profit_roas = 1` (mặc định), tăng/siết ngân sách so với ROAS theo lãi thay cho ROAS mục tiêu đang đặt.
   Đề xuất ROAS mục tiêu (01:20) đưa ROAS mục tiêu dần về ROAS theo lãi, mỗi lần tối đa ±15%: hạ khi đang đặt cao hơn > 10%
   (không cần điều kiện chi tiêu), nâng khi đặt thấp hơn > 10% và ROAS 7 ngày thực tế dưới mức lãi.
-- **Cài đặt**: lãi mong muốn (% giá bán, mặc định 10), chi phí khác mỗi sản phẩm (đ), bật/tắt ROAS theo lãi.
+- **Phí ngoài Shopee báo**: phí nạp ví quảng cáo (mặc định 8%: chi QC thật = chi báo × 1,08) và phí hoàn mỗi đơn quay về
+  (mặc định 2.700đ, tính cho đơn hoàn có gửi hàng về và đơn giao thất bại). ROAS hòa vốn / theo lãi vẫn so với ROAS Shopee báo
+  nên được nhân (1 + phí nạp). Giảm giá shop (giá gốc → giá bán) đã nằm trong giá bán; voucher shop và phí dịch vụ
+  (Voucher Xtra, Freeship Xtra) nằm trong escrow; voucher Shopee do Shopee chịu.
+- **Cài đặt**: lãi mong muốn (% giá bán, mặc định 10), chi phí khác mỗi sản phẩm (đ), phí nạp ví QC (%), phí hoàn mỗi đơn (đ),
+  bật/tắt ROAS theo lãi.
 - **Dashboard Chiến dịch**: cột Hòa vốn / Theo lãi, Lãi 7 ngày ước tính (GMV × lãi trước QC − chi QC). Báo cáo sáng tính lãi bằng giá vốn Pancake.
 
 ## Giai đoạn tiếp theo
