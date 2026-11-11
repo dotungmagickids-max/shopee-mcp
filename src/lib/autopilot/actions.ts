@@ -2,7 +2,7 @@ import { db } from "../supabase";
 import { isDryRun, shopName } from "./config";
 import { automationBlocked, dailyCap, loadSettings, type ShopSettings } from "./settings";
 import { callShopee, ShopeeCallError } from "./shopee-call";
-import { approveButtons, editTelegram, esc, sendTelegram, sendTelegramMessage, vnd } from "./telegram";
+import { approveButtons, editTelegram, esc, sendTelegram, sendTelegramMessage, sendTelegramPhoto, vnd } from "./telegram";
 import { apiDate, vnDate, vnDayStartUnix } from "./time";
 
 export type ActionKind = "change_budget" | "change_roas_target" | "pause" | "resume" | "refresh";
@@ -55,6 +55,32 @@ async function campaignName(shopId: number, campaignId: number | null): Promise<
     .eq("campaign_id", campaignId)
     .maybeSingle();
   return data?.ad_name ?? "";
+}
+
+/**
+ * Ảnh đại diện sản phẩm của chiến dịch (sản phẩm đầu tiên). Lấy từ Shopee lần đầu rồi lưu vào
+ * ads_campaigns.image_url. Lỗi thì trả null (đề xuất vẫn gửi bằng chữ).
+ */
+export async function campaignImage(shopId: number, campaignId: number | null): Promise<string | null> {
+  if (!campaignId) return null;
+  try {
+    const { data } = await db()
+      .from("ads_campaigns")
+      .select("image_url, item_ids")
+      .eq("shop_id", shopId)
+      .eq("campaign_id", campaignId)
+      .maybeSingle();
+    if (data?.image_url) return data.image_url;
+    const itemId = Number(data?.item_ids?.[0]);
+    if (!itemId) return null;
+    const res = await callShopee(shopId, "product.get_item_base_info", { item_id_list: String(itemId) });
+    const url: string | undefined = res.response?.item_list?.[0]?.image?.image_url_list?.[0];
+    if (!url) return null;
+    await db().from("ads_campaigns").update({ image_url: url }).eq("shop_id", shopId).eq("campaign_id", campaignId);
+    return url;
+  } catch {
+    return null;
+  }
 }
 
 export function describeChange(action: string, before: any, after: any): string {
@@ -158,7 +184,9 @@ export async function propose(input: ProposalInput, ttlMinutes: number, settings
     await decide(row.id, true, "auto");
     return row;
   }
-  const msgId = await sendTelegramMessage(await proposalText(row), { replyMarkup: approveButtons(row.id) });
+  const msgId = await sendTelegramPhoto(await campaignImage(row.shop_id, row.campaign_id), await proposalText(row), {
+    replyMarkup: approveButtons(row.id),
+  });
   if (msgId) await db().from("autopilot_actions").update({ telegram_message_id: msgId }).eq("id", row.id);
   return row;
 }

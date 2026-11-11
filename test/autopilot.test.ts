@@ -22,6 +22,7 @@ let tables: Record<string, Row[]>;
 let shopeeCalls: string[];
 let refreshCalls = 0;
 let telegramCalls: { method: string; body: any }[] = [];
+const photoMessages = new Set<number>();
 let seq = 0;
 let editBodies: any[] = [];
 let createBodies: any[] = [];
@@ -168,7 +169,7 @@ function fakeShopee(url: URL, init: RequestInit): Response {
     case "/ads/get_all_cpc_ads_hourly_performance":
       return ok([{ date: url.searchParams.get("performance_date"), hour: 9, impression: 100, clicks: 5, expense: 20000, broad_order: 1, broad_gmv: 250000, direct_order: 1, direct_gmv: 250000 }]);
     case "/product/get_item_base_info":
-      return ok({ item_list: [{ item_id: Number(url.searchParams.get("item_id_list")), item_status: "NORMAL", stock_info_v2: { summary_info: { total_available_stock: itemStock } } }] });
+      return ok({ item_list: [{ item_id: Number(url.searchParams.get("item_id_list")), item_status: "NORMAL", image: { image_url_list: ["https://cf.shopee.test/file/a.jpg"] }, stock_info_v2: { summary_info: { total_available_stock: itemStock } } }] });
     case "/ads/get_product_recommended_roi_target":
       return ok({ exact: { value: 3.5 } });
     case "/ads/create_manual_product_ads":
@@ -194,8 +195,16 @@ globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}
   if (url.hostname === "supabase.test") return fakeSupabase(url, init);
   if (url.hostname === "partner.shopeemobile.com") return fakeShopee(url, init);
   if (url.hostname === "api.telegram.org") {
-    telegramCalls.push({ method: url.pathname.split("/").pop()!, body: JSON.parse(String(init.body ?? "{}")) });
-    return json({ ok: true, result: { message_id: 900 + telegramCalls.length } });
+    const method = url.pathname.split("/").pop()!;
+    const body = JSON.parse(String(init.body ?? "{}"));
+    telegramCalls.push({ method, body });
+    // Như Telegram thật: tin có ảnh không sửa được bằng editMessageText.
+    if (method === "editMessageText" && photoMessages.has(body.message_id)) {
+      return json({ ok: false, description: "Bad Request: there is no text in the message to edit" }, 400);
+    }
+    const messageId = 900 + telegramCalls.length;
+    if (method === "sendPhoto") photoMessages.add(messageId);
+    return json({ ok: true, result: { message_id: messageId } });
   }
   throw new Error(`Unexpected fetch to ${url}`);
 }) as typeof fetch;
@@ -329,6 +338,7 @@ function seedCampaign(over: Row = {}) {
     bidding_method: "auto",
     campaign_budget: 100000,
     roas_target: 10,
+    item_ids: [9],
     autopilot_excluded: false,
     tool_paused_at: null,
     ...over,
@@ -352,8 +362,11 @@ describe("rules and actions", () => {
     assert.equal(res.proposals, 1);
     const a = tables.autopilot_actions[0];
     assert.deepEqual([a.action, a.status, a.before.budget, a.after.budget, a.source], ["change_budget", "proposed", 100000, 150000, "rule:scale_up"]);
-    const msg = telegramCalls.find((t) => t.method === "sendMessage")!;
+    const msg = telegramCalls.find((t) => t.method === "sendPhoto")!;
+    assert.equal(msg.body.photo, "https://cf.shopee.test/file/a.jpg", "đề xuất gửi kèm ảnh đại diện sản phẩm");
+    assert.match(msg.body.caption, /Váy A/);
     assert.deepEqual(msg.body.reply_markup.inline_keyboard[0].map((b: any) => b.callback_data), [`a:${a.id}`, `r:${a.id}`]);
+    assert.equal(tables.ads_campaigns[0].image_url, "https://cf.shopee.test/file/a.jpg", "ảnh được lưu lại");
     assert.equal(editBodies.length, 0);
     // Chạy lại ngay: cooldown, không đề xuất trùng.
     assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
@@ -369,7 +382,9 @@ describe("rules and actions", () => {
     assert.equal(a.status, "dry_run");
     assert.equal(a.after.budget, 130000, "+50% bị giới hạn còn +30%");
     assert.equal(editBodies.length, 0);
-    assert.ok(telegramCalls.some((t) => t.method === "editMessageText"));
+    const cap = telegramCalls.find((t) => t.method === "editMessageCaption");
+    assert.ok(cap, "tin có ảnh được cập nhật bằng chú thích");
+    assert.match(cap.body.caption, /Dry-run/);
   });
 
   it("executes once with reference_id when dry-run is off, even if approved twice", async () => {
