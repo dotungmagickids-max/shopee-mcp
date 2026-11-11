@@ -327,6 +327,19 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
     return { status: await finish(row, "skipped", `Đã chỉnh ${s.max_edits_per_day} lần hôm nay`) };
   }
 
+  // Shopee trả error_server khi sửa ngân sách/ROAS của chiến dịch đang tạm dừng (thử 11/11/2026).
+  if (row.action === "change_budget" || row.action === "change_roas_target") {
+    const { data: camp } = await db()
+      .from("ads_campaigns")
+      .select("campaign_status")
+      .eq("shop_id", row.shop_id)
+      .eq("campaign_id", row.campaign_id)
+      .maybeSingle();
+    if (camp?.campaign_status && camp.campaign_status !== "ongoing") {
+      return { status: await finish(row, "skipped", "Chiến dịch không ở trạng thái đang chạy: Shopee không cho sửa") };
+    }
+  }
+
   const params: Record<string, unknown> = {
     reference_id: row.reference_id,
     campaign_id: row.campaign_id,
