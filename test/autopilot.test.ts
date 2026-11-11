@@ -24,6 +24,8 @@ let refreshCalls = 0;
 let telegramCalls: { method: string; body: any }[] = [];
 let seq = 0;
 let editBodies: any[] = [];
+let createBodies: any[] = [];
+let itemStock = 10;
 
 function reset() {
   tables = {
@@ -44,6 +46,8 @@ function reset() {
   refreshCalls = 0;
   telegramCalls = [];
   editBodies = [];
+  createBodies = [];
+  itemStock = 10;
 }
 
 const json = (body: unknown, status = 200) =>
@@ -163,6 +167,13 @@ function fakeShopee(url: URL, init: RequestInit): Response {
       return ok([{ campaign_list: [{ campaign_id: 1, metrics_list: [{ date: url.searchParams.get("performance_date"), hour: 9, impression: 100, clicks: 5, expense: 20000, broad_order: 1, broad_gmv: 250000, direct_order: 1, direct_gmv: 250000 }] }] }]);
     case "/ads/get_all_cpc_ads_hourly_performance":
       return ok([{ date: url.searchParams.get("performance_date"), hour: 9, impression: 100, clicks: 5, expense: 20000, broad_order: 1, broad_gmv: 250000, direct_order: 1, direct_gmv: 250000 }]);
+    case "/product/get_item_base_info":
+      return ok({ item_list: [{ item_id: Number(url.searchParams.get("item_id_list")), item_status: "NORMAL", stock_info_v2: { summary_info: { total_available_stock: itemStock } } }] });
+    case "/ads/get_product_recommended_roi_target":
+      return ok({ exact: { value: 3.5 } });
+    case "/ads/create_manual_product_ads":
+      createBodies.push(JSON.parse(String(init.body)));
+      return ok([{ campaign_id: 999 }]);
     case "/ads/edit_manual_product_ads":
       editBodies.push(JSON.parse(String(init.body)));
       return ok([{ campaign_id: 1 }]);
@@ -198,6 +209,7 @@ const time = await import("../src/lib/autopilot/time");
 const actions = await import("../src/lib/autopilot/actions");
 const rules = await import("../src/lib/autopilot/rules");
 const webhook = await import("../src/app/api/telegram/webhook/route");
+const refresh = await import("../src/lib/autopilot/refresh");
 
 describe("token encryption", () => {
   beforeEach(reset);
@@ -456,5 +468,61 @@ describe("rules and actions", () => {
     await call(42);
     assert.equal(a.status, "dry_run");
     assert.ok(telegramCalls.some((t) => t.method === "answerCallbackQuery"));
+  });
+});
+
+describe("campaign refresh", () => {
+  beforeEach(() => {
+    reset();
+    delete process.env.AUTOPILOT_DRY_RUN;
+    // Chiến dịch chạy từ 30 ngày trước, 14 ngày qua không có số liệu chi tiêu → "không chạy".
+    tables.ads_campaigns.push({
+      shop_id: 111, campaign_id: 5, ad_name: "Váy chết", campaign_status: "ongoing", bidding_method: "auto",
+      campaign_budget: 0, roas_target: 10, item_ids: [77], start_time: Math.floor(Date.now() / 1000) - 30 * 86400,
+      autopilot_excluded: false,
+    });
+    tables.ads_campaign_daily = [];
+  });
+
+  it("proposes a refresh for a dead campaign and needs a human to approve", async () => {
+    const res = await refresh.proposeRefresh(111);
+    assert.equal((res as any).items, 1);
+    const child = tables.autopilot_actions.find((a) => a.action === "refresh")!;
+    assert.equal(child.after.item_id, 77);
+    assert.equal(child.after.roas_target, 8.5, "không chạy → hạ mục tiêu 15%");
+    assert.match(child.after.why, /Shopee gợi ý ROAS 3.5/);
+    // Duyệt tự động (chế độ auto) không được làm mới.
+    process.env.AUTOPILOT_DRY_RUN = "false";
+    await actions.decide(child.parent_id, true, "auto");
+    assert.equal(child.status, "skipped");
+    assert.equal(editBodies.length + createBodies.length, 0);
+  });
+
+  it("stops the old campaign then creates a new one when approved", async () => {
+    process.env.AUTOPILOT_DRY_RUN = "false";
+    await refresh.proposeRefresh(111);
+    const child = tables.autopilot_actions.find((a) => a.action === "refresh")!;
+    await actions.decide(child.parent_id, true, "telegram");
+    assert.equal(child.status, "executed", child.error);
+    assert.deepEqual(editBodies[0], { reference_id: child.reference_id, campaign_id: 5, edit_action: "stop" });
+    assert.equal(createBodies[0].item_id, 77);
+    assert.equal(createBodies[0].bidding_method, "auto");
+    assert.equal(createBodies[0].roas_target, 8.5);
+    assert.equal(createBodies[0].budget, 100000);
+    assert.equal(createBodies[0].start_date, time.apiDate(time.vnDate()));
+    assert.notEqual(createBodies[0].reference_id, child.reference_id);
+    assert.equal(tables.ads_campaigns.find((c) => c.campaign_id === 5)!.campaign_status, "ended");
+    assert.equal(tables.ads_campaigns.find((c) => c.campaign_id === 999)!.campaign_status, "ongoing");
+    assert.equal(child.after.new_campaign_id, 999);
+    // Không đề xuất lại cùng sản phẩm trong 14 ngày.
+    assert.equal(((await refresh.proposeRefresh(111)) as any).items, 0);
+  });
+
+  it("flags out-of-stock products instead of refreshing", async () => {
+    itemStock = 0;
+    const res = (await refresh.proposeRefresh(111)) as any;
+    assert.equal(res.items, 0);
+    assert.equal(res.productIssues, 1);
+    assert.ok(telegramCalls.some((t) => /HẾT HÀNG/.test(t.body.text ?? "")));
   });
 });

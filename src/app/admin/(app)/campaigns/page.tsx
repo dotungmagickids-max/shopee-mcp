@@ -75,6 +75,15 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
             <h2>
               {shop.name} <span className="muted">({shop.shopId}) · {rows.length} chiến dịch</span>
             </h2>
+            <form method="post" action="/api/admin/actions" style={{ marginBottom: 8 }}>
+              <input type="hidden" name="op" value="refresh" />
+              <input type="hidden" name="shop_id" value={shop.shopId} />
+              <input type="hidden" name="back" value="/admin/campaigns" />
+              <button type="submit" className="secondary" style={{ padding: "4px 10px", fontSize: 13, margin: 0, border: "1px solid var(--border)" }}>
+                Rà chiến dịch cần làm mới
+              </button>{" "}
+              <span className="muted">Tự chạy sáng thứ Hai 8h30; luôn chờ anh duyệt.</span>
+            </form>
             {unlimited ? (
               <p className="warning">
                 {unlimited} chiến dịch đang chạy để ngân sách <b>không giới hạn</b> (campaign_budget = 0).{" "}

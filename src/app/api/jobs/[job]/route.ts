@@ -1,5 +1,5 @@
 import { checkJobSecret } from "@/lib/autopilot/config";
-import { backfillJob, capsJob, collectJob, dailyJob, morningReportJob, resetJob } from "@/lib/autopilot/jobs";
+import { backfillJob, capsJob, collectJob, dailyJob, morningReportJob, refreshJob, resetJob } from "@/lib/autopilot/jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +28,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ job: strin
     else if (job === "daily" && part && PARTS.includes(part)) result = await dailyJob(part);
     else if (job === "report") result = await morningReportJob();
     else if (job === "caps") result = await capsJob();
+    else if (job === "refresh") result = await refreshJob();
     else if (job === "backfill" && /^\d{4}-\d{2}-\d{2}$/.test(sp.get("date") ?? "")) result = await backfillJob(sp.get("date")!);
     else return Response.json({ error: "unknown job" }, { status: 404 });
     return Response.json({ ok: true, result });
