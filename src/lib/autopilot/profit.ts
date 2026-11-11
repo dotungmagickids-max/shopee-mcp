@@ -9,10 +9,12 @@ import { loadSettings } from "./settings";
  * Kinh tế của một sản phẩm, quy về 1đ GMV quảng cáo (cùng thước đo với ROAS Shopee).
  * Đơn hủy không có tiền và không tốn giá vốn. Phần bị hoàn tiền mất doanh thu; hàng gửi trả về thì thu lại giá vốn,
  * chỉ hoàn tiền (không gửi trả) thì mất cả hàng:
- *   c = tỉ lệ hủy, r = tiền hoàn / giá bán, rb = phần hoàn có hàng gửi về / giá bán
- *   margin  = (1 − c) × (tiền về × (1 − r) − giá vốn/giá bán × (1 − rb) − chi phí khác/giá bán)   lãi trước QC trên 1đ GMV
- *   allow   = margin − (1 − c) × (1 − r) × lãi mong muốn                                       tiền QC được phép trên 1đ GMV
- *   ROAS hòa vốn = 1 / margin;  ROAS theo lãi = 1 / allow (null nếu không thể đạt lãi mong muốn)
+ *   c = tỉ lệ hủy, r = tiền hoàn / giá bán, rb = phần hoàn có hàng gửi về / giá bán,
+ *   rf = phí hoàn (đơn quay về × phí mỗi đơn) / giá bán, f = phí nạp ví QC
+ *   margin  = (1 − c) × (tiền về × (1 − r) − giá vốn/giá bán × (1 − rb) − chi phí khác/giá bán − rf)   lãi trước QC trên 1đ GMV
+ *   allow   = margin − (1 − c) × (1 − r) × lãi mong muốn                                            tiền QC thật được phép
+ *   ROAS hòa vốn = (1 + f) / margin;  ROAS theo lãi = (1 + f) / allow (null nếu không thể đạt lãi mong muốn)
+ *   (ROAS tính theo chi Shopee báo; chi thật = chi báo × (1 + f))
  * Tỉ lệ tiền về lấy từ escrow thật (đã trừ mọi phí Shopee, voucher shop, thuế, ship shop chịu).
  */
 export interface Econ {
@@ -25,6 +27,8 @@ export interface Econ {
   return_rate: number; // tiền hoàn / giá bán
   return_back_rate: number; // phần hoàn có hàng gửi về shop
   return_source: "item" | "shop"; // tỉ lệ hoàn của chính sản phẩm hay TB shop
+  return_fee_ratio?: number; // phí hoàn / giá bán
+  ad_fee_pct?: number; // phí nạp ví QC (%)
   margin: number; // lãi trước QC trên 1đ GMV
   breakeven: number | null; // ROAS hòa vốn
   target: number | null; // ROAS cần để đạt lãi mong muốn
@@ -40,6 +44,8 @@ export interface EconCtx {
   returnRate: number;
   returnBackRate: number;
   returnSource?: "item" | "shop";
+  returnFeeRatio?: number;
+  adFeePct?: number;
   profitPct: number;
   extraPerUnit: number;
 }
@@ -61,8 +67,10 @@ export function econFrom(
   const price = a.revenue / a.units;
   const costRatio = a.cogs / a.costedRevenue;
   const keepC = 1 - ctx.cancelRate;
+  const rf = ctx.returnFeeRatio ?? 0;
+  const fee = 1 + (ctx.adFeePct ?? 0) / 100;
   const margin =
-    keepC * (ctx.payout * (1 - ctx.returnRate) - costRatio * (1 - ctx.returnBackRate) - ctx.extraPerUnit / price);
+    keepC * (ctx.payout * (1 - ctx.returnRate) - costRatio * (1 - ctx.returnBackRate) - ctx.extraPerUnit / price - rf);
   const allow = margin - keepC * (1 - ctx.returnRate) * (ctx.profitPct / 100);
   return {
     price: Math.round(price),
@@ -74,9 +82,11 @@ export function econFrom(
     return_rate: r3(ctx.returnRate),
     return_back_rate: r3(ctx.returnBackRate),
     return_source: ctx.returnSource ?? "shop",
+    return_fee_ratio: Math.round(rf * 10000) / 10000,
+    ad_fee_pct: ctx.adFeePct ?? 0,
     margin: r3(margin),
-    breakeven: margin > 0 ? round1(1 / margin) : null,
-    target: allow > 0 ? round1(1 / allow) : null,
+    breakeven: margin > 0 ? round1(fee / margin) : null,
+    target: allow > 0 ? round1(fee / allow) : null,
     profit_pct: ctx.profitPct,
     source,
     at: new Date().toISOString(),
@@ -144,6 +154,8 @@ export async function computeEconomics(shopId: number) {
     cancelRate: rates.cancel,
     returnRate: rates.ret,
     returnBackRate: rates.retBack,
+    returnFeeRatio: rates.keptSelling > 0 ? (rates.returnEvents * s.params.return_fee_per_order) / rates.keptSelling : 0,
+    adFeePct: s.params.ad_fee_pct,
     profitPct: s.params.profit_target_pct,
     extraPerUnit: s.params.extra_cost_per_unit,
   };

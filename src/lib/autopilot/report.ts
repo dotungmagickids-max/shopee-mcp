@@ -1,5 +1,6 @@
 import { db } from "../supabase";
 import { shopFees } from "./fees";
+import { loadSettings } from "./settings";
 import { costOf, loadCostMap } from "./pancake";
 import { chunk } from "./shopee-call";
 import { addDays, vnDayStartUnix } from "./time";
@@ -90,7 +91,9 @@ export async function dayReport(shopId: number, date: string) {
         else cogs += c * Number(it.qty ?? 1);
       }
     }
-    profit = payout - cogs - adExpense;
+    // Chi QC thật = chi Shopee báo × (1 + phí nạp ví).
+    const adFee = (await loadSettings(shopId)).params.ad_fee_pct / 100;
+    profit = payout - cogs - adExpense * (1 + adFee);
     const notes = [];
     if (estimated) notes.push(`${estimated} đơn ước tính tiền về ${Math.round(ratio * 100)}%`);
     if (missing) notes.push(`${missing} dòng hàng thiếu giá vốn`);
