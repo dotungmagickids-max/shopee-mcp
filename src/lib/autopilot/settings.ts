@@ -42,7 +42,34 @@ export interface ShopSettings {
   start_budget: number;
   reset_unlimited: boolean;
   sale_dates: string[];
+  good_hours: number[]; // rỗng = tự tính
   params: RuleParams;
+}
+
+/** "0, 8-12, 20-22" → [0,8,9,10,11,12,20,21,22] */
+export function parseHours(text: string): number[] {
+  const out = new Set<number>();
+  for (const part of text.split(/[,;\s]+/).filter(Boolean)) {
+    const m = /^(\d{1,2})h?(?:-(\d{1,2})h?)?$/i.exec(part);
+    if (!m) continue;
+    const a = Number(m[1]);
+    const b = m[2] == null ? a : Number(m[2]);
+    for (let h = Math.min(a, b); h <= Math.max(a, b); h++) if (h >= 0 && h <= 23) out.add(h);
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+/** [0,8,9,10,11,12,20,21,22] → "0h, 8h–12h, 20h–22h" */
+export function formatHours(hours: number[]): string {
+  const s = [...hours].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    let j = i;
+    while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
+    parts.push(i === j ? `${s[i]}h` : `${s[i]}h–${s[j]}h`);
+    i = j;
+  }
+  return parts.join(", ");
 }
 
 const numOrNull = (v: unknown) => (v == null ? null : Number(v));
@@ -65,6 +92,7 @@ export async function loadSettings(shopId: number): Promise<ShopSettings> {
     start_budget: Number(r.start_budget ?? 100_000),
     reset_unlimited: !!r.reset_unlimited,
     sale_dates: r.sale_dates ?? [],
+    good_hours: (r.good_hours ?? []).map(Number),
     params: { ...DEFAULT_RULE_PARAMS, ...(r.rule_params ?? {}) },
   };
 }

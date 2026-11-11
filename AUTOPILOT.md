@@ -119,8 +119,8 @@ Giữ `AUTOPILOT_DRY_RUN=true` cho tới khi có cách sửa được xác nhậ
 - *Siết ngân sách* (thay cho tạm dừng, vì chiến dịch tạm dừng thì Shopee không cho sửa): trong 3 giờ trọn gần nhất (không tính giờ đang chạy),
   chi ở ≥ 2 giờ, ≥ 30 click, ≥ 50.000đ, ROAS < 40% mục tiêu, **và** ROAS cả ngày < 60% mục tiêu → ngân sách = đã chi hôm nay + 10.000đ.
   Chiến dịch vẫn “đang chạy”, chỉ hết tiền tiêu. Áp dụng cả chiến dịch đang không giới hạn.
-- *Nới lại ở khung giờ tốt kế tiếp*: khung tốt tính từ 4 tuần gần nhất (bỏ ngày đôi): giờ có click ≥ 80% trung vị và ROAS ≥ ROAS chung, luôn gồm 0h
-  (Magickids 11/2026: 0h, 8h–10h). Vào khung tốt kế tiếp sau lúc siết → đề xuất nới về mức cũ (thấp nhất mức khởi điểm). Mỗi ngày nới 1 lần; siết lại thì chờ 0h.
+- *Nới lại ở khung giờ tốt kế tiếp*: khung tốt do anh đặt trong Cài đặt — mặc định **0h, 8h–12h, 20h–22h** (anh Tùng chọn 11/11/2026).
+  Để trống thì tool tự tính từ 4 tuần gần nhất (bỏ ngày đôi): giờ có click ≥ 80% trung vị và ROAS ≥ ROAS chung, luôn gồm 0h. Vào khung tốt kế tiếp sau lúc siết → đề xuất nới về mức cũ (thấp nhất mức khởi điểm). Mỗi ngày nới 1 lần; siết lại thì chờ 0h.
 - *Hạn mức cho chiến dịch không giới hạn*: nút “Đề xuất hạn mức” trên trang Chiến dịch (hoặc `POST /api/jobs/caps`) → đề xuất gộp,
   hạn mức = chi trung bình/ngày của 7 ngày thường gần nhất, làm tròn lên 10k, thấp nhất mức khởi điểm.
 - *Reset 0h*: ngân sách > mức khởi điểm → về mức khởi điểm; bật lại chiến dịch tool đã dừng. Chiến dịch **không giới hạn** chỉ đưa vào khi tick “Áp dụng cả chiến dịch không giới hạn”.

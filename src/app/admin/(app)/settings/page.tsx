@@ -1,5 +1,5 @@
 import { isDryRun, shops } from "@/lib/autopilot/config";
-import { DEFAULT_RULE_PARAMS, loadSettings, suggestDays } from "@/lib/autopilot/settings";
+import { DEFAULT_RULE_PARAMS, formatHours, loadSettings, suggestDays } from "@/lib/autopilot/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +90,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
                 <input name="max_edits_per_day" inputMode="numeric" defaultValue={st.max_edits_per_day} />
                 <label>Ngân sách khởi điểm lúc 0h (đ)</label>
                 <input name="start_budget" inputMode="numeric" defaultValue={st.start_budget} />
+                <label>Khung giờ tốt — nới lại ngân sách đã siết (vd: 0, 8-12, 20-22; trống = tự tính)</label>
+                <input name="good_hours" defaultValue={st.good_hours.length ? formatHours(st.good_hours).replace(/h/g, "").replace(/–/g, "-") : ""} placeholder="0, 8-12, 20-22" />
                 <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input type="checkbox" name="reset_unlimited" defaultChecked={st.reset_unlimited} style={{ width: "auto" }} />
                   Reset 0h áp dụng cả chiến dịch đang <b>không giới hạn</b> ngân sách

@@ -1,7 +1,7 @@
 import { adminFromRequest } from "@/lib/autopilot/admin-auth";
 import { shops } from "@/lib/autopilot/config";
 import { esc, sendTelegram } from "@/lib/autopilot/telegram";
-import { DEFAULT_RULE_PARAMS, suggestDays } from "@/lib/autopilot/settings";
+import { DEFAULT_RULE_PARAMS, parseHours, suggestDays } from "@/lib/autopilot/settings";
 import { db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -66,6 +66,7 @@ export async function POST(request: Request) {
       start_budget: numOrNull("start_budget") ?? 100000,
       reset_unlimited: form.get("reset_unlimited") === "on",
       sale_dates: saleDates,
+      good_hours: parseHours(String(form.get("good_hours") ?? "")),
       rule_params: params,
       updated_at: now,
     };

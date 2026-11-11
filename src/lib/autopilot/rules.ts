@@ -104,7 +104,8 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
     byCamp.get(id)!.push({ hour: r.hour, clicks: n(r.clicks), expense: n(r.expense), gmv: n(r.broad_gmv) });
   }
 
-  const good = await goodHours(shopId, p.good_hours_weeks);
+  // Khung giờ tốt: anh đặt trong Cài đặt; để trống thì tự tính từ số liệu.
+  const good = s.good_hours.length ? new Set(s.good_hours) : await goodHours(shopId, p.good_hours_weeks);
   const { data: restores } = await db()
     .from("autopilot_actions")
     .select("campaign_id")

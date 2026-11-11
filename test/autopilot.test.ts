@@ -284,6 +284,15 @@ describe("job route", () => {
   });
 });
 
+describe("good hours setting", () => {
+  it("parses and formats hour ranges", async () => {
+    const { parseHours, formatHours } = await import("../src/lib/autopilot/settings");
+    assert.deepEqual(parseHours("0, 8-12, 20-22"), [0, 8, 9, 10, 11, 12, 20, 21, 22]);
+    assert.deepEqual(parseHours("0h 8h-12h; 25, x"), [0, 8, 9, 10, 11, 12]);
+    assert.equal(formatHours([0, 8, 9, 10, 11, 12, 20, 21, 22]), "0h, 8h–12h, 20h–22h");
+  });
+});
+
 describe("time helpers", () => {
   it("uses Vietnam time", () => {
     // 2026-11-10T17:30:00Z = 00:30 ngày 11/11 giờ VN
