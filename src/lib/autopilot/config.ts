@@ -24,8 +24,21 @@ export function shopName(shopId: number): string {
   return shops().find((s) => s.shopId === shopId)?.name ?? String(shopId);
 }
 
-export function isDryRun(): boolean {
-  return process.env.AUTOPILOT_DRY_RUN !== "false";
+/** Hành động được chạy thật dù đang dry-run, vd AUTOPILOT_LIVE_ACTIONS="change_budget". */
+export function liveActions(): string[] {
+  return (process.env.AUTOPILOT_LIVE_ACTIONS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Dry-run: chỉ ghi log, không gửi Shopee. Mặc định bật; AUTOPILOT_DRY_RUN=false tắt cho mọi hành động.
+ * Khi truyền action, hành động có trong AUTOPILOT_LIVE_ACTIONS được chạy thật.
+ */
+export function isDryRun(action?: string): boolean {
+  if (process.env.AUTOPILOT_DRY_RUN === "false") return false;
+  return !(action && liveActions().includes(action));
 }
 
 export function safeEqual(a: string, b: string): boolean {

@@ -373,7 +373,7 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
     return { status: await finish(row, "skipped", `Hành động không hỗ trợ: ${row.action}`) };
   }
 
-  if (isDryRun()) return { status: await finish(row, "dry_run", null, after) };
+  if (isDryRun(row.action)) return { status: await finish(row, "dry_run", null, after) };
 
   try {
     await callShopee(row.shop_id, EDIT_ENDPOINT, params, { allowWrite: true });
@@ -437,7 +437,7 @@ async function executeRefresh(row: ActionRow): Promise<{ status: string; halted?
   if (camp?.campaign_status !== "ongoing") {
     return { status: await finish(row, "skipped", "Chiến dịch không còn ở trạng thái đang chạy") };
   }
-  if (isDryRun()) return { status: await finish(row, "dry_run", null) };
+  if (isDryRun("refresh")) return { status: await finish(row, "dry_run", null) };
 
   // reference_id riêng cho lệnh tạo, lưu trước khi gửi để không bao giờ tạo trùng.
   const createRef = row.after?.create_reference_id ?? crypto.randomUUID();
