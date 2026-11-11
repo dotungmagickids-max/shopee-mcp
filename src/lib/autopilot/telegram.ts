@@ -29,6 +29,30 @@ export async function sendTelegramMessage(
   return r?.result?.message_id ?? null;
 }
 
+/**
+ * Gửi ảnh kèm chú thích (HTML, tối đa 1024 ký tự) và nút bấm. Ảnh lỗi hoặc chú thích quá dài
+ * thì gửi tin chữ như thường. Trả về message_id.
+ */
+export async function sendTelegramPhoto(
+  photoUrl: string | null | undefined,
+  caption: string,
+  opts: { chatId?: string | number; replyMarkup?: unknown } = {}
+): Promise<number | null> {
+  const chatId = opts.chatId ?? process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return null;
+  if (photoUrl && caption.length <= 1024) {
+    const r = await tg("sendPhoto", {
+      chat_id: chatId,
+      photo: photoUrl,
+      caption,
+      parse_mode: "HTML",
+      ...(opts.replyMarkup ? { reply_markup: opts.replyMarkup } : {}),
+    });
+    if (r?.result?.message_id) return r.result.message_id;
+  }
+  return sendTelegramMessage(caption, opts);
+}
+
 export async function sendTelegram(
   text: string,
   opts: { chatId?: string | number; replyMarkup?: unknown } = {}
@@ -36,17 +60,28 @@ export async function sendTelegram(
   return (await sendTelegramMessage(text, opts)) != null;
 }
 
-/** Sửa nội dung tin (bỏ nút bấm). */
+/** Sửa nội dung tin (bỏ nút bấm). Tin có ảnh (sửa chữ bị Telegram từ chối) thì sửa chú thích. */
 export async function editTelegram(messageId: number, text: string): Promise<void> {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!chatId) return;
-  await tg("editMessageText", {
+  const r = await tg("editMessageText", {
     chat_id: chatId,
     message_id: messageId,
     text: text.slice(0, 4000),
     parse_mode: "HTML",
     disable_web_page_preview: true,
   });
+  if (r?.ok) return;
+  await tg(
+    "editMessageCaption",
+    text.length <= 1024
+      ? { chat_id: chatId, message_id: messageId, caption: text, parse_mode: "HTML" }
+      : { chat_id: chatId, message_id: messageId, caption: `${unhtml(text).slice(0, 1020)}…` }
+  );
+}
+
+function unhtml(s: string): string {
+  return s.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
 export async function answerCallback(callbackQueryId: string, text: string): Promise<void> {
