@@ -3,6 +3,8 @@ import { adminFromRequest } from "@/lib/autopilot/admin-auth";
 import { shops } from "@/lib/autopilot/config";
 import { proposeCapsForUnlimited } from "@/lib/autopilot/rules";
 import { proposeRefresh } from "@/lib/autopilot/refresh";
+import { CLASSES, CLASS_VI, type ProductClass } from "@/lib/autopilot/classes";
+import { setProductClass } from "@/lib/autopilot/profit";
 import { db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -14,6 +16,7 @@ export const maxDuration = 300;
  *   op=decide  id, approve=1|0                 duyệt / bỏ qua đề xuất
  *   op=edit    shop_id, campaign_id, kind, value   sửa chiến dịch (change_budget | change_roas_target | pause | resume)
  *   op=exclude shop_id, campaign_id, excluded=1|0  loại / đưa lại chiến dịch vào tự động
+ *   op=class   shop_id, campaign_id, class=chu_luc|thuong|xa_kho|moi|auto   chọn nhóm hàng
  */
 export async function POST(request: Request) {
   if (!adminFromRequest(request)) return new Response("unauthorized", { status: 401 });
@@ -53,7 +56,12 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (!camp) return new Response("unknown campaign", { status: 404 });
 
-    if (op === "exclude") {
+    if (op === "class") {
+      const v = String(form.get("class") ?? "auto");
+      const cls = (CLASSES as string[]).includes(v) ? (v as ProductClass) : null;
+      const n = await setProductClass(shopId, campaignId, cls);
+      msg = cls ? `Đã đặt nhóm ${CLASS_VI[cls]} cho sản phẩm của #${campaignId} (${n} chiến dịch)` : `#${campaignId}: trả về nhóm tự động`;
+    } else if (op === "exclude") {
       const excluded = form.get("excluded") === "1";
       await db().from("ads_campaigns").update({ autopilot_excluded: excluded }).eq("shop_id", shopId).eq("campaign_id", campaignId);
       msg = excluded ? `Đã loại #${campaignId} khỏi tự động` : `Đã đưa #${campaignId} lại vào tự động`;

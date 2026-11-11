@@ -45,3 +45,7 @@ form.settings input, form.settings select { width: 100%; max-width: 280px; paddi
   .bars { height: 100px; }
 }
 td.neg { color: var(--error); font-weight: 600; }
+.tag.cls-chu_luc { background: #e6f4ea; color: #1e7b34; }
+.tag.cls-xa_kho { background: #fdecea; color: #b3261e; }
+.tag.cls-moi { background: #e8f0fe; color: #1a56c4; }
+.tag.cls-thuong { background: var(--border); }

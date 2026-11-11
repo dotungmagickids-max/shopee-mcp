@@ -30,6 +30,17 @@ export const DEFAULT_RULE_PARAMS = {
   use_profit_roas: 1, // 1 = luật dùng ROAS theo lãi thay cho ROAS mục tiêu đang đặt; 0 = tắt
   ad_fee_pct: 8, // phí nạp ví quảng cáo: chi QC thật = chi Shopee báo × (1 + %)
   return_fee_per_order: 2_700, // phí mỗi đơn hoàn / giao thất bại (đ)
+  // Nhóm hàng: mục tiêu riêng (nhóm Thường dùng profit_target_pct)
+  profit_core_pct: 8, // Chủ lực: lãi mong muốn thấp hơn để mở rộng, tối đa tổng lãi
+  profit_new_pct: 0, // Mới: chạy ở mức hòa vốn để học
+  clear_ads_share_pct: 60, // Xả kho: quảng cáo được dùng tối đa % tiền mặt thu về
+  // Ngưỡng tự phân nhóm
+  new_days: 30, // Mới: sản phẩm tạo trên Pancake chưa tới N ngày
+  clear_stock_days: 120, // Xả kho: tồn đủ bán ≥ N ngày
+  clear_min_stock: 20, // …và còn ≥ N cái (cả khi trái mùa)
+  core_min_units: 60, // Chủ lực: bán ≥ N cái / 30 ngày trên Shopee
+  core_max_cost_pct: 36, // …giá vốn ≤ % giá bán
+  core_min_stock_days: 14, // …tồn đủ bán ≥ N ngày
 };
 
 export type RuleParams = typeof DEFAULT_RULE_PARAMS;

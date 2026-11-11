@@ -9,6 +9,50 @@ export function normSku(s: string | null | undefined): string {
   return String(s ?? "").replace(/\s+/g, "").toUpperCase();
 }
 
+/** Mã sản phẩm từ mã biến thể: phần chữ + số đầu, vd QD26001BE160 → QD26001. */
+export function productCode(s: string | null | undefined): string | null {
+  const m = /^[A-Z]+\d+/.exec(normSku(s));
+  return m ? m[0] : null;
+}
+
+export interface ProductStats {
+  stock: number; // tồn có thể bán, mọi biến thể, mọi kho
+  sellingAvg: number; // bán/ngày theo Pancake (mọi kênh)
+  categories: Set<string>;
+  created: number | null; // ms
+  cost: number | null; // giá vốn TB các biến thể
+}
+
+/** Thống kê theo mã sản phẩm từ bảng Pancake. */
+export async function loadProductStats(): Promise<Map<string, ProductStats>> {
+  const out = new Map<string, ProductStats & { costSum: number; costN: number }>();
+  for (let page = 0; page < 50; page++) {
+    const { data, error } = await db()
+      .from("pancake_variations")
+      .select("sku, product_code, stock, selling_avg, categories, product_created, cost")
+      .range(page * 1000, page * 1000 + 999);
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) {
+      const code = r.product_code || productCode(r.sku);
+      if (!code) continue;
+      const a = out.get(code) ?? { stock: 0, sellingAvg: 0, categories: new Set<string>(), created: null, cost: null, costSum: 0, costN: 0 };
+      a.stock += Math.max(0, Number(r.stock ?? 0));
+      a.sellingAvg += Number(r.selling_avg ?? 0);
+      for (const c of r.categories ?? []) a.categories.add(c);
+      const t = r.product_created ? Date.parse(r.product_created) : NaN;
+      if (Number.isFinite(t)) a.created = a.created == null ? t : Math.min(a.created, t);
+      if (Number(r.cost) > 0) {
+        a.costSum += Number(r.cost);
+        a.costN++;
+      }
+      out.set(code, a);
+    }
+    if (!data || data.length < 1000) break;
+  }
+  for (const a of out.values()) a.cost = a.costN ? a.costSum / a.costN : null;
+  return out;
+}
+
 const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
 
 /**
@@ -41,6 +85,9 @@ export async function syncPancakeVariations(): Promise<{ variations: number; pag
       bySku.set(sku, {
         sku,
         product_name: v.product?.name ?? null,
+        product_code: normSku(v.product?.display_id) || productCode(sku),
+        categories: (v.product?.categories ?? []).map((c: any) => String(c?.name ?? "")).filter(Boolean),
+        product_created: v.product?.inserted_at ? `${String(v.product.inserted_at).replace(/Z$/, "")}Z` : null,
         // Giá nhập gần nhất: giá bình quân của Pancake hay bị kéo lệch (nhập/kiểm kê giá 0), vd QD26001 bình quân 8.857đ
         // trong khi giá nhập 62.000đ. Chỉ dùng bình quân khi chưa có giá nhập gần nhất.
         cost: last && last > 0 ? last : avg && avg > 0 ? avg : null,
