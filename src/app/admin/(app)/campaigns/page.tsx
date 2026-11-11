@@ -64,7 +64,8 @@ function EconBox({ econ }: { econ: EconSummary | null }) {
     <details style={{ margin: "8px 0" }}>
       <summary>
         <b>Lãi</b>: tiền về {pct(f.payout)} giá bán{f.estimated ? " (ước tính, chưa đủ escrow)" : ` (${f.orders} đơn thật)`} · giá vốn TB{" "}
-        {pct(econ.shop.cost_ratio)} · hủy {pct(econ.cancel_rate)} · hoàn {pct(econ.return_rate)} giá bán · ROAS hòa vốn TB{" "}
+        {pct(econ.shop.cost_ratio)} · hủy {pct(econ.cancel_rate)}
+        {econ.failed_delivery_rate != null ? ` (hủy ngang ${pct(econ.cancel_before_ship_rate ?? 0)}, giao thất bại ${pct(econ.failed_delivery_rate)})` : ""} · hoàn {pct(econ.return_rate)} giá bán · ROAS hòa vốn TB{" "}
         <b>{econ.shop.breakeven ?? "lỗ"}</b> · ROAS cho lãi {econ.shop.profit_pct}%: <b>{econ.shop.target ?? "không đạt"}</b>
       </summary>
       <div className="muted" style={{ marginTop: 6 }}>

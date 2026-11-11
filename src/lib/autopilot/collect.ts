@@ -252,7 +252,7 @@ async function fetchOrderDetails(shopId: number, orderSns: string[]): Promise<nu
     const res = await callShopee(shopId, "order.get_order_detail", {
       // GET: phải nối bằng dấu phẩy; truyền mảng thì Shopee chỉ đọc phần tử đầu.
       order_sn_list: batch.join(","),
-      response_optional_fields: "total_amount,item_list",
+      response_optional_fields: "total_amount,item_list,cancel_by,cancel_reason,pickup_done_time",
     });
     const now = new Date().toISOString();
     const rows = (res.response?.order_list ?? []).map((o: any) => ({
@@ -270,6 +270,9 @@ async function fetchOrderDetails(shopId: number, orderSns: string[]): Promise<nu
         qty: i.model_quantity_purchased,
         price: i.model_discounted_price,
       })),
+      cancel_by: o.cancel_by || null,
+      cancel_reason: o.cancel_reason || null,
+      pickup_done_time: toUnix(o.pickup_done_time) || null,
       detail_fetched_at: now,
       updated_at: now,
     }));
@@ -309,6 +312,22 @@ export async function syncOrders(
   return { listed: listed.length, detailed, statusUpdated: changed.length };
 }
 
+/** Đơn hủy 45 ngày chưa có lý do hủy (lấy trước khi lưu trường này): lấy lại chi tiết. */
+export async function backfillCancelInfo(shopId: number, limit = 500): Promise<{ fetched: number }> {
+  const since = Math.floor(Date.now() / 1000) - 45 * 86400;
+  const { data, error } = await db()
+    .from("orders")
+    .select("order_sn")
+    .eq("shop_id", shopId)
+    .in("order_status", ["CANCELLED", "IN_CANCEL"])
+    .is("cancel_reason", null)
+    .gte("create_time", since)
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  const fetched = await fetchOrderDetails(shopId, (data ?? []).map((o) => o.order_sn));
+  return { fetched };
+}
+
 export async function syncOrdersForDay(shopId: number, date: string) {
   const from = vnDayStartUnix(date);
   const to = Math.min(vnDayStartUnix(addDays(date, 1)) - 1, Math.floor(Date.now() / 1000));
@@ -342,7 +361,8 @@ export async function syncEscrow(shopId: number, orderSns: string[]): Promise<nu
           withholding_tax: oi.withholding_tax ?? null,
           shopee_discount: oi.shopee_discount ?? null,
           voucher_from_shopee: oi.voucher_from_shopee ?? null,
-          refund_amount: num(oi.seller_return_refund) + num(oi.drc_adjustable_refund),
+          // Shopee trả số âm (khoản bị trừ); lưu số dương = tiền đã hoàn cho khách.
+          refund_amount: Math.abs(num(oi.seller_return_refund)) + Math.abs(num(oi.drc_adjustable_refund)),
           raw: rawIncome,
           updated_at: now,
         };

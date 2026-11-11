@@ -41,7 +41,9 @@ export async function syncPancakeVariations(): Promise<{ variations: number; pag
       bySku.set(sku, {
         sku,
         product_name: v.product?.name ?? null,
-        cost: avg && avg > 0 ? avg : last && last > 0 ? last : null,
+        // Giá nhập gần nhất: giá bình quân của Pancake hay bị kéo lệch (nhập/kiểm kê giá 0), vd QD26001 bình quân 8.857đ
+        // trong khi giá nhập 62.000đ. Chỉ dùng bình quân khi chưa có giá nhập gần nhất.
+        cost: last && last > 0 ? last : avg && avg > 0 ? avg : null,
         last_cost: last,
         retail_price: num(v.retail_price),
         stock: Math.round(stock),

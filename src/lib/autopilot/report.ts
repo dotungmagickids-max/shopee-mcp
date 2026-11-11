@@ -47,7 +47,7 @@ export async function dayReport(shopId: number, date: string) {
   const escrow = new Map<string, { escrow_amount: number; refund_amount: number }>();
   for (const batch of chunk(valid.map((o) => o.order_sn), 200)) {
     const { data } = await db().from("order_escrow").select("order_sn, escrow_amount, refund_amount").in("order_sn", batch);
-    for (const r of data ?? []) escrow.set(r.order_sn, { escrow_amount: Number(r.escrow_amount), refund_amount: Number(r.refund_amount) });
+    for (const r of data ?? []) escrow.set(r.order_sn, { escrow_amount: Number(r.escrow_amount), refund_amount: Math.abs(Number(r.refund_amount)) });
   }
   // Đơn COMPLETED nhưng đã hoàn tiền toàn bộ: loại.
   const kept = valid.filter((o) => {
