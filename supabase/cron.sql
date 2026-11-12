@@ -45,6 +45,10 @@ select cron.schedule('autopilot-report',     '0 1 * * *',    $$select public.aut
 select cron.schedule('autopilot-fb-report', '5 1 * * *',     $$select public.autopilot_call('/api/jobs/fb-report')$$);
 select cron.schedule('autopilot-fb-watch',  '15 2-16 * * *', $$select public.autopilot_call('/api/jobs/fb-watch')$$);
 
+-- Chăm shop (giai đoạn A): phút 40 mỗi giờ 8h–22h VN; báo cáo tuần thứ Hai 08:15 VN.
+select cron.schedule('autopilot-care',        '40 1-15 * * *', $$select public.autopilot_call('/api/jobs/care')$$);
+select cron.schedule('autopilot-care-weekly', '15 1 * * 1',    $$select public.autopilot_call('/api/jobs/care-weekly')$$);
+
 -- Dọn bảng phụ hằng tuần (giữ 30 ngày job_runs, 14 ngày snapshot ví, 7 ngày phản hồi pg_net).
 select cron.schedule('autopilot-cleanup', '30 19 * * 0', $$
   delete from public.job_runs where started_at < now() - interval '30 days';

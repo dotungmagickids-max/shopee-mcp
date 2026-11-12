@@ -1,27 +1,27 @@
 import { safeEqual } from "@/lib/autopilot/config";
 import { esc, isOwner } from "@/lib/autopilot/telegram";
 import { fbDecide, fbReportJob, fbStatusText, setStopped } from "@/lib/facebook/jobs";
-import { fbAnswer, fbSend } from "@/lib/facebook/telegram";
+import { fbAnswer, fbBotUsername, fbSend, fbWebhookSecret } from "@/lib/facebook/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const HELP = [
-  "Nhân viên Facebook — lệnh:",
+  "Kiều Trang (Nhân viên Facebook): lệnh",
   "/status — số quảng cáo hôm nay đến giờ",
   "/report — báo cáo hôm qua",
-  "/stop — DỪNG KHẨN CẤP: không báo, không đề xuất, nút Đồng ý không làm gì",
+  "/stop — dừng báo cáo, cảnh báo tự động",
   "/release — chạy lại",
-  "Em đề xuất tắt / tăng ngân sách kèm nút; anh bấm Đồng ý thì em làm ngay trên Meta.",
+  "Giai đoạn này em báo hiệu quả, lãi/lỗ, content và đề xuất; nút Đồng ý chỉ ghi nhận.",
 ].join("\n");
 
 /**
- * Webhook bot Nhân viên Facebook, header X-Telegram-Bot-Api-Secret-Token = FB_TELEGRAM_WEBHOOK_SECRET.
+ * Webhook bot Kiều Trang (@magicfbbot), header X-Telegram-Bot-Api-Secret-Token = fbWebhookSecret().
  * Chỉ người trong TELEGRAM_OWNER_IDS (nhóm Phòng họp) được ra lệnh, bấm nút.
  */
 export async function POST(request: Request) {
-  const expected = process.env.FB_TELEGRAM_WEBHOOK_SECRET;
+  const expected = fbWebhookSecret();
   const got = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
   if (!expected || !safeEqual(got, expected)) return new Response("forbidden", { status: 403 });
 
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   const cmd = String(msg.text).trim().split(/\s+/)[0];
   const command = cmd.toLowerCase().replace(/@.*$/, "");
   // Trong nhóm: lệnh gọi đích danh bot khác thì bỏ qua.
-  const me = process.env.FB_TELEGRAM_BOT_USERNAME?.toLowerCase();
+  const me = fbBotUsername();
   if (cmd.includes("@") && me && !cmd.toLowerCase().endsWith(`@${me}`)) return Response.json({ ok: true });
   try {
     if (command === "/status") await fbSend(await fbStatusText());

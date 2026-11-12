@@ -25,7 +25,7 @@ import {
   type AdDay,
   type Proposal,
 } from "./rules";
-import { fbAlertOnce, fbButtons, fbEdit, fbSend } from "./telegram";
+import { fbAlertOnce, fbButtons, fbEdit, fbSend, fbSetupWebhook } from "./telegram";
 
 export async function isStopped(): Promise<boolean> {
   const { data } = await db().from("fb_settings").select("stopped").eq("id", 1).maybeSingle();
@@ -369,4 +369,16 @@ export async function fbStatusText(): Promise<string> {
     count ? `\n💡 ${count} đề xuất đang chờ duyệt` : "",
     stopped ? "\n🛑 Đang dừng (/release để chạy lại)" : "",
   ].join("");
+}
+
+/** Chạy 1 lần sau khi đặt token: nối webhook, lệnh, gửi tin chào vào chủ đề Facebook. */
+export async function fbSetupJob() {
+  const base =
+    process.env.APP_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
+  if (!base) return { ok: false, error: "Không biết địa chỉ máy chủ (APP_URL)" };
+  const r = await fbSetupWebhook(base);
+  const hello = r.ok
+    ? await fbSend("👋 Chào anh, em là <b>Kiều Trang</b>, nhân viên Facebook. Sáng 8:05 em báo hiệu quả quảng cáo, lãi/lỗ, content hiệu quả và đề xuất. Gõ /help để xem lệnh.")
+    : null;
+  return { ...r, hello: hello != null };
 }

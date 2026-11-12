@@ -233,3 +233,22 @@ describe("lãi / lỗ và content", () => {
     assert.match(t, /ADT25002 sắp hết hàng/);
   });
 });
+
+describe("nối bot Kiều Trang", () => {
+  it("secret webhook suy ra từ token, ổn định; đặt biến riêng thì dùng biến đó", async () => {
+    const { fbWebhookSecret, fbBotUsername } = await import("../src/lib/facebook/telegram");
+    delete process.env.FB_TELEGRAM_WEBHOOK_SECRET;
+    process.env.FB_TELEGRAM_BOT_TOKEN = "123:abc";
+    const a = fbWebhookSecret();
+    assert.match(a!, /^[0-9a-f]{48}$/);
+    assert.equal(fbWebhookSecret(), a);
+    process.env.FB_TELEGRAM_BOT_TOKEN = "123:khac";
+    assert.notEqual(fbWebhookSecret(), a);
+    process.env.FB_TELEGRAM_WEBHOOK_SECRET = "tu-dat";
+    assert.equal(fbWebhookSecret(), "tu-dat");
+    delete process.env.FB_TELEGRAM_WEBHOOK_SECRET;
+    delete process.env.FB_TELEGRAM_BOT_TOKEN;
+    assert.equal(fbWebhookSecret(), null);
+    assert.equal(fbBotUsername(), "magicfbbot");
+  });
+});
