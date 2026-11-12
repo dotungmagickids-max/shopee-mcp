@@ -7,6 +7,7 @@ import { proposePauseAll, proposeResumeAll } from "@/lib/autopilot/rules";
 import { suggestDays } from "@/lib/autopilot/settings";
 import { answerCallback, esc, isOwner, sendTelegram, sendTelegramMessage, vnd } from "@/lib/autopilot/telegram";
 import { askWhy, captureWhy } from "@/lib/feedback";
+import { handleTaskCallback, handleTaskReply, idReply, myTasksText } from "@/lib/tasks";
 import { db } from "@/lib/supabase";
 import { handleMemoryCallback, handleMemoryMessage, isMemoryCommand, MEMORY_HELP } from "@/lib/tri-nho";
 
@@ -22,6 +23,8 @@ const HELP = [
   "/resume_all — bật lại chiến dịch tool đã dừng (có nút xác nhận)",
   "/mode — xem chế độ; /mode suggest | off | auto",
   "/traloi <mã đánh giá> <nội dung> — tự viết câu trả lời đánh giá",
+  "/viec — việc đang mở trên bảng việc chung",
+  "/id — xem user id Telegram (để thêm người làm)",
   "/stop — DỪNG KHẨN CẤP mọi tự động",
   "/release — gỡ dừng khẩn cấp",
   "",
@@ -43,6 +46,11 @@ export async function POST(request: Request) {
   // Nút Đồng ý / Bỏ qua
   const cb = update?.callback_query;
   if (cb) {
+    // Bảng việc chung: người được giao (người thật) cũng bấm được nút trên việc của mình.
+    if (String(cb.data ?? "").startsWith("tk:")) {
+      await handleTaskCallback(cb).catch((e) => answerCallback(cb.id, `Lỗi: ${e instanceof Error ? e.message : String(e)}`));
+      return Response.json({ ok: true });
+    }
     if (!isOwner(cb.message?.chat?.id ?? cb.from?.id, cb.from?.id)) return Response.json({ ok: true });
     try {
       if (await handleMemoryCallback(cb)) return Response.json({ ok: true });
@@ -67,7 +75,18 @@ export async function POST(request: Request) {
   }
 
   const msg = update?.message;
+  // Bảng việc chung: trả lời tin việc (chữ hoặc ảnh có chú thích) để ghi chú; /id, /viec cho mọi người trong nhóm.
+  if (msg && (await handleTaskReply(msg).catch(() => false))) return Response.json({ ok: true });
   if (!msg?.text) return Response.json({ ok: true });
+  const first = String(msg.text).trim().split(/\s+/)[0].toLowerCase();
+  if (first === "/id" || first.startsWith("/id@")) {
+    await sendTelegram(idReply(msg), { chatId: msg.chat?.id, threadId: Number(msg.message_thread_id) || undefined });
+    return Response.json({ ok: true });
+  }
+  if (first === "/viec" || first.startsWith("/viec@")) {
+    await sendTelegram(await myTasksText(msg), { chatId: msg.chat?.id, threadId: Number(msg.message_thread_id) || undefined });
+    return Response.json({ ok: true });
+  }
   const ownerChat = isOwner(msg.chat?.id, msg.from?.id);
   // Nhóm khác: chỉ nhận lệnh Trí nhớ (nhóm phải được anh cho phép).
   if (!ownerChat) {

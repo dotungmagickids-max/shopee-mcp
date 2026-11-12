@@ -192,4 +192,76 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
     async ({ action, target, reason, payload }) =>
       call("mk_create_proposal", { p_agent: agent, p_action: action, p_target: target ?? null, p_reason: reason, p_payload: payload })
   );
+
+  const taskStatus = z.enum(["moi", "dang_lam", "xong", "cham", "khong_lam_duoc", "huy"]);
+
+  server.registerTool(
+    "mk_task_create",
+    {
+      title: "Magickids: giao việc (bảng việc chung)",
+      description:
+        "Assign a task on the shared team board to a person (Hiền, Vân, Hường, Anh Tùng) or an AI employee " +
+        "(Kiều Giao, Thu Hương, Kiều Trang, Vận hành, CSKH, Content, Tài chính, Kiều Trinh, Hải). The assignee is told on " +
+        "Telegram within ~10 minutes. Write the title as one clear action with what to send back; put numbers in detail.",
+      inputSchema: {
+        assignee: z.string().min(2).max(50),
+        title: z.string().min(5).max(300),
+        detail: z.string().max(3000).optional(),
+        due: date.optional(),
+        priority: z.number().int().min(1).max(3).default(2).describe("1 = gấp, 2 = thường, 3 = khi rảnh"),
+        department: z.enum(["facebook", "shopee", "van_hanh", "cskh", "content", "tai_chinh", "rd", "ceo", "he_thong"]).optional(),
+      },
+      annotations: add,
+    },
+    async ({ assignee, title, detail, due, priority, department }) =>
+      call("mk_task_create", {
+        p_agent: agent,
+        p_assignee: assignee,
+        p_title: title,
+        p_detail: detail ?? null,
+        p_due: due ?? null,
+        p_priority: priority,
+        p_department: department ?? null,
+      })
+  );
+
+  server.registerTool(
+    "mk_task_list",
+    {
+      title: "Magickids: xem bảng việc chung",
+      description: "Open tasks by default (moi, dang_lam, cham). Filter by assignee or by who created them, or by one status.",
+      inputSchema: {
+        assignee: z.string().max(50).optional(),
+        created_by: z.string().max(100).optional(),
+        status: taskStatus.optional(),
+        limit: z.number().int().min(1).max(200).default(50),
+      },
+      annotations: ro,
+    },
+    async ({ assignee, created_by, status, limit }) =>
+      call("mk_task_list", {
+        p_agent: agent,
+        p_assignee: assignee ?? null,
+        p_created_by: created_by ?? null,
+        p_status: status ?? null,
+        p_limit: limit,
+      })
+  );
+
+  server.registerTool(
+    "mk_task_update",
+    {
+      title: "Magickids: cập nhật việc",
+      description: "Change a task's status, add a note (appended with time and who), or move its due date.",
+      inputSchema: {
+        id: z.number().int().positive(),
+        status: taskStatus.optional(),
+        note: z.string().max(2000).optional(),
+        due: date.optional(),
+      },
+      annotations: add,
+    },
+    async ({ id, status, note, due }) =>
+      call("mk_task_update", { p_agent: agent, p_id: id, p_status: status ?? null, p_note: note ?? null, p_due: due ?? null })
+  );
 }

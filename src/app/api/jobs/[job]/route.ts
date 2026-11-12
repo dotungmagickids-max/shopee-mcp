@@ -1,6 +1,7 @@
 import { checkJobSecret } from "@/lib/autopilot/config";
 import { fbReportJob, fbSetupJob, fbWatchJob } from "@/lib/facebook/jobs";
 import { careJob, careWeeklyJob } from "@/lib/autopilot/care";
+import { tasksJob } from "@/lib/tasks";
 import { backfillJob, capsJob, collectJob, dailyJob, launchJob, lifecycleJob, morningReportJob, refreshJob, resetJob } from "@/lib/autopilot/jobs";
 
 export const runtime = "nodejs";
@@ -22,6 +23,7 @@ const PARTS = ["ads", "orders", "escrow", "costs", "roas", "steps"] as const;
  *   POST /api/jobs/fb-report                            08:00 (Nhân viên Facebook: báo sáng + đề xuất tăng)
  *   POST /api/jobs/fb-setup                             chạy 1 lần: nối webhook + lệnh cho bot Kiều Trang
  *   POST /api/jobs/fb-watch                             mỗi giờ 9h–23h (Nhân viên Facebook: cảnh báo trong ngày)
+ *   POST /api/jobs/tasks[?morning=1]                    10 phút: báo việc mới (bảng việc chung); 8h: việc từng người
  *   POST /api/jobs/care                                 mỗi giờ 8h–22h (đơn trễ, đánh giá; 20h cảm ơn hàng loạt; 9h sức khỏe shop)
  *   POST /api/jobs/care-weekly                          thứ Hai 08:15 (báo cáo tuần chăm shop)
  *   POST /api/jobs/backfill?date=YYYY-MM-DD             chạy tay để nạp bù lịch sử
@@ -44,6 +46,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ job: strin
     else if (job === "fb-report") result = await fbReportJob(/^\d{4}-\d{2}-\d{2}$/.test(sp.get("date") ?? "") ? sp.get("date")! : undefined);
     else if (job === "fb-watch") result = await fbWatchJob();
     else if (job === "fb-setup") result = await fbSetupJob();
+    else if (job === "tasks") result = await tasksJob(sp.get("morning") === "1");
     else if (job === "care") result = await careJob();
     else if (job === "care-weekly") result = await careWeeklyJob();
     else if (job === "lifecycle") result = await lifecycleJob();

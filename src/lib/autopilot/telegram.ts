@@ -17,11 +17,11 @@ async function tg(method: string, body: Record<string, unknown>): Promise<any | 
  * Nếu là nhóm có Chủ đề, TELEGRAM_THREAD_ID = id chủ đề của nhân viên này; tin gửi vào nhóm đó
  * mà không chỉ định chủ đề sẽ vào chủ đề này.
  */
-function target(chatId?: string | number): Record<string, unknown> | null {
+function target(chatId?: string | number, threadId?: number): Record<string, unknown> | null {
   const def = process.env.TELEGRAM_CHAT_ID;
   const id = chatId ?? def;
   if (!id) return null;
-  const thread = Number(process.env.TELEGRAM_THREAD_ID);
+  const thread = threadId ?? Number(process.env.TELEGRAM_THREAD_ID);
   return String(id) === String(def) && thread > 0 ? { chat_id: id, message_thread_id: thread } : { chat_id: id };
 }
 
@@ -43,9 +43,9 @@ export function isOwner(chatId: unknown, fromId: unknown): boolean {
 /** Gửi tin Telegram (HTML). Trả về message_id, hoặc null nếu chưa cấu hình / lỗi. */
 export async function sendTelegramMessage(
   text: string,
-  opts: { chatId?: string | number; replyMarkup?: unknown } = {}
+  opts: { chatId?: string | number; replyMarkup?: unknown; threadId?: number } = {}
 ): Promise<number | null> {
-  const to = target(opts.chatId);
+  const to = target(opts.chatId, opts.threadId);
   if (!to) return null;
   const r = await tg("sendMessage", {
     ...to,
@@ -83,7 +83,7 @@ export async function sendTelegramPhoto(
 
 export async function sendTelegram(
   text: string,
-  opts: { chatId?: string | number; replyMarkup?: unknown } = {}
+  opts: { chatId?: string | number; replyMarkup?: unknown; threadId?: number } = {}
 ): Promise<boolean> {
   return (await sendTelegramMessage(text, opts)) != null;
 }
