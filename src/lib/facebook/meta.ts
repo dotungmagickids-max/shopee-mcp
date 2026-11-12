@@ -104,6 +104,9 @@ export async function listAccounts(): Promise<MetaAccount[]> {
     .split(",")
     .map((s) => s.trim().replace(/^act_/, ""))
     .filter(Boolean);
+  const cpasIds = new Set(
+    (process.env.FB_CPAS_ACCOUNTS ?? "").split(",").map((x) => x.trim().replace(/^act_/, "")).filter(Boolean)
+  );
   const rows = await getAll("me/adaccounts", { fields: "account_id,name,account_status,disable_reason", limit: "100" });
   return rows
     .map((r) => ({
@@ -111,7 +114,8 @@ export async function listAccounts(): Promise<MetaAccount[]> {
       name: String(r.name ?? r.account_id),
       status: Number(r.account_status ?? 0),
       disable_reason: Number(r.disable_reason ?? 0),
-      cpas: /cpas/i.test(String(r.name ?? "")),
+      // Không đoán theo tên: "CPAS SHOPEE MAGICKIDS" thực ra chạy quảng cáo Facebook (đặc tả Magickids).
+      cpas: cpasIds.has(String(r.account_id)),
     }))
     .filter((a) => !EXCLUDED_ACCOUNTS.has(a.id) && (only.length === 0 || only.includes(a.id)));
 }
