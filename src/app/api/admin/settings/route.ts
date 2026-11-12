@@ -58,6 +58,8 @@ export async function POST(request: Request) {
     if (params.ad_fee_pct != null) params.ad_fee_pct = Math.min(50, Math.max(0, params.ad_fee_pct));
     if (params.peak_max_increase_pct != null) params.peak_max_increase_pct = Math.min(200, Math.max(0, params.peak_max_increase_pct));
     if (params.auto_scale_up != null) params.auto_scale_up = params.auto_scale_up ? 1 : 0;
+    if (params.roas_live != null) params.roas_live = params.roas_live ? 1 : 0;
+    if (params.launch_live != null) params.launch_live = params.launch_live ? 1 : 0;
     if (params.fast_max_increase_pct != null) params.fast_max_increase_pct = Math.min(200, Math.max(0, params.fast_max_increase_pct));
     if (params.fast_cooldown_minutes != null) params.fast_cooldown_minutes = Math.max(5, params.fast_cooldown_minutes);
     if (params.start_share_pct != null) params.start_share_pct = Math.min(100, Math.max(0, params.start_share_pct));

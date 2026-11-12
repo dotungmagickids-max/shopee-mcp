@@ -60,6 +60,7 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   launch_min_stock_days: "Lên quảng cáo mã mới: tồn đủ bán tối thiểu (ngày)",
   launch_max_breakeven: "Lên quảng cáo mã mới: bỏ mã có ROAS hòa vốn cao hơn",
   launch_cooldown_days: "Lên quảng cáo mã mới: mã đã đề xuất thì N ngày sau mới đề xuất lại",
+  roas_live: "Đổi ROAS mục tiêu gửi thật lên Shopee (1 = bật, 0 = thử)",
   launch_live: "Lên quảng cáo mã mới: duyệt là tạo thật trên Shopee (1 = bật, 0 = thử)",
   new_promote_orders: "Đánh giá hàng Mới: đủ N đơn/14 ngày và lãi 10% thì đề xuất lên nhóm",
   new_stop_min_spend: "Đánh giá hàng Mới: đã chi ≥ (đ) mà không ra đơn/lỗ thì báo nên dừng",

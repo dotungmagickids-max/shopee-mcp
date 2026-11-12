@@ -428,7 +428,9 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
     return { status: await finish(row, "skipped", `Hành động không hỗ trợ: ${row.action}`) };
   }
 
-  if (isDryRun(row.action)) return { status: await finish(row, "dry_run", null, after) };
+  // Công tắc trong Cài đặt cho phép chạy thật từng loại lệnh mà không cần sửa biến môi trường trên Vercel.
+  const liveBySetting = row.action === "change_roas_target" && !!s.params.roas_live;
+  if (isDryRun(row.action) && !liveBySetting) return { status: await finish(row, "dry_run", null, after) };
 
   try {
     await callShopee(row.shop_id, EDIT_ENDPOINT, params, { allowWrite: true });
