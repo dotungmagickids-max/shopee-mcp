@@ -28,6 +28,7 @@ let editBodies: any[] = [];
 let createBodies: any[] = [];
 let itemStock = 10;
 let returnList: any[] = [];
+let modelPrices: Record<string, number> = {};
 let rpcCalls: { fn: string; args: any }[] = [];
 let rpcResults: Record<string, unknown> = {};
 
@@ -55,6 +56,7 @@ function reset() {
   createBodies = [];
   itemStock = 10;
   returnList = [];
+  modelPrices = {};
 }
 
 const json = (body: unknown, status = 200) =>
@@ -205,6 +207,8 @@ function fakeShopee(url: URL, init: RequestInit): Response {
     case "/order/get_order_detail":
       assert.equal(url.searchParams.getAll("order_sn_list").length, 1, "order_sn_list must be one comma-joined value");
       return ok({ order_list: [{ order_sn: "SN1", order_status: "READY_TO_SHIP", create_time: 1794400000, ship_by_date: 1700000000, total_amount: 250000, item_list: [{ item_id: 9, model_id: 1, model_sku: "V-A-1", model_quantity_purchased: 1, model_discounted_price: 250000 }] }] });
+    case "/product/get_model_list":
+      return ok({ model: Object.entries(modelPrices).map(([sku, p], i) => ({ model_id: i + 1, model_sku: sku, price_info: [{ current_price: p, original_price: p }] })) });
     case "/payment/get_wallet_transaction_list":
       return ok({ transaction_list: [{ current_balance: 56266260 }], more: true });
     case "/payment/get_income_overview":
@@ -938,6 +942,29 @@ describe("profit from Pancake costs", () => {
       sum.fees.fees.map((f: any) => [f.key, Math.round(f.ratio * 1000) / 1000]),
       [["commission", 0.165], ["service", 0.06], ["transaction", 0.06], ["infra", 0.01], ["tax", 0.015]]
     );
+  });
+
+  it("uses the current selling price (after a price change) for the profit maths", async () => {
+    const pancake = await import("../src/lib/autopilot/pancake");
+    const profit = await import("../src/lib/autopilot/profit");
+    await pancake.syncPancakeVariations();
+    const old = Math.floor(Date.now() / 1000) - 20 * 86400;
+    for (let i = 0; i < 10; i++) {
+      tables.orders.push({ shop_id: 111, order_sn: `P${i}`, create_time: old, order_status: "COMPLETED", items: [{ item_id: 9, model_sku: "BD1TRANG130", qty: 1, price: 250000 }] });
+    }
+    seedCampaign({ roas_target: 10 });
+    await profit.computeEconomics(111);
+    const before = tables.ads_campaigns[0].econ;
+    assert.equal(before.price, 250000);
+    // Anh nâng giá khuyến mãi lên 312.500đ: giá vốn/giá bán giảm ngay, không chờ 30 ngày đơn mới.
+    modelPrices = { BD1TRANG130: 312500 };
+    await profit.computeEconomics(111);
+    const after = tables.ads_campaigns[0].econ;
+    // Phân loại có giá mới tính theo giá mới; phân loại khác (không đọc được giá) giữ giá đơn cũ, theo cơ cấu đã bán.
+    assert.equal(after.price_source, "current");
+    assert.ok(after.price > 280000 && after.price <= 312500, String(after.price));
+    assert.ok(after.cost_ratio < before.cost_ratio, "giá vốn/giá bán giảm");
+    assert.ok(after.breakeven < before.breakeven, "ROAS hòa vốn giảm");
   });
 
   it("measures returns by refunded value from the Shopee returns API", async () => {
