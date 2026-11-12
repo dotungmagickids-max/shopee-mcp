@@ -204,7 +204,11 @@ function fakeShopee(url: URL, init: RequestInit): Response {
       return ok({ more: false, next_cursor: "", order_list: [{ order_sn: "SN1", order_status: "READY_TO_SHIP" }] });
     case "/order/get_order_detail":
       assert.equal(url.searchParams.getAll("order_sn_list").length, 1, "order_sn_list must be one comma-joined value");
-      return ok({ order_list: [{ order_sn: "SN1", order_status: "READY_TO_SHIP", create_time: 1794400000, total_amount: 250000, item_list: [{ item_id: 9, model_id: 1, model_sku: "V-A-1", model_quantity_purchased: 1, model_discounted_price: 250000 }] }] });
+      return ok({ order_list: [{ order_sn: "SN1", order_status: "READY_TO_SHIP", create_time: 1794400000, ship_by_date: 1700000000, total_amount: 250000, item_list: [{ item_id: 9, model_id: 1, model_sku: "V-A-1", model_quantity_purchased: 1, model_discounted_price: 250000 }] }] });
+    case "/payment/get_wallet_transaction_list":
+      return ok({ transaction_list: [{ current_balance: 56266260 }], more: true });
+    case "/payment/get_income_overview":
+      return ok({ total_income: { pending_amount: 226986965, released_amount: 1 } });
     default:
       return json({ error: "not_found", message: path, request_id: "r" }, 404);
   }
@@ -501,6 +505,18 @@ describe("launch new products", () => {
     await actions.decide(c.id, true, "telegram");
     assert.equal(tables.autopilot_actions.find((r) => r.id === c.id)!.status, "skipped");
     assert.equal(createBodies.length, 1);
+  });
+});
+
+describe("morning report", () => {
+  it("covers orders, marketing and money with a to-do list", async () => {
+    reset();
+    const { morningReportJob } = await import("../src/lib/autopilot/jobs");
+    const { vnd } = await import("../src/lib/autopilot/telegram");
+    const res = await morningReportJob();
+    for (const s of ["ĐƠN HÀNG", "MARKETING", "TIỀN", "Số dư ví Shopee", vnd(56266260), "sắp về", vnd(226986965), "quá hạn giao", "VIỆC CẦN LÀM", "Giao gấp"]) {
+      assert.ok(res.text.includes(s), s);
+    }
   });
 });
 

@@ -21,6 +21,7 @@ import { evaluateIntraday, proposeCapsForUnlimited, proposeMidnightReset, propos
 import { proposeRefresh } from "./refresh";
 import { proposeLaunches, reviewNewProducts } from "./launch";
 import { computeLifecycle } from "./lifecycle";
+import { shopMorning } from "./morning";
 import { syncPancakeVariations } from "./pancake";
 import { computeEconomics } from "./profit";
 import { memoryDigestLine } from "../tri-nho";
@@ -296,72 +297,15 @@ export async function checkAlerts(shop: ShopConf) {
 // Báo cáo sáng 8h
 // ---------------------------------------------------------------------------
 
-/** Tóm tắt việc tool tự tăng ngân sách trong 24 giờ qua (không chờ duyệt). */
-async function autoSummary(shopId: number): Promise<string[]> {
-  const { data } = await db()
-    .from("autopilot_actions")
-    .select("campaign_id, before, after, status, executed_at")
-    .eq("shop_id", shopId)
-    .eq("decided_by", "auto")
-    .in("source", ["rule:scale_up", "rule:restore"])
-    .gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString())
-    .order("created_at");
-  const rows = data ?? [];
-  if (!rows.length) return [];
-  const done = rows.filter((r) => r.status === "executed" || r.status === "dry_run");
-  const byCamp = new Map<number, { from: number; to: number; times: number }>();
-  for (const r of done) {
-    const id = Number(r.campaign_id);
-    const cur = byCamp.get(id) ?? { from: Number(r.before?.budget ?? 0), to: 0, times: 0 };
-    cur.to = Number(r.after?.budget ?? 0);
-    cur.times++;
-    byCamp.set(id, cur);
-  }
-  const added = [...byCamp.values()].reduce((t, c) => t + Math.max(0, c.to - c.from), 0);
-  const { data: names } = await db()
-    .from("ads_campaigns")
-    .select("campaign_id, ad_name")
-    .eq("shop_id", shopId)
-    .in("campaign_id", [...byCamp.keys()]);
-  const nameOf = new Map((names ?? []).map((x) => [Number(x.campaign_id), String(x.ad_name ?? "")]));
-  const top = [...byCamp.entries()].sort((a, b) => b[1].to - b[1].from - (a[1].to - a[1].from)).slice(0, 8);
-  const out = [
-    `• Tool tự tăng ngân sách 24h qua: <b>${done.length}</b> lần, ${byCamp.size} chiến dịch, tổng thêm ${vnd(added)}${
-      rows.length > done.length ? ` (${rows.length - done.length} lần bị chặn bởi trần/cầu chì)` : ""
-    }`,
-  ];
-  for (const [id, c] of top) {
-    out.push(`  – ${esc((nameOf.get(id) ?? `#${id}`).slice(0, 40))}: ${vnd(c.from)} → ${vnd(c.to)} (${c.times} lần)`);
-  }
-  return out;
-}
-
 export async function morningReportJob() {
   const yesterday = addDays(vnDate(), -1);
-  const parts: string[] = [`☀️ <b>Báo cáo ngày ${yesterday.split("-").reverse().join("/")}</b>`];
+  const parts: string[] = [`☀️ <b>Báo cáo sáng · số ngày ${yesterday.split("-").reverse().join("/")}</b>`];
   for (const shop of shops()) {
-    const r = await dayReport(shop.shopId, yesterday);
-    const lines = [
-      `\n<b>${esc(shop.name)}</b> (${shop.shopId})`,
-      `• Đơn hợp lệ: <b>${r.orders}</b> (hủy ${r.cancelled}) — khách trả ${vnd(r.revenue)}`,
-    ];
-    if (r.adExpense > 0) {
-      lines.push(
-        `• Chi QC: <b>${vnd(r.adExpense)}</b> — GMV QC ${vnd(r.adGmv)} — ROAS Shopee <b>${r.roasShopee.toFixed(1)}</b>`,
-        `• Doanh số hợp lệ / chi QC: <b>${r.roasReal.toFixed(1)}</b> — chi phí/đơn QC ${vnd(r.costPerOrder)}`
-      );
-      if (r.gmsExpense > 0) lines.push(`  (trong đó GMV Max cấp shop: ${vnd(r.gmsExpense)})`);
-    } else {
-      lines.push(`• Không chạy quảng cáo`);
+    try {
+      parts.push((await shopMorning(shop)).join("\n"));
+    } catch (err) {
+      parts.push(`\n<b>${esc(shop.name)}</b>: lỗi lập báo cáo — <code>${esc(String(err)).slice(0, 300)}</code>`);
     }
-    if (r.profit != null) {
-      lines.push(`• Lãi sau QC (ước tính): <b>${vnd(r.profit)}</b>${r.profitNote ? ` <i>${esc(r.profitNote)}</i>` : ""}`);
-    } else {
-      lines.push(`• Lãi: <i>chưa có bảng giá vốn</i>`);
-    }
-    if (r.balance != null) lines.push(`• Số dư ví QC: ${vnd(r.balance)}`);
-    lines.push(...(await autoSummary(shop.shopId)));
-    parts.push(lines.join("\n"));
   }
   const dash = process.env.APP_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
   const memory = await memoryDigestLine();
