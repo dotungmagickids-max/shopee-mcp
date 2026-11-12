@@ -2,6 +2,8 @@ import { safeEqual } from "@/lib/autopilot/config";
 import { esc, isOwner } from "@/lib/autopilot/telegram";
 import { fbDecide, fbReportJob, fbStatusText, setStopped } from "@/lib/facebook/jobs";
 import { fbAnswer, fbBotUsername, fbSend, fbWebhookSecret } from "@/lib/facebook/telegram";
+import { askWhy, captureWhy } from "@/lib/feedback";
+import { db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,12 +35,21 @@ export async function POST(request: Request) {
     if (m) {
       const text = await fbDecide(Number(m[2]), m[1] === "a").catch((e) => `Lỗi: ${e instanceof Error ? e.message : String(e)}`);
       await fbAnswer(cb.id, text);
+      if (m[1] === "r" && text === "Đã bỏ qua") {
+        const { data: p } = await db().from("fb_proposals").select("kind, ad_name, ad_id, account_name, campaign_name, reason").eq("id", Number(m[2])).maybeSingle();
+        const summary = p
+          ? `${p.kind === "pause" ? "tắt" : "tăng ngân sách"} quảng cáo ${p.ad_name ?? p.ad_id} (${p.account_name} / ${p.campaign_name ?? "-"}): ${p.reason ?? ""}`
+          : `đề xuất #${m[2]}`;
+        await askWhy("facebook", "fb_proposal", Number(m[2]), summary, fbSend);
+      }
     }
     return Response.json({ ok: true });
   }
 
   const msg = update?.message;
   if (!msg?.text || !isOwner(msg.chat?.id, msg.from?.id)) return Response.json({ ok: true });
+  // Anh trả lời câu hỏi "Sai vì…" của Kiều Trang.
+  if (await captureWhy("facebook", msg, fbSend).catch(() => false)) return Response.json({ ok: true });
   const cmd = String(msg.text).trim().split(/\s+/)[0];
   const command = cmd.toLowerCase().replace(/@.*$/, "");
   // Trong nhóm: lệnh gọi đích danh bot khác thì bỏ qua.

@@ -8,6 +8,7 @@
  * Mọi lệnh ghi lên Shopee (trả lời đánh giá) chỉ chạy khi anh bấm duyệt.
  */
 import { db } from "../supabase";
+import { weeklyWhyLines } from "../feedback";
 import { shops, type ShopConf } from "./config";
 import { callShopee, chunk } from "./shopee-call";
 import { editTelegram, esc, sendAlertOnce, sendTelegram, sendTelegramMessage } from "./telegram";
@@ -470,6 +471,8 @@ export async function careWeeklyJob() {
       parts.push(`\n<b>${esc(shop.name)}</b>: lỗi — <code>${esc(String(err)).slice(0, 200)}</code>`);
     }
   }
+  const why = await weeklyWhyLines("shopee").catch(() => []);
+  if (why.length) parts.push("", ...why);
   const sent = await sendTelegram(parts.join("\n"));
   return { sent };
 }
