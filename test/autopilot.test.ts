@@ -625,6 +625,22 @@ describe("rules and actions", () => {
     assert.equal(telegramCalls.filter((t) => t.method === "sendPhoto").length, 0, "không gửi nút duyệt");
   });
 
+  it("explains on Telegram why a campaign that hit its budget was not scaled", async () => {
+    tables.autopilot_settings[0].rule_params = { ...tables.autopilot_settings[0].rule_params, system_profit_floor_pct: 0 };
+    seedCampaign({ roas_target: 10 });
+    // Hết ngân sách nhưng ROAS 4 < ngưỡng 10 → không tăng, có lý do
+    seedHour(0, { clicks: 20, expense: 100000, broad_gmv: 400000 });
+    const res = await rules.evaluateIntraday(111);
+    assert.equal(res.proposals, 0);
+    assert.equal(res.stuck, 1);
+    const hour = time.vnHour();
+    if (hour >= 7) {
+      const msg = telegramCalls.find((t) => String(t.body.text ?? "").includes("hết ngân sách nhưng tool chưa tăng"));
+      assert.ok(msg, "báo Telegram");
+      assert.match(msg!.body.text, /ROAS hôm nay 4\.0 &lt; ngưỡng tăng|ROAS hôm nay 4\.0 < ngưỡng tăng/);
+    }
+  });
+
   it("stops scaling when today's ROAS falls well below the 7-day ROAS", async () => {
     seedCampaign();
     const y = time.addDays(time.vnDate(), -2);

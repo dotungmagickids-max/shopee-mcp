@@ -234,6 +234,12 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                           {r.excluded ? <> <span className="tag">không tự động</span></> : null}
                           {r.toolPaused ? <> <span className="tag">tool dừng tới 0h</span></> : null}
                           {r.throttled ? <> <span className="tag giam">đang siết ngân sách</span></> : null}
+                          {r.scaleBlock ? (
+                            <>
+                              <br />
+                              <span className="tag giam">hết ngân sách, chưa tăng</span> <span className="muted">{r.scaleBlock}</span>
+                            </>
+                          ) : null}
                         </td>
                         <td><Edit shopId={shop.shopId} r={r} /></td>
                       </tr>

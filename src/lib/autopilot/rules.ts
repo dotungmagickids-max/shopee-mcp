@@ -2,7 +2,7 @@ import { allRows, db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
 import { ruleTarget, type Econ } from "./profit";
 import { floorBlock, scaleStyle, scaleTargetFor, type ProductClass } from "./classes";
-import { sendAlertOnce } from "./telegram";
+import { esc, sendAlertOnce } from "./telegram";
 import { automationBlocked, editsLimit, isPeakDay, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
@@ -20,6 +20,7 @@ interface Camp {
   throttled_at: string | null;
   restore_budget: number | null;
   econ: Econ | null;
+  scale_block?: string | null; // lý do lần quét trước không tăng ngân sách dù đã chạm ngân sách
 }
 
 /** Mô tả ngưỡng ROAS dùng trong lý do đề xuất. */
@@ -33,7 +34,7 @@ function targetLabel(c: Camp, useProfit: boolean): string {
 async function ongoingCampaigns(shopId: number): Promise<Camp[]> {
   const { data, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, ad_name, campaign_status, campaign_budget, roas_target, tool_paused_at, throttled_at, restore_budget, econ")
+    .select("*") // gồm scale_block nếu đã chạy migration 0016
     .eq("shop_id", shopId)
     .eq("campaign_status", "ongoing")
     .eq("autopilot_excluded", false);
@@ -214,7 +215,7 @@ export function portfolioProfit(
 // F2: luật trong ngày (chạy sau mỗi lần thu số liệu)
 // ---------------------------------------------------------------------------
 
-export async function evaluateIntraday(shopId: number): Promise<{ proposals: number; skipped?: string }> {
+export async function evaluateIntraday(shopId: number): Promise<{ proposals: number; skipped?: string; stuck?: number }> {
   const s = await loadSettings(shopId);
   const blocked = automationBlocked(s);
   if (blocked) return { proposals: 0, skipped: blocked };
@@ -273,6 +274,7 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
   }
 
   const candidates: (ProposalInput & { priority: number; fast?: boolean })[] = [];
+  const stuck = new Map<number, string>(); // chiến dịch chạm ngân sách mà không tăng → lý do
   for (const c of camps) {
     const rows = byCamp.get(c.campaign_id) ?? [];
     const exp = rows.reduce((s, r) => s + r.expense, 0);
@@ -364,6 +366,20 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
         });
         continue;
       }
+      // Đã chạm ngân sách mà không tăng: ghi lý do để báo anh (Telegram, dashboard).
+      if (exhausted) {
+        const prof = ownPct != null ? `, lãi hôm nay ~${Math.round(ownPct)}%` : "";
+        stuck.set(
+          c.campaign_id,
+          decayed
+            ? `ROAS hôm nay ${roas.toFixed(1)} tụt dưới ${p.scale_decay_pct}% ROAS 7 ngày (${roas7.toFixed(1)}): phanh, chờ ROAS hồi`
+            : !roasOk
+              ? early
+                ? `đầu ngày: ROAS 3 ngày ${roas3.toFixed(1)} / gộp ${blended.toFixed(1)} chưa đạt ngưỡng ${tgtLabel}`
+                : `ROAS hôm nay ${roas.toFixed(1)} < ngưỡng tăng ${tgtLabel}${prof}`
+              : `${blocked}`
+        );
+      }
     }
 
     // Siết ngân sách (thay cho tạm dừng): khung W giờ đã trọn vẹn, đủ click, ROAS quá thấp. Không phạt dựa trên 1–2 giờ.
@@ -408,12 +424,62 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
     const cid = Number(cand.campaign_id);
     if (await recentlyTouched(shopId, cid, fast ? Math.min(cooldown, p.fast_cooldown_minutes) : cooldown)) continue;
     const maxEdits = fast ? Math.max(editsLimit(s, today), p.fast_max_edits_per_day) : editsLimit(s, today);
-    if ((await editsToday(shopId, cid)) >= maxEdits) continue;
+    if ((await editsToday(shopId, cid)) >= maxEdits) {
+      if (cand.source === "rule:scale_up") stuck.set(cid, `đã chỉnh ${maxEdits} lần hôm nay (giới hạn số lần chỉnh/ngày)`);
+      continue;
+    }
     const { priority: _p, fast: _f, ...input } = cand;
     await propose(input, p.proposal_ttl_minutes, s);
     made++;
   }
-  return { proposals: made };
+  await reportStuck(s, camps, stuck, byCamp);
+  return { proposals: made, stuck: stuck.size };
+}
+
+/**
+ * Chiến dịch chạm ngân sách mà tool không tăng: lưu lý do (ads_campaigns.scale_block) và báo Telegram
+ * tối đa 3 giờ một lần (7h–23h), kèm các lần tăng bị trần/cầu chì chặn trong 2 giờ qua.
+ */
+async function reportStuck(
+  s: ShopSettings,
+  camps: Camp[],
+  stuck: Map<number, string>,
+  byCamp: Map<number, { hour: number; expense: number; gmv: number }[]>
+) {
+  const shopId = s.shop_id;
+  const nowIso = new Date().toISOString();
+  for (const c of camps) {
+    const why = stuck.get(c.campaign_id) ?? null;
+    if ((why ?? null) === (c.scale_block ?? null)) continue;
+    if (!("scale_block" in c)) break; // chưa chạy migration 0016: bỏ qua lưu, vẫn báo Telegram
+    await db()
+      .from("ads_campaigns")
+      .update({ scale_block: why, scale_block_at: why ? nowIso : null })
+      .eq("shop_id", shopId)
+      .eq("campaign_id", c.campaign_id);
+  }
+  const { data: capped } = await db()
+    .from("autopilot_actions")
+    .select("campaign_id, error")
+    .eq("shop_id", shopId)
+    .eq("source", "rule:scale_up")
+    .eq("status", "skipped")
+    .gte("created_at", new Date(Date.now() - 2 * 3600_000).toISOString());
+  for (const r of capped ?? []) if (r.campaign_id && r.error && !stuck.has(Number(r.campaign_id))) stuck.set(Number(r.campaign_id), String(r.error));
+  const hour = vnHour();
+  if (!stuck.size || hour < 7) return;
+  const lines = [...stuck.entries()].map(([id, why]) => {
+    const c = camps.find((x) => x.campaign_id === id);
+    const rows = byCamp.get(id) ?? [];
+    const exp = rows.reduce((t, r) => t + r.expense, 0);
+    const name = (c?.ad_name ?? `#${id}`).slice(0, 45);
+    return `• <b>${esc(name)}</b> — đã tiêu ${vnd(exp)}/${vnd(c?.campaign_budget ?? 0)}\n   Lý do: ${esc(why)}`;
+  });
+  await sendAlertOnce(
+    `stuck:${shopId}:${vnDate()}:${Math.floor(hour / 3)}`,
+    `⏸️ <b>${stuck.size} chiến dịch hết ngân sách nhưng tool chưa tăng</b> — ${esc(s.shop_name ?? String(shopId))}\n${lines.join("\n")}\n\nMuốn đẩy mã nào: chuyển nhóm trên trang Vòng đời sản phẩm, hạ ngưỡng lãi của nhóm trong Cài đặt, hoặc tự tăng trên Shopee.`,
+    170
+  );
 }
 
 // ---------------------------------------------------------------------------
