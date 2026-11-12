@@ -1,6 +1,6 @@
 import { campaignsWithRanking, econSummary, type CampaignRow } from "@/lib/autopilot/dashboard";
 import type { EconSummary } from "@/lib/autopilot/profit";
-import { CLASSES, CLASS_VI } from "@/lib/autopilot/classes";
+import { CLASSES, CLASS_BCG, CLASS_VI } from "@/lib/autopilot/classes";
 import { shops } from "@/lib/autopilot/config";
 import { vnd } from "@/lib/autopilot/telegram";
 import { Proposals } from "../proposals";
@@ -49,7 +49,7 @@ function Edit({ shopId, r }: { shopId: number; r: CampaignRow }) {
           <select name="class" defaultValue={r.econ?.class_source === "manual" ? r.econ.class : "auto"} style={{ ...input, width: 150 }}>
             <option value="auto">Nhóm tự động{r.econ?.auto_class ? ` (${CLASS_VI[r.econ.auto_class]})` : ""}</option>
             {CLASSES.map((c) => (
-              <option key={c} value={c}>{CLASS_VI[c]}</option>
+              <option key={c} value={c}>{CLASS_VI[c]} ({CLASS_BCG[c]})</option>
             ))}
           </select>{" "}
           <button type="submit" style={small}>Đặt nhóm</button>
@@ -196,7 +196,7 @@ export default async function Campaigns({ searchParams }: { searchParams: Promis
                         <td title={r.econ?.class_reason ?? ""}>
                           {r.econ?.class ? (
                             <>
-                              <span className={`tag cls-${r.econ.class}`}>{CLASS_VI[r.econ.class]}</span>
+                              <span className={`tag cls-${r.econ.class}`} title={CLASS_BCG[r.econ.class as keyof typeof CLASS_BCG]}>{CLASS_VI[r.econ.class]}</span>
                               {r.econ.class_source === "manual" ? <span className="muted"> (tay)</span> : null}
                               <br />
                               <span className="muted">
