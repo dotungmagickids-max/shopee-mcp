@@ -110,6 +110,8 @@ export async function syncPancakeVariations(): Promise<{ variations: number; pag
 
 /**
  * Bảng giá vốn theo SKU (đã chuẩn hóa). sku_costs của shop (nhập tay) ưu tiên hơn Pancake.
+ * Có thêm khóa theo mã sản phẩm (vd ADT26001) để dùng khi đơn Shopee không có SKU phân loại;
+ * sku_costs nhập theo mã sản phẩm thì áp cho mọi biến thể chưa có giá trên Pancake.
  */
 export async function loadCostMap(shopId: number): Promise<Map<string, number>> {
   const map = new Map<string, number>();
@@ -122,11 +124,20 @@ export async function loadCostMap(shopId: number): Promise<Map<string, number>> 
     for (const r of data ?? []) if (r.cost != null && Number(r.cost) > 0) map.set(normSku(r.sku), Number(r.cost));
     if (!data || data.length < 1000) break;
   }
+  for (const [sku, cost] of [...map]) {
+    const code = productCode(sku);
+    if (code && !map.has(code)) map.set(code, cost);
+  }
   const { data: manual } = await db().from("sku_costs").select("sku, cost").eq("shop_id", shopId);
   for (const r of manual ?? []) if (Number(r.cost) > 0) map.set(normSku(r.sku), Number(r.cost));
   return map;
 }
 
 export function costOf(map: Map<string, number>, it: { model_sku?: string | null; item_sku?: string | null }): number | null {
-  return map.get(normSku(it.model_sku)) ?? map.get(normSku(it.item_sku)) ?? null;
+  const keys = [normSku(it.model_sku), normSku(it.item_sku), productCode(it.model_sku), productCode(it.item_sku)];
+  for (const k of keys) {
+    const c = k ? map.get(k) : undefined;
+    if (c != null) return c;
+  }
+  return null;
 }
