@@ -24,7 +24,13 @@ function unix(v: unknown): number {
   const x = Number(v);
   return x > 1e11 ? x / 1000 : x;
 }
-const pctTxt =(x: number) => `${x >= 0 ? "+" : ""}${Math.round(x)}%`;
+/** So với trung bình ngày thường: "+12% so với ngày thường", hoặc "gấp 22 lần ngày thường" khi chênh lớn (ngày sale). */
+function vsNormal(v: number, base: number): string {
+  const r = v / base;
+  if (r >= 3) return `gấp ${Math.round(r)} lần ngày thường`;
+  const x = 100 * r - 100;
+  return `${x >= 0 ? "+" : "−"}${Math.abs(Math.round(x))}% so với ngày thường`;
+}
 
 async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
   try {
@@ -184,9 +190,9 @@ export async function shopMorning(shop: ShopConf): Promise<string[]> {
   const cancelRate = total ? (100 * r.cancelled) / total : 0;
   lines.push(`\n📦 <b>ĐƠN HÀNG</b> hôm qua${tier !== "thuong" ? ` (${SALE_TIER_VI[tier]})` : ""}`);
   lines.push(
-    `• Đơn: <b>${r.orders}</b>${base?.orders ? ` (${pctTxt((100 * r.orders) / base.orders - 100)} so với ngày thường)` : ""} · hủy ${r.cancelled} (${Math.round(cancelRate)}%)`
+    `• Đơn: <b>${r.orders}</b>${base?.orders ? ` (${vsNormal(r.orders, base.orders)})` : ""} · hủy ${r.cancelled} (${Math.round(cancelRate)}%)`
   );
-  lines.push(`• Doanh số: <b>${vnd(r.revenue)}</b>${base?.revenue ? ` (${pctTxt((100 * r.revenue) / base.revenue - 100)})` : ""}`);
+  lines.push(`• Doanh số: <b>${vnd(r.revenue)}</b>${base?.revenue ? ` (${vsNormal(r.revenue, base.revenue)})` : ""}`);
   const ship = await safe(() => toShip(shopId));
   if (ship) {
     lines.push(`• Chờ giao: <b>${ship.total}</b> đơn${ship.overdue ? ` · <b>⚠️ ${ship.overdue} quá hạn giao</b>` : ""}${ship.dueSoon ? ` · ${ship.dueSoon} tới hạn trong 24h` : ""}`);
@@ -276,7 +282,7 @@ export async function shopMorning(shop: ShopConf): Promise<string[]> {
     return data ?? [];
   });
   if (low?.length) {
-    todo.push(`Nhập hàng (tồn < 7 ngày): ${low.map((x: any) => `${esc(String(x.name).slice(0, 28))} (${x.days_of_stock} ngày)`).join("; ")}`);
+    todo.push(`Nhập hàng (tồn dưới 7 ngày):${low.map((x: any) => `${esc(String(x.name).slice(0, 28))} (${x.days_of_stock} ngày)`).join("; ")}`);
   }
   const moves = await safe(async () => {
     const { count } = await db()
