@@ -4,7 +4,7 @@ import { econForItem, itemInfos, modelInfo, normalItemIds } from "./launch";
 import { costOf, loadCostMap, loadProductStats, productCode, type ProductStats } from "./pancake";
 import type { Econ } from "./profit";
 import { INVALID_STATUSES, ordersBetween } from "./report";
-import { loadSettings, type RuleParams } from "./settings";
+import { isPeakDay, loadSettings, type RuleParams } from "./settings";
 import { callShopee, chunk } from "./shopee-call";
 import { addDays, vnDate } from "./time";
 
@@ -37,7 +37,7 @@ export function suggestClass(m: LifeMetrics, p: RuleParams): { cls: ProductClass
   const r30 = m.units30 / 30;
   const r7 = m.units7 / 7;
   const profitOk = m.profitPct != null && m.profitPct >= p.profit_target_pct;
-  const rate = `bán ${m.units30}/30 ngày (${m.units7}/7 ngày)`;
+  const rate = `ngày thường bán ${r30.toFixed(1)}/ngày (7 ngày gần: ${r7.toFixed(1)}/ngày)`;
   const prof = m.profitPct == null ? "chưa có giá vốn" : `lãi ${m.profitPct.toFixed(0)}%`;
   let to: ProductClass;
   let why: string;
@@ -169,18 +169,32 @@ export async function computeLifecycle(shopId: number) {
   const costs = await loadCostMap(shopId);
   const now = Math.floor(Date.now() / 1000);
   const orders = await ordersBetween(shopId, now - 30 * 86400, now);
-  const agg = new Map<number, { units: number; units7: number; revenue: number; costedRevenue: number; cogs: number; codes: Set<string> }>();
+  // Tốc độ bán để chuyển nhóm chỉ tính ngày thường (bỏ ngày sale lớn và ngày ngay trước), quy về 7 / 30 ngày.
+  // Không thì tuần có 11.11 làm mọi mã trông như "đang tăng tốc".
+  const normalDays = (from: number) => {
+    let k = 0;
+    for (let d = 1; d <= from; d++) if (!isPeakDay(s, addDays(today, -d + 1))) k++;
+    return Math.max(1, k);
+  };
+  const nd7 = normalDays(7);
+  const nd30 = normalDays(30);
+  const agg = new Map<number, { units: number; units7: number; n7: number; n30: number; revenue: number; costedRevenue: number; cogs: number; codes: Set<string> }>();
   for (const o of orders) {
     if (INVALID_STATUSES.includes(o.order_status ?? "")) continue;
     const recent = o.create_time >= now - 7 * 86400;
+    const peak = isPeakDay(s, vnDate(new Date(o.create_time * 1000)));
     for (const it of (o.items ?? []) as any[]) {
       const id = Number(it.item_id);
       const qty = Number(it.qty ?? 1);
       const price = Number(it.price ?? 0);
       if (!(qty > 0) || !(price > 0)) continue;
-      const a = agg.get(id) ?? { units: 0, units7: 0, revenue: 0, costedRevenue: 0, cogs: 0, codes: new Set<string>() };
+      const a = agg.get(id) ?? { units: 0, units7: 0, n7: 0, n30: 0, revenue: 0, costedRevenue: 0, cogs: 0, codes: new Set<string>() };
       a.units += qty;
       if (recent) a.units7 += qty;
+      if (!peak) {
+        a.n30 += qty;
+        if (recent) a.n7 += qty;
+      }
       a.revenue += price * qty;
       const c = costOf(costs, it);
       if (c != null) {
@@ -257,8 +271,12 @@ export async function computeLifecycle(shopId: number) {
     return t;
   };
 
-  const { data: manual } = await db().from("product_classes").select("item_id, manual_class").eq("shop_id", shopId);
+  const { data: manual } = await db().from("product_classes").select("item_id, manual_class, updated_at").eq("shop_id", shopId);
   const manualMap = new Map((manual ?? []).filter((m) => m.manual_class).map((m) => [Number(m.item_id), m.manual_class as ProductClass]));
+  // Anh vừa chọn nhóm (< 14 ngày): không đề xuất đổi ngược lại ngay.
+  const freshManual = new Set(
+    (manual ?? []).filter((m) => m.manual_class && Date.parse(m.updated_at) > Date.now() - 14 * 86400_000).map((m) => Number(m.item_id))
+  );
   const stats = await loadProductStats();
 
   // Trung vị CTR / chuyển đổi của shop (chỉ mã đủ số).
@@ -318,15 +336,15 @@ export async function computeLifecycle(shopId: number) {
     const m: LifeMetrics = {
       cls,
       inAds,
-      units7: a?.units7 ?? 0,
-      units30,
+      units7: ((a?.n7 ?? 0) / nd7) * 7,
+      units30: ((a?.n30 ?? 0) / nd30) * 30,
       stock,
       dos,
       ageDays: createdAt ? (Date.now() - createdAt) / 86400_000 : null,
       oos,
       profitPct,
     };
-    const sug = suggestClass(m, p);
+    const sug = freshManual.has(id) ? null : suggestClass(m, p);
     const dia = diagnose(
       {
         inAds,
