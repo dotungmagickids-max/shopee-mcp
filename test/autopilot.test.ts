@@ -40,7 +40,7 @@ function reset() {
     orders: [],
     job_runs: [],
     alert_state: [],
-    autopilot_settings: [{ shop_id: 111, daily_cap_normal: null, mode: "suggest", emergency_stop: false, max_increase_pct: 30, max_edits_per_day: 6, start_budget: 100000, rule_params: {} }],
+    autopilot_settings: [{ shop_id: 111, daily_cap_normal: null, mode: "suggest", emergency_stop: false, max_increase_pct: 30, max_edits_per_day: 6, start_budget: 100000, rule_params: { auto_scale_up: 0 } }],
     autopilot_actions: [],
     audit_log: [],
   };
@@ -364,6 +364,41 @@ describe("sale calendar", () => {
   });
 });
 
+describe("fast scale-up helpers", () => {
+  it("estimates burn rate, start budgets and auto-run scope", async () => {
+    const { burnRate, normalDailySpend, startBudgetFor } = await import("../src/lib/autopilot/rules");
+    const { autoRunnable, increaseLimit, DEFAULT_RULE_PARAMS } = await import("../src/lib/autopilot/settings");
+    // 0h05: tiêu 30k trong 5 phút → 360k/giờ
+    assert.equal(Math.round(burnRate([{ hour: 0, expense: 30_000 }], 0, 5).rate), 360_000);
+    // Đã hết tiền (giờ này ~0) → lấy mức tiêu mạnh nhất 3 giờ gần nhất
+    assert.equal(burnRate([{ hour: 0, expense: 82_000 }, { hour: 1, expense: 1_000 }], 1, 30).peak, 82_000);
+    const s: any = {
+      sale_dates: [],
+      mini_sale_days: [1, 15, 20, 25],
+      pre_sale_days: 2,
+      start_budget: 100_000,
+      max_increase_pct: 30,
+      max_edits_per_day: 6,
+      params: DEFAULT_RULE_PARAMS,
+    };
+    const days = [
+      { date: "2026-11-03", exp: 1_000_000, gmv: 0 },
+      { date: "2026-11-04", exp: 1_200_000, gmv: 0 },
+      { date: "2026-11-11", exp: 30_000_000, gmv: 0 }, // ngày sale lớn: bỏ
+      { date: "2026-11-15", exp: 5_000_000, gmv: 0 }, // sale nhỏ: bỏ
+    ];
+    assert.equal(normalDailySpend(s, days), 1_100_000);
+    assert.equal(startBudgetFor(s, 1_100_000), 440_000);
+    assert.equal(startBudgetFor(s, 50_000), 100_000);
+    assert.equal(startBudgetFor(s, null), 100_000);
+    assert.equal(autoRunnable(s, "rule:scale_up", "change_budget", { budget: 100_000 }, { budget: 200_000 }), true);
+    assert.equal(autoRunnable(s, "rule:throttle", "change_budget", { budget: 200_000 }, { budget: 50_000 }), false);
+    assert.equal(autoRunnable(s, "rule:reset", "change_budget", { budget: 100_000 }, { budget: 400_000 }), false);
+    assert.equal(increaseLimit(s, "2026-11-04", true), 100);
+    assert.equal(increaseLimit(s, "2026-11-04"), 30);
+  });
+});
+
 describe("time helpers", () => {
   it("uses Vietnam time", () => {
     // 2026-11-10T17:30:00Z = 00:30 ngày 11/11 giờ VN
@@ -420,6 +455,19 @@ describe("rules and actions", () => {
     assert.equal(editBodies.length, 0);
     // Chạy lại ngay: cooldown, không đề xuất trùng.
     assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
+  });
+
+  it("auto-runs budget increases without Telegram buttons when auto_scale_up is on", async () => {
+    process.env.AUTOPILOT_DRY_RUN = "false";
+    tables.autopilot_settings[0].rule_params = { auto_scale_up: 1 };
+    seedCampaign();
+    seedHour(0, { clicks: 20, expense: 99000, broad_gmv: 1_400_000 });
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 1);
+    const a = tables.autopilot_actions[0];
+    assert.deepEqual([a.status, a.decided_by, a.after.fast], ["executed", "auto", true]);
+    assert.ok(a.after.budget > 130000, "tiêu hết tiền: được tăng quá 30%");
+    assert.equal(editBodies.length, 1);
+    assert.equal(telegramCalls.filter((t) => t.method === "sendPhoto").length, 0, "không gửi nút duyệt");
   });
 
   it("approves in dry-run without calling Shopee and caps the increase", async () => {

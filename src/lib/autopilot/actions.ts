@@ -1,6 +1,6 @@
 import { db } from "../supabase";
 import { isDryRun, shopName } from "./config";
-import { automationBlocked, dailyCap, editsLimit, increaseLimit, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
+import { automationBlocked, autoRunnable, dailyCap, editsLimit, increaseLimit, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { callShopee, ShopeeCallError } from "./shopee-call";
 import { approveButtons, editTelegram, esc, sendAlertOnce, sendTelegram, sendTelegramMessage, sendTelegramPhoto, vnd } from "./telegram";
 import { apiDate, vnDate, vnDayStartUnix } from "./time";
@@ -180,7 +180,8 @@ export async function propose(input: ProposalInput, ttlMinutes: number, settings
     .single();
   if (error) throw new Error(`autopilot_actions: ${error.message}`);
   const row = data as ActionRow;
-  if (s.mode === "auto" && input.source.startsWith("rule:")) {
+  // Tự chạy: chế độ auto, hoặc việc tăng ngân sách anh đã cho tự chạy (tóm tắt trong báo cáo 8h).
+  if ((s.mode === "auto" && input.source.startsWith("rule:")) || autoRunnable(s, input.source, input.action, input.before, input.after)) {
     await decide(row.id, true, "auto");
     return row;
   }
@@ -310,11 +311,12 @@ export async function guardBudget(
   s: ShopSettings,
   campaignId: number,
   current: number,
-  wanted: number
+  wanted: number,
+  fast = false
 ): Promise<{ budget: number | null; note: string }> {
   let budget = Math.round(wanted / 1000) * 1000;
   const notes: string[] = [];
-  const maxInc = increaseLimit(s);
+  const maxInc = increaseLimit(s, vnDate(), fast);
   if (current > 0 && budget > current * (1 + maxInc / 100)) {
     budget = Math.floor((current * (1 + maxInc / 100)) / 1000) * 1000;
     notes.push(`giới hạn tăng ${maxInc}%`);
@@ -366,8 +368,9 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
   if (blocked) return { status: await finish(row, "skipped", blocked) };
   if (!row.campaign_id) return { status: await finish(row, "skipped", "Thiếu campaign_id") };
 
-  if ((await editsToday(row.shop_id, row.campaign_id)) >= editsLimit(s)) {
-    return { status: await finish(row, "skipped", `Đã chỉnh ${editsLimit(s)} lần hôm nay`) };
+  const maxEdits = row.after?.fast ? Math.max(editsLimit(s), s.params.fast_max_edits_per_day) : editsLimit(s);
+  if ((await editsToday(row.shop_id, row.campaign_id)) >= maxEdits) {
+    return { status: await finish(row, "skipped", `Đã chỉnh ${maxEdits} lần hôm nay`) };
   }
 
   if (row.action === "refresh") return executeRefresh(row);
@@ -393,7 +396,7 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
   let after = row.after;
   if (row.action === "change_budget") {
     const current = Number(row.before?.budget ?? 0);
-    const g = await guardBudget(s, row.campaign_id, current, Number(row.after?.budget));
+    const g = await guardBudget(s, row.campaign_id, current, Number(row.after?.budget), !!row.after?.fast);
     if (g.budget == null) return { status: await finish(row, "skipped", g.note) };
     params.budget = g.budget;
     after = { ...row.after, budget: g.budget, ...(g.note ? { capped: g.note } : {}) };

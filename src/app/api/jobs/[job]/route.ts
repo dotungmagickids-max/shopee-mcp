@@ -10,6 +10,7 @@ const PARTS = ["ads", "orders", "escrow", "costs", "roas"] as const;
 /**
  * Job do Supabase pg_cron gọi (xem supabase/cron.sql):
  *   POST /api/jobs/collect                              mỗi 15 phút (thu số liệu + luật trong ngày)
+ *   POST /api/jobs/collect?fast=1                       mỗi 5 phút lúc 20h–1h59 (chỉ số giờ chiến dịch + luật)
  *   POST /api/jobs/reset                                00:00 (reset ngân sách, bật lại chiến dịch tool dừng)
  *   POST /api/jobs/daily?part=ads|orders|escrow|costs|roas  01:00 / 01:05 / 01:10 / 01:15 / 01:20
  *   POST /api/jobs/report                               08:00
@@ -23,7 +24,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ job: strin
   const part = sp.get("part") as (typeof PARTS)[number] | null;
   try {
     let result: unknown;
-    if (job === "collect") result = await collectJob();
+    if (job === "collect") result = await collectJob(sp.get("fast") === "1");
     else if (job === "reset") result = await resetJob();
     else if (job === "daily" && part && PARTS.includes(part)) result = await dailyJob(part);
     else if (job === "report") result = await morningReportJob();
