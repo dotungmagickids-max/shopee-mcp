@@ -373,7 +373,7 @@ export async function computeLifecycle(shopId: number) {
       price: price ? Math.round(price) : null,
       stock,
       days_of_stock: dos == null ? null : dos === Infinity ? 9999 : Math.round(dos),
-      units7: m.units7,
+      units7: a?.units7 ?? 0, // số bán thật 7 ngày (hiển thị); tốc độ ngày thường chỉ dùng cho đề xuất
       units30,
       cost_ratio: costRatio == null ? null : Math.round(costRatio * 1000) / 1000,
       breakeven: econ?.breakeven ?? null,
