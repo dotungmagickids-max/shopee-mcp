@@ -70,6 +70,16 @@ export const DEFAULT_RULE_PARAMS = {
   fast_max_edits_per_day: 24,
   // Đầu ngày (đã tiêu < N% mức chi ngày bình thường): xét ROAS 3 ngày gần nhất thay vì chỉ ROAS hôm nay
   early_spend_pct: 50,
+  // Lên quảng cáo mã chưa chạy (đề xuất hằng tuần, luôn chờ duyệt)
+  launch_max_per_week: 5,
+  launch_min_stock: 30, // tồn tối thiểu (cái)
+  launch_min_stock_days: 21, // tồn đủ bán tối thiểu (ngày)
+  launch_max_breakeven: 8, // bỏ mã có ROAS hòa vốn cao hơn (lãi quá mỏng để chạy quảng cáo)
+  launch_cooldown_days: 21, // mã đã đề xuất (kể cả anh bỏ qua) thì N ngày sau mới đề xuất lại
+  launch_live: 0, // 1 = duyệt là tạo chiến dịch thật trên Shopee; 0 = chỉ ghi nhận (dry-run)
+  // Đánh giá hàng Mới sau 14 ngày chạy
+  new_promote_orders: 20, // đủ N đơn và ROAS ≥ mức lãi 10% → đề xuất lên Thường/Chủ lực
+  new_stop_min_spend: 300_000, // đã chi ≥ N mà < 3 đơn hoặc ROAS < 80% hòa vốn → báo nên dừng
   // 1 = tự chạy việc TĂNG ngân sách (tăng do luật + nới lại sau siết) không chờ duyệt; siết/dừng vẫn chờ duyệt
   auto_scale_up: 1,
 };

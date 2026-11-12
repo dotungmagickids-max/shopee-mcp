@@ -84,6 +84,10 @@ function match(row: Row, col: string, expr: string): boolean {
   if (expr.startsWith("in.(")) return expr.slice(4, -1).split(",").map((s) => s.replace(/"/g, "")).includes(String(row[col]));
   if (expr.startsWith("gte.")) return String(row[col]) >= expr.slice(4);
   if (expr === "is.null") return row[col] == null;
+  if (expr.startsWith("cs.{")) {
+    const want = expr.slice(4, -1).split(",").filter(Boolean);
+    return Array.isArray(row[col]) && want.every((w) => (row[col] as unknown[]).map(String).includes(w));
+  }
   return true;
 }
 
@@ -418,6 +422,64 @@ describe("fast scale-up helpers", () => {
     assert.equal(scaleTargetFor(null, DEFAULT_RULE_PARAMS), null);
     assert.equal(increaseLimit(s, "2026-11-04", true), 100);
     assert.equal(increaseLimit(s, "2026-11-04"), 30);
+  });
+});
+
+describe("launch new products", () => {
+  beforeEach(() => {
+    reset();
+    delete process.env.AUTOPILOT_DRY_RUN;
+    delete process.env.AUTOPILOT_LIVE_ACTIONS;
+  });
+
+  it("judges new products after 14 days and scores launch candidates", async () => {
+    const { judgeNew, launchScore, econForItem } = await import("../src/lib/autopilot/launch");
+    const { DEFAULT_RULE_PARAMS: P } = await import("../src/lib/autopilot/settings");
+    assert.equal(judgeNew({ spend: 1_000_000, gmv: 13_000_000, orders: 40, breakeven: 6, thuongTarget: 11 }, P).verdict, "len_nhom");
+    assert.equal(judgeNew({ spend: 1_000_000, gmv: 13_000_000, orders: 40, breakeven: 6, thuongTarget: 11, autoClass: "chu_luc" }, P).to, "chu_luc");
+    assert.equal(judgeNew({ spend: 400_000, gmv: 300_000, orders: 2, breakeven: 6, thuongTarget: 11 }, P).verdict, "dung");
+    assert.equal(judgeNew({ spend: 400_000, gmv: 3_000_000, orders: 10, breakeven: 6, thuongTarget: 11 }, P).verdict, "giu");
+    assert.ok(launchScore(30, "moi", 100) > launchScore(30, "xa_kho", 100));
+    const shop: any = { payout: 0.637, cancel_rate: 0.15, return_rate: 0.064, return_back_rate: 0.05, return_fee_ratio: 0.001, ad_fee_pct: 8, margin: 0.2 };
+    const e = econForItem(shop, 0.35, 200_000, P);
+    // 0,85 × (0,637 × 0,936 − 0,35 × 0,95 − 0,001) = 0,2229 → hòa vốn 1,08/0,2229 = 4,8
+    assert.equal(e.breakeven, 4.8);
+  });
+
+  it("creates a GMV Max campaign only after a human approves and launch_live is on", async () => {
+    const actions = await import("../src/lib/autopilot/actions");
+    const input = {
+      shop_id: 111,
+      campaign_id: null,
+      action: "launch" as const,
+      before: {},
+      after: { item_id: 4242, name: "Áo mới", image: "https://cf.shopee.test/file/new.jpg", budget: 100000, roas_target: 6.3 },
+      reason: "test",
+      source: "rule:launch",
+    };
+    // Mặc định: duyệt chỉ ghi dry-run, không gọi Shopee
+    const a = await actions.propose(input, 60);
+    const photo = telegramCalls.find((t) => t.method === "sendPhoto")!;
+    assert.equal(photo.body.photo, "https://cf.shopee.test/file/new.jpg", "đề xuất gửi kèm ảnh sản phẩm");
+    await actions.decide(a.id, true, "telegram");
+    assert.equal(tables.autopilot_actions.find((r) => r.id === a.id)!.status, "dry_run");
+    assert.equal(createBodies.length, 0);
+
+    // Bật launch_live: duyệt là tạo thật
+    tables.autopilot_settings[0].rule_params = { ...tables.autopilot_settings[0].rule_params, launch_live: 1 };
+    const b = await actions.propose(input, 60);
+    await actions.decide(b.id, true, "telegram");
+    const row = tables.autopilot_actions.find((r) => r.id === b.id)!;
+    assert.equal(row.status, "executed");
+    assert.deepEqual([createBodies[0].item_id, createBodies[0].budget, createBodies[0].roas_target, createBodies[0].bidding_method], [4242, 100000, 6.3, "auto"]);
+    assert.equal(createBodies[0].reference_id, row.reference_id);
+    assert.equal(tables.ads_campaigns.find((c) => c.campaign_id === 999)!.campaign_status, "ongoing");
+
+    // Đã có chiến dịch: không tạo trùng
+    const c = await actions.propose(input, 60);
+    await actions.decide(c.id, true, "telegram");
+    assert.equal(tables.autopilot_actions.find((r) => r.id === c.id)!.status, "skipped");
+    assert.equal(createBodies.length, 1);
   });
 });
 
