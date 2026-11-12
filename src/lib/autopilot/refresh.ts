@@ -1,4 +1,4 @@
-import { db } from "../supabase";
+import { allRows, db } from "../supabase";
 import { proposeGroup } from "./actions";
 import { automationBlocked, loadSettings } from "./settings";
 import { callShopee, chunk } from "./shopee-call";
@@ -58,16 +58,18 @@ export async function findRefreshCandidates(shopId: number) {
 
   const daily: any[] = [];
   for (const ids of chunk(eligible.map((c) => Number(c.campaign_id)), 100)) {
-    const { data, error: e } = await db()
-      .from("ads_campaign_daily")
-      .select("campaign_id, date, impression, clicks, expense, broad_order, broad_gmv")
-      .eq("shop_id", shopId)
-      .gte("date", from)
-      .lte("date", to)
-      .in("campaign_id", ids)
-      .limit(10000);
-    if (e) throw new Error(e.message);
-    daily.push(...(data ?? []));
+    const data = await allRows(() =>
+      db()
+        .from("ads_campaign_daily")
+        .select("campaign_id, date, impression, clicks, expense, broad_order, broad_gmv")
+        .eq("shop_id", shopId)
+        .gte("date", from)
+        .lte("date", to)
+        .in("campaign_id", ids)
+        .order("campaign_id")
+        .order("date")
+    );
+    daily.push(...data);
   }
   const byCamp = new Map<number, any[]>();
   for (const r of daily) {
