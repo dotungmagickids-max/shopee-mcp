@@ -87,6 +87,23 @@ export const DEFAULT_RULE_PARAMS = {
   new_stop_min_spend: 300_000, // đã chi ≥ N mà < 3 đơn hoặc ROAS < 80% hòa vốn → báo nên dừng
   // 1 = tự chạy việc TĂNG ngân sách (tăng do luật + nới lại sau siết) không chờ duyệt; siết/dừng vẫn chờ duyệt
   auto_scale_up: 1,
+  // Mục tiêu (anh chốt 13/11/2026: tháng 11 Shopee 1 tỷ, lãi 12%; hàng xả bán hết trước Tết âm 20 ngày)
+  goal_month_revenue: 0, // doanh số tháng mục tiêu của shop (đ), 0 = chưa đặt
+  goal_profit_pct: 12, // lãi mục tiêu cả tháng (% doanh số)
+  clear_deadline: 0, // hạn bán hết hàng xả, dạng YYYYMMDD (vd 20270117), 0 = chưa đặt
+  // Thử bậc lãi (cải tiến liên tục): mỗi chiến dịch Chủ lực / Thường thử lãi mong muốn lên/xuống một bậc,
+  // đo tiền lãi thật/ngày của sản phẩm, bậc nào lãi nhiều tiền hơn thì giữ. Chỉ báo kết quả, không chờ duyệt.
+  steps_enabled: 1,
+  steps_max_running: 5, // số chiến dịch thử cùng lúc
+  steps_test_days: 4, // số ngày thường đo mỗi bậc (bỏ ngày đầu và ngày sale)
+  steps_max_days: 12, // quá số ngày lịch này mà chưa đủ ngày đo thì chấm với số đang có
+  steps_base_days: 7, // ngày nền tối đa (ngày thường trước khi đổi bậc)
+  steps_min_base_days: 3, // cần ít nhất N ngày thường ở bậc hiện tại mới thử bậc mới
+  steps_roas_pct: 12, // mỗi bậc đổi ROAS mục tiêu khoảng N% (≤ roas_max_change_pct)
+  steps_min_pct: 3, // bậc lãi thấp nhất (%)
+  steps_max_pct: 25, // bậc lãi cao nhất (%)
+  steps_min_daily_spend: 100_000, // chỉ thử chiến dịch chi trung bình ≥ N/ngày thường
+  steps_gain_pct: 5, // lãi/ngày hơn kém ≥ N% mới tính là tốt/xấu hơn
 };
 
 export type RuleParams = typeof DEFAULT_RULE_PARAMS;
