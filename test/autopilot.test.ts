@@ -517,6 +517,9 @@ describe("morning report", () => {
     for (const s of ["ĐƠN HÀNG", "MARKETING", "TIỀN", "Số dư ví Shopee", vnd(56266260), "sắp về", vnd(226986965), "quá hạn giao", "VIỆC CẦN LÀM", "Giao gấp"]) {
       assert.ok(res.text.includes(s), s);
     }
+    // Telegram HTML: mọi dấu "<" phải là thẻ hợp lệ, không thì tin bị từ chối.
+    assert.equal(/<(?!\/?(b|i|a|code)\b)/.test(res.text), false, "không có dấu < lạc trong tin");
+    assert.ok(res.sent, "đã gửi Telegram");
   });
 });
 
