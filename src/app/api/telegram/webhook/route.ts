@@ -5,7 +5,8 @@ import { todayOverview } from "@/lib/autopilot/dashboard";
 import { morningReportJob } from "@/lib/autopilot/jobs";
 import { proposePauseAll, proposeResumeAll } from "@/lib/autopilot/rules";
 import { suggestDays } from "@/lib/autopilot/settings";
-import { answerCallback, esc, isOwner, sendTelegram, vnd } from "@/lib/autopilot/telegram";
+import { answerCallback, esc, isOwner, sendTelegram, sendTelegramMessage, vnd } from "@/lib/autopilot/telegram";
+import { askWhy, captureWhy } from "@/lib/feedback";
 import { db } from "@/lib/supabase";
 import { handleMemoryCallback, handleMemoryMessage, isMemoryCommand, MEMORY_HELP } from "@/lib/tri-nho";
 
@@ -53,12 +54,14 @@ export async function POST(request: Request) {
     if (t) {
       const text = await decideTask(Number(t[2]), t[1] === "a").catch((e) => `Lỗi: ${e instanceof Error ? e.message : String(e)}`);
       await answerCallback(cb.id, text);
+      if (t[1] === "r" && text === "Đã bỏ qua") await askWhy("shopee", "shop_task", Number(t[2]), await taskSummary(Number(t[2])), shopeeSend);
       return Response.json({ ok: true });
     }
     const m = /^([ar]):(\d+)$/.exec(String(cb.data ?? ""));
     if (m) {
       const res = await decide(Number(m[2]), m[1] === "a", "telegram").catch((e) => ({ ok: false, message: String(e) }));
       await answerCallback(cb.id, res.message);
+      if (m[1] === "r" && res.ok) await askWhy("shopee", "autopilot_action", Number(m[2]), await actionSummary(Number(m[2])), shopeeSend);
     }
     return Response.json({ ok: true });
   }
@@ -75,6 +78,8 @@ export async function POST(request: Request) {
     }
     return Response.json({ ok: true });
   }
+  // Anh trả lời câu hỏi "Sai vì…" của bot này.
+  if (await captureWhy("shopee", msg, shopeeSend).catch(() => false)) return Response.json({ ok: true });
   const [cmd, arg] = String(msg.text).trim().split(/\s+/);
   const command = cmd.toLowerCase().replace(/@.*$/, "");
   try {
@@ -170,4 +175,37 @@ async function mode(arg: string | undefined) {
     lines.push(`${esc(s.name)}: chế độ <b>${arg}</b>`);
   }
   await sendTelegram(lines.join("\n"));
+}
+
+const shopeeSend = (text: string, replyMarkup?: unknown) => sendTelegramMessage(text, replyMarkup ? { replyMarkup } : {});
+
+const ACTION_VI: Record<string, string> = {
+  change_budget: "đổi ngân sách",
+  change_roas_target: "đổi ROAS mục tiêu",
+  pause: "tạm dừng",
+  resume: "bật lại",
+  refresh: "làm mới chiến dịch",
+  launch: "lên quảng cáo mã mới",
+  set_class: "đổi nhóm hàng",
+  group: "nhóm đề xuất",
+};
+
+/** Tóm tắt đề xuất quảng cáo Shopee để hỏi "Sai vì…". */
+async function actionSummary(id: number): Promise<string> {
+  const { data: r } = await db().from("autopilot_actions").select("shop_id, action, campaign_id, reason").eq("id", id).maybeSingle();
+  if (!r) return `đề xuất #${id}`;
+  let name = "";
+  if (r.campaign_id) {
+    const { data: c } = await db().from("ads_campaigns").select("ad_name").eq("shop_id", r.shop_id).eq("campaign_id", r.campaign_id).maybeSingle();
+    name = c?.ad_name ? ` "${String(c.ad_name).slice(0, 60)}"` : ` #${r.campaign_id}`;
+  }
+  return `${ACTION_VI[r.action] ?? r.action}${name} (${shopName(r.shop_id)})${r.reason ? `: ${String(r.reason).slice(0, 160)}` : ""}`;
+}
+
+async function taskSummary(id: number): Promise<string> {
+  const { data: t } = await db().from("shop_tasks").select("shop_id, kind, payload").eq("id", id).maybeSingle();
+  if (!t) return `việc #${id}`;
+  return t.kind === "reply_low"
+    ? `trả lời đánh giá xấu bằng câu soạn sẵn (${shopName(t.shop_id)})`
+    : `trả lời cảm ơn ${t.payload?.items?.length ?? ""} đánh giá 4–5 sao (${shopName(t.shop_id)})`;
 }

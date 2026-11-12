@@ -5,6 +5,7 @@
  * Giai đoạn 1 (anh chốt 13/11): chỉ báo cáo + đề xuất. Nút Đồng ý chỉ ghi nhận; thực thi trên Meta chỉ bật khi FB_EXECUTE=1.
  */
 import { db } from "../supabase";
+import { weeklyWhyLines } from "../feedback";
 import { esc, vnd } from "../autopilot/telegram";
 import { vnDate, vnHour } from "../autopilot/time";
 import { ACCOUNT_STATUS, adInsights, adState, budgetTarget, listAccounts, pauseAd, scaledBudget, setDailyBudget, type MetaAccount } from "./meta";
@@ -237,7 +238,13 @@ export async function fbReportJob(day = shiftDay(vnDate(), -1)) {
   const rules = loadRules();
   const week = await loadHistory(shiftDay(day, -6), day).catch(() => rows);
   const stock = await loadStock();
-  await fbSend(morningText(day, rows, errors, week, stock));
+  let text = morningText(day, rows, errors, week, stock);
+  // Thứ Hai: kèm lý do anh bỏ qua đề xuất tuần qua.
+  if (new Date(`${vnDate()}T00:00:00Z`).getUTCDay() === 1) {
+    const why = await weeklyWhyLines("facebook").catch(() => []);
+    if (why.length) text += ["", "", ...why].join("\n");
+  }
+  await fbSend(text);
   const history = week.filter((r) => r.ngay >= shiftDay(day, -(rules.scaleDays - 1)));
   let proposed = 0;
   for (const p of scaleCandidates(history, day, rules).slice(0, 5)) if (await propose(p, day)) proposed++;
