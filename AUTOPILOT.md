@@ -45,6 +45,16 @@ Vercel → project `magickids-shopee` → Settings → Environment Variables (Pr
 | `TELEGRAM_CHAT_ID` | chat_id của anh, hoặc id nhóm "Phòng họp Magickids" (số âm, dạng `-100…`) |
 | `TELEGRAM_THREAD_ID` | (khi dùng nhóm) id chủ đề "Shopee" trong nhóm; bỏ trống thì tin vào chủ đề chung |
 | `TELEGRAM_OWNER_IDS` | (khi dùng nhóm) user id được ra lệnh và bấm duyệt, cách nhau bằng dấu phẩy. Thiếu biến này thì trong nhóm không ai duyệt được |
+| `FB_TELEGRAM_BOT_TOKEN` | Nhân viên Facebook: token bot riêng (dùng chung `TELEGRAM_CHAT_ID`, `TELEGRAM_OWNER_IDS`) |
+| `FB_TELEGRAM_THREAD_ID` | Nhân viên Facebook: id chủ đề Facebook trong nhóm Phòng họp |
+| `FB_TELEGRAM_WEBHOOK_SECRET` | Nhân viên Facebook: secret webhook `/api/telegram/facebook` |
+| `FB_TELEGRAM_BOT_USERNAME` | Nhân viên Facebook: tên bot (không có @), để bỏ qua lệnh gọi đích danh bot khác |
+| `META_SYSTEM_TOKEN` | Nhân viên Facebook: token System User Meta (`ads_read`, `ads_management`) |
+| `META_APP_SECRET` | App secret của Magickids Ads Tool: mọi request Meta kèm `appsecret_proof` |
+| `META_AD_ACCOUNTS` | (không bắt buộc) chỉ theo dõi các tài khoản này, id cách nhau bằng dấu phẩy. Luôn bỏ BOSS TUYỀN 3/4/5/6 |
+| `FB_CPAS_ACCOUNTS` | (không bắt buộc) id tài khoản chạy CPAS thật (đơn về Shopee, đo bằng số mua Meta). Mặc định không có: tên "CPAS SHOPEE…" vẫn chạy Facebook |
+| `FB_EXECUTE` | `1` thì nút Đồng ý của Nhân viên Facebook thao tác thật trên Meta (tắt / tăng ngân sách). Mặc định không đặt: chỉ ghi nhận (giai đoạn 1, anh chốt 13/11) |
+| `FB_RULES` | (không bắt buộc) JSON ghi đè ngưỡng luật, xem `src/lib/facebook/rules.ts` |
 | `TELEGRAM_WEBHOOK_SECRET` | chuỗi ngẫu nhiên (chỉ chữ, số, `_`, `-`) |
 | `AUTOPILOT_DRY_RUN` | `true` |
 

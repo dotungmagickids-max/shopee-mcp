@@ -41,6 +41,10 @@ select cron.schedule('autopilot-daily-roas',   '20 18 * * *',  $$select public.a
 select cron.schedule('autopilot-refresh',      '0 0 * * 1',    $$select public.autopilot_call('/api/jobs/refresh')$$);           -- Thứ Hai 07:00 VN
 select cron.schedule('autopilot-report',     '0 1 * * *',    $$select public.autopilot_call('/api/jobs/report')$$);            -- 08:00 VN
 
+-- Nhân viên Facebook: báo sáng 08:05 VN, quét cảnh báo phút 15 mỗi giờ 9h–23h VN.
+select cron.schedule('autopilot-fb-report', '5 1 * * *',     $$select public.autopilot_call('/api/jobs/fb-report')$$);
+select cron.schedule('autopilot-fb-watch',  '15 2-16 * * *', $$select public.autopilot_call('/api/jobs/fb-watch')$$);
+
 -- Chăm shop (giai đoạn A): phút 40 mỗi giờ 8h–22h VN; báo cáo tuần thứ Hai 08:15 VN.
 select cron.schedule('autopilot-care',        '40 1-15 * * *', $$select public.autopilot_call('/api/jobs/care')$$);
 select cron.schedule('autopilot-care-weekly', '15 1 * * 1',    $$select public.autopilot_call('/api/jobs/care-weekly')$$);
