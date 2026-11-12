@@ -185,6 +185,7 @@ describe("bảo mật Meta", () => {
   it("lỗi không lộ token", async () => {
     const { scrub } = await import("../src/lib/facebook/meta");
     assert.equal(scrub("https://x/?access_token=EAAB123&appsecret_proof=abc&limit=5"), "https://x/?access_token=***&appsecret_proof=***&limit=5");
+    assert.equal(scrub("Malformed access token EAAFakeToken1234567890xyz (mã 190)"), "Malformed access token EAA*** (mã 190)");
   });
   it("mọi request gửi kèm appsecret_proof, lỗi trả về không chứa token", async () => {
     const { adInsights } = await import("../src/lib/facebook/meta");

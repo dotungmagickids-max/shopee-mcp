@@ -17,7 +17,10 @@ export function appSecretProof(token: string, secret: string): string {
 
 /** Xóa token khỏi chuỗi trước khi ghi log / trả lỗi. */
 export function scrub(s: string): string {
-  return s.replace(/(access_token|appsecret_proof)=[^&\s"]+/gi, "$1=***");
+  return s
+    .replace(/(access_token|appsecret_proof)=[^&\s"]+/gi, "$1=***")
+    // Meta có khi in nguyên token trong thông báo lỗi ("Malformed access token EAA…").
+    .replace(/\bEAA[A-Za-z0-9]{10,}/g, "EAA***");
 }
 
 function authParams(): Record<string, string> {
