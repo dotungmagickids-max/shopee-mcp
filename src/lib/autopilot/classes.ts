@@ -11,6 +11,26 @@ export const CLASS_VI: Record<ProductClass, string> = {
   moi: "Mới",
 };
 
+/**
+ * Nhóm theo ma trận BCG (cách anh Tùng nghĩ về danh mục, 12/11/2026):
+ *   Mới = Dấu hỏi: lãi ít / hòa vốn để lấy hiển thị và lượt mua.
+ *   Chủ lực = Ngôi sao: vừa lãi vừa bán nhiều → tăng mạnh để tối đa tốc độ đi hàng và tổng lãi.
+ *   Thường = Bò sữa: chạy đều → ưu tiên lãi cao, giữ nhịp, tăng vừa phải.
+ *   Xả kho = Chó: lãi thấp / không lãi, thu tiền mặt.
+ */
+export const CLASS_BCG: Record<ProductClass, string> = {
+  moi: "Dấu hỏi",
+  chu_luc: "Ngôi sao",
+  thuong: "Bò sữa",
+  xa_kho: "Chó",
+};
+
+/** Cách tăng ngân sách theo nhóm: tăng khi đã tiêu ≥ ratio ngân sách, mỗi lần +step%. */
+export function scaleStyle(cls: ProductClass | undefined, p: RuleParams): { ratio: number; stepPct: number } {
+  if (cls === "chu_luc") return { ratio: p.scale_core_spend_ratio, stepPct: p.scale_core_step_pct };
+  return { ratio: p.scale_spend_ratio, stepPct: p.scale_step_pct };
+}
+
 export interface ClassInput {
   units30: number; // bán trên Shopee 30 ngày (đơn không hủy)
   stock: number | null; // tồn Pancake (null = không biết mã sản phẩm)
@@ -90,9 +110,28 @@ export function targetForClass(e: EconBase, cls: ProductClass, p: RuleParams): {
     return { target: allow > 0 ? round1(fee / allow) : null, label: `xả kho: QC ≤ ${p.clear_ads_share_pct}% tiền thu về` };
   }
   const pct = cls === "chu_luc" ? p.profit_core_pct : cls === "moi" ? p.profit_new_pct : p.profit_target_pct;
+  return profitTarget(e, pct, `${CLASS_VI[cls].toLowerCase()}: ${pct > 0 ? `lãi ${pct}%` : "hòa vốn"}`);
+}
+
+function profitTarget(e: EconBase, pct: number, label: string): { target: number | null; label: string } {
+  const fee = 1 + (e.ad_fee_pct ?? 0) / 100;
+  const keepC = 1 - e.cancel_rate;
   const allow = e.margin - keepC * (1 - e.return_rate) * (pct / 100);
-  return {
-    target: allow > 0 ? round1(fee / allow) : null,
-    label: `${CLASS_VI[cls].toLowerCase()}: ${pct > 0 ? `lãi ${pct}%` : "hòa vốn"}`,
-  };
+  return { target: allow > 0 ? round1(fee / allow) : null, label };
+}
+
+/**
+ * Ngưỡng ROAS để TĂNG ngân sách theo nhóm:
+ *   Ngôi sao (Chủ lực): lãi ≥ scale_core_profit_pct (thấp hơn mục tiêu 8% để đẩy số bán).
+ *   Bò sữa (Thường), Dấu hỏi (Mới), Chó (Xả kho): đúng mục tiêu của nhóm (10% / hòa vốn / QC ≤ 60% tiền thu).
+ * Không có số kinh tế thì null (luật dùng ngưỡng thường).
+ */
+export function scaleTargetFor(e: (EconBase & { class?: ProductClass; target?: number | null }) | null, p: RuleParams): { target: number | null; label: string } | null {
+  if (!e?.margin) return null;
+  const cls = (e.class ?? "thuong") as ProductClass;
+  if (cls === "chu_luc" && p.scale_core_profit_pct < p.profit_core_pct) {
+    return profitTarget(e, p.scale_core_profit_pct, `chủ lực (ngôi sao): tăng khi lãi ≥ ${p.scale_core_profit_pct}%`);
+  }
+  const own = targetForClass(e, cls, p);
+  return { target: own.target, label: `${CLASS_VI[cls].toLowerCase()} (${CLASS_BCG[cls].toLowerCase()}): ${own.label.split(": ").slice(1).join(": ")}` };
 }

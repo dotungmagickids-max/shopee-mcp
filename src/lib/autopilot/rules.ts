@@ -1,6 +1,7 @@
 import { db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
 import { ruleTarget, type Econ } from "./profit";
+import { scaleStyle, scaleTargetFor } from "./classes";
 import { automationBlocked, editsLimit, isPeakDay, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
@@ -256,7 +257,11 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const minutesLeft = rate > 0 ? (left / rate) * 60 : Infinity;
       const burning = minutesLeft <= p.burn_trigger_minutes;
       const exhausted = exp >= 0.95 * c.campaign_budget;
-      const nearFull = exp >= scaleRatio * c.campaign_budget;
+      // Ngôi sao (Chủ lực) tăng sớm hơn và mạnh hơn; nhóm khác theo nhịp thường (hoặc nhịp ngày cao điểm).
+      const style = scaleStyle(c.econ?.class, p);
+      const ratio = Math.min(scaleRatio, style.ratio);
+      const stepPct = Math.max(scaleStepPct, style.stepPct);
+      const nearFull = exp >= ratio * c.campaign_budget;
       // Đầu ngày Shopee ghi nhận đơn chậm: còn tiêu ít thì xét ROAS 3 ngày + ROAS gộp (3 ngày + hôm nay) ≥ hòa vốn.
       const last3 = days.filter((d) => d.date >= addDays(today, -3));
       const exp3 = last3.reduce((t, d) => t + d.exp, 0);
@@ -264,12 +269,16 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const roas3 = exp3 > 0 ? gmv3 / exp3 : 0;
       const blended = exp3 + exp > 0 ? (gmv3 + gmv) / (exp3 + exp) : 0;
       const early = normalDaily != null && exp3 > 0 && exp < (normalDaily * p.early_spend_pct) / 100;
-      const tgt = target ?? p.cut_roas_floor * 2;
-      const breakeven = c.econ?.breakeven ?? tgt * 0.6;
+      // Ngưỡng tăng theo nhóm BCG (xem scaleTargetFor).
+      const scaleT = useProfit ? scaleTargetFor(c.econ, p) : null;
+      const tgt = scaleT?.target ?? target ?? p.cut_roas_floor * 2;
+      const tgtLabel = scaleT?.target ? `${scaleT.target} (${scaleT.label})` : targetLabel(c, useProfit);
+      // Xả kho: giá vốn coi như đã chi nên mốc dưới là chính ngưỡng nhóm, không phải hòa vốn.
+      const breakeven = c.econ?.class === "xa_kho" ? tgt : c.econ?.breakeven ?? tgt * 0.6;
       const roasOk = early ? roas3 >= tgt && blended >= breakeven : roas >= tgt;
       if ((nearFull || burning) && roasOk) {
         const fast = burning || exhausted;
-        const step = Math.max(p.scale_min_step, (c.campaign_budget * scaleStepPct) / 100);
+        const step = Math.max(p.scale_min_step, (c.campaign_budget * stepPct) / 100);
         // Tiêu nhanh: thêm đủ tiêu tiếp burn_cover_hours giờ theo tốc độ hiện tại (trần mỗi lần fast_max_increase_pct).
         const cover = fast ? peakRate * p.burn_cover_hours : 0;
         const wanted = Math.round((c.campaign_budget + Math.max(step, cover)) / 1000) * 1000;
@@ -277,8 +286,8 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
           ? `đang tiêu ${vnd(Math.round(rate))}/giờ, còn ~${Math.max(0, Math.round(minutesLeft))} phút là hết`
           : `đã tiêu ${vnd(exp)} (${Math.round((exp / c.campaign_budget) * 100)}% ngân sách)`;
         const roasWhy = early
-          ? `đầu ngày: ROAS 3 ngày ${roas3.toFixed(1)} ≥ ${targetLabel(c, useProfit)}, gộp cả hôm nay ${blended.toFixed(1)} ≥ hòa vốn ${breakeven.toFixed(1)}`
-          : `ROAS hôm nay ${roas.toFixed(1)} ≥ ${targetLabel(c, useProfit)}`;
+          ? `đầu ngày: ROAS 3 ngày ${roas3.toFixed(1)} ≥ ${tgtLabel}, gộp cả hôm nay ${blended.toFixed(1)} ≥ ${c.econ?.class === "xa_kho" ? "ngưỡng" : "hòa vốn"} ${breakeven.toFixed(1)}`
+          : `ROAS hôm nay ${roas.toFixed(1)} ≥ ${tgtLabel}`;
         candidates.push({
           priority: 1,
           fast,
