@@ -47,13 +47,14 @@ export const DEFAULT_RULE_PARAMS = {
   peak_max_increase_pct: 100, // trần mỗi lần tăng (%) — thay cho trần 30% ngày thường
   peak_cooldown_minutes: 30,
   peak_max_edits_per_day: 12,
-  // Ngân sách khởi điểm 0h riêng từng chiến dịch = % chi trung bình 7 ngày thường (thấp nhất = start_budget)
-  start_share_pct: 40,
+  // Ngân sách khởi điểm 0h riêng từng chiến dịch = % chi trung bình 7 ngày thường (thấp nhất = start_budget).
+  // 0 = tắt: mọi chiến dịch về start_budget (anh chốt 12/11: về 100k, tăng nhanh trong ngày).
+  start_share_pct: 0,
   // Tăng theo tốc độ tiêu: sắp hết tiền trong N phút thì tăng ngay, đủ tiêu thêm M giờ
   burn_trigger_minutes: 30,
   burn_cover_hours: 2,
   fast_max_increase_pct: 100, // trần mỗi lần tăng khi đang tiêu nhanh (%)
-  fast_cooldown_minutes: 15,
+  fast_cooldown_minutes: 10,
   fast_max_edits_per_day: 24,
   // Đầu ngày (đã tiêu < N% mức chi ngày bình thường): xét ROAS 3 ngày gần nhất thay vì chỉ ROAS hôm nay
   early_spend_pct: 50,

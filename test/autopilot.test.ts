@@ -388,7 +388,8 @@ describe("fast scale-up helpers", () => {
       { date: "2026-11-15", exp: 5_000_000, gmv: 0 }, // sale nhỏ: bỏ
     ];
     assert.equal(normalDailySpend(s, days), 1_100_000);
-    assert.equal(startBudgetFor(s, 1_100_000), 440_000);
+    assert.equal(startBudgetFor(s, 1_100_000), 100_000, "mặc định: mọi chiến dịch về 100k");
+    assert.equal(startBudgetFor({ ...s, params: { ...DEFAULT_RULE_PARAMS, start_share_pct: 40 } }, 1_100_000), 440_000);
     assert.equal(startBudgetFor(s, 50_000), 100_000);
     assert.equal(startBudgetFor(s, null), 100_000);
     assert.equal(autoRunnable(s, "rule:scale_up", "change_budget", { budget: 100_000 }, { budget: 200_000 }), true);

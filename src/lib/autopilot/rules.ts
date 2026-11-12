@@ -149,7 +149,7 @@ export function normalDailySpend(s: ShopSettings, days: DayRow[]): number | null
 
 /** Ngân sách khởi điểm 0h của một chiến dịch: % chi ngày thường, làm tròn 10k, thấp nhất start_budget. */
 export function startBudgetFor(s: ShopSettings, normalDaily: number | null): number {
-  if (!normalDaily) return s.start_budget;
+  if (!normalDaily || !s.params.start_share_pct) return s.start_budget;
   const v = Math.round((normalDaily * s.params.start_share_pct) / 100 / 10_000) * 10_000;
   return Math.max(s.start_budget, v);
 }
@@ -380,9 +380,9 @@ export async function proposeMidnightReset(shopId: number) {
       }
       continue;
     }
-    // Về mức khởi điểm riêng: hạ chiến dịch đang cao hơn, nâng chiến dịch đang thấp hơn, nới chiến dịch đã siết.
+    // Về mức khởi điểm: hạ chiến dịch đang cao hơn, nới chiến dịch đã siết (chiến dịch anh đặt thấp hơn thì giữ).
     const throttled = !!c.throttled_at && budget !== start;
-    const resetThis = throttled || budget !== start && budget > 0 || (budget === 0 && s.reset_unlimited);
+    const resetThis = throttled || budget > start || (budget === 0 && s.reset_unlimited);
     if (resetThis && canEdit) {
       items.push({ campaign_id: id, action: "change_budget", before: { budget }, after: { budget: start, restore: true } });
     }
@@ -391,12 +391,12 @@ export async function proposeMidnightReset(shopId: number) {
     shopId,
     peak
       ? `0h ${SALE_TIER_VI[saleTier(s)]}: giữ nguyên ngân sách, chỉ nới chiến dịch đã siết và bật lại chiến dịch tool đã dừng`
-      : "Reset 0h: ngân sách về mức khởi điểm riêng từng chiến dịch, nới chiến dịch đã siết, bật lại chiến dịch tool đã dừng",
+      : "Reset 0h: ngân sách về mức khởi điểm, nới chiến dịch đã siết, bật lại chiến dịch tool đã dừng",
     items,
     "rule:reset",
     peak
       ? "Ngày cao điểm không hạ ngân sách lúc 0h; trong ngày tăng nhanh hơn (tối đa +100%/lần) khi còn lãi, chỉ siết khi dưới hòa vốn."
-      : `Khởi điểm = ${s.params.start_share_pct}% chi trung bình 7 ngày thường của từng chiến dịch (thấp nhất ${vnd(s.start_budget)}); trong ngày tool tự tăng khi tiêu nhanh mà còn lãi.${s.reset_unlimited ? "" : " (Chiến dịch không giới hạn ngân sách giữ nguyên; bật 'Áp dụng cho chiến dịch không giới hạn' trong Cài đặt để đưa vào.)"}`,
+      : `${s.params.start_share_pct ? `Khởi điểm = ${s.params.start_share_pct}% chi trung bình 7 ngày thường của từng chiến dịch (thấp nhất ${vnd(s.start_budget)})` : `Ngân sách khởi điểm ${vnd(s.start_budget)}`}; trong ngày tool tự tăng khi tiêu nhanh mà còn lãi.${s.reset_unlimited ? "" : " (Chiến dịch không giới hạn ngân sách giữ nguyên; bật 'Áp dụng cho chiến dịch không giới hạn' trong Cài đặt để đưa vào.)"}`,
     10 * 60,
     { autoExecute: s.mode === "auto" }
   );
