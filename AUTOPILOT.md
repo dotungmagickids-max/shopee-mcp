@@ -41,8 +41,10 @@ Vercel → project `magickids-shopee` → Settings → Environment Variables (Pr
 | `JOB_SECRET` | chuỗi ngẫu nhiên dài (vd tạo bằng `openssl rand -hex 32`) |
 | `TOKEN_ENC_KEY` | chuỗi ngẫu nhiên dài khác. **Không được đổi** sau khi token đã mã hóa |
 | `ADMIN_PASSWORD` | mật khẩu đăng nhập `/admin` |
-| `TELEGRAM_BOT_TOKEN` | token bot `@tungfbabot` |
-| `TELEGRAM_CHAT_ID` | chat_id của anh |
+| `TELEGRAM_BOT_TOKEN` | token bot `@magicshopeeadbot` (Nhân viên Shopee) |
+| `TELEGRAM_CHAT_ID` | chat_id của anh, hoặc id nhóm "Phòng họp Magickids" (số âm, dạng `-100…`) |
+| `TELEGRAM_THREAD_ID` | (khi dùng nhóm) id chủ đề "Shopee" trong nhóm; bỏ trống thì tin vào chủ đề chung |
+| `TELEGRAM_OWNER_IDS` | (khi dùng nhóm) user id được ra lệnh và bấm duyệt, cách nhau bằng dấu phẩy. Thiếu biến này thì trong nhóm không ai duyệt được |
 | `TELEGRAM_WEBHOOK_SECRET` | chuỗi ngẫu nhiên (chỉ chữ, số, `_`, `-`) |
 | `AUTOPILOT_DRY_RUN` | `true` |
 
