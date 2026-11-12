@@ -395,6 +395,12 @@ describe("fast scale-up helpers", () => {
     assert.equal(autoRunnable(s, "rule:scale_up", "change_budget", { budget: 100_000 }, { budget: 200_000 }), true);
     assert.equal(autoRunnable(s, "rule:throttle", "change_budget", { budget: 200_000 }, { budget: 50_000 }), false);
     assert.equal(autoRunnable(s, "rule:reset", "change_budget", { budget: 100_000 }, { budget: 400_000 }), false);
+    const { scaleTargetFor } = await import("../src/lib/autopilot/classes");
+    // Bộ đồ Annie Baby 12/11: hòa vốn 6,5; lãi 10% cần 12,4; lãi 5% ≈ 8,5; xả kho 3,6
+    const e: any = { margin: 0.167, payout: 0.637, cancel_rate: 0.15, return_rate: 0.064, return_fee_ratio: 0.001, ad_fee_pct: 8, class: "thuong" };
+    assert.equal(scaleTargetFor(e, DEFAULT_RULE_PARAMS)!.target, 8.5);
+    assert.equal(scaleTargetFor({ ...e, class: "xa_kho" }, DEFAULT_RULE_PARAMS)!.target, 3.6);
+    assert.equal(scaleTargetFor(null, DEFAULT_RULE_PARAMS), null);
     assert.equal(increaseLimit(s, "2026-11-04", true), 100);
     assert.equal(increaseLimit(s, "2026-11-04"), 30);
   });
@@ -801,7 +807,7 @@ describe("profit from Pancake costs", () => {
     assert.equal((await rules.evaluateIntraday(111)).proposals, 1);
     const up = tables.autopilot_actions[0];
     assert.equal(up.source, "rule:scale_up");
-    assert.match(up.reason, /thường: lãi 10%/);
+    assert.match(up.reason, /tăng khi lãi ≥ 5%/);
 
     tables.ads_campaign_daily = [];
     await rules.proposeRoasTargets(111);

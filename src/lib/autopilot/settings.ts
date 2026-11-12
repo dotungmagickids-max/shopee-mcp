@@ -47,6 +47,8 @@ export const DEFAULT_RULE_PARAMS = {
   peak_max_increase_pct: 100, // trần mỗi lần tăng (%) — thay cho trần 30% ngày thường
   peak_cooldown_minutes: 30,
   peak_max_edits_per_day: 12,
+  // Tăng ngân sách khi còn lãi ≥ N% (thấp hơn mục tiêu nhóm Thường/Chủ lực để đẩy số lượng; siết vẫn theo mục tiêu nhóm)
+  scale_profit_pct: 5,
   // Ngân sách khởi điểm 0h riêng từng chiến dịch = % chi trung bình 7 ngày thường (thấp nhất = start_budget).
   // 0 = tắt: mọi chiến dịch về start_budget (anh chốt 12/11: về 100k, tăng nhanh trong ngày).
   start_share_pct: 0,

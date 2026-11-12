@@ -1,6 +1,7 @@
 import { db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
 import { ruleTarget, type Econ } from "./profit";
+import { scaleTargetFor } from "./classes";
 import { automationBlocked, editsLimit, isPeakDay, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
@@ -264,8 +265,12 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const roas3 = exp3 > 0 ? gmv3 / exp3 : 0;
       const blended = exp3 + exp > 0 ? (gmv3 + gmv) / (exp3 + exp) : 0;
       const early = normalDaily != null && exp3 > 0 && exp < (normalDaily * p.early_spend_pct) / 100;
-      const tgt = target ?? p.cut_roas_floor * 2;
-      const breakeven = c.econ?.breakeven ?? tgt * 0.6;
+      // Ngưỡng tăng: còn lãi ≥ scale_profit_pct (nhóm Xả kho / Mới dùng ngưỡng nhóm).
+      const scaleT = useProfit ? scaleTargetFor(c.econ, p) : null;
+      const tgt = scaleT?.target ?? target ?? p.cut_roas_floor * 2;
+      const tgtLabel = scaleT?.target ? `${scaleT.target} (${scaleT.label})` : targetLabel(c, useProfit);
+      // Xả kho: giá vốn coi như đã chi nên mốc dưới là chính ngưỡng nhóm, không phải hòa vốn.
+      const breakeven = c.econ?.class === "xa_kho" ? tgt : c.econ?.breakeven ?? tgt * 0.6;
       const roasOk = early ? roas3 >= tgt && blended >= breakeven : roas >= tgt;
       if ((nearFull || burning) && roasOk) {
         const fast = burning || exhausted;
@@ -277,8 +282,8 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
           ? `đang tiêu ${vnd(Math.round(rate))}/giờ, còn ~${Math.max(0, Math.round(minutesLeft))} phút là hết`
           : `đã tiêu ${vnd(exp)} (${Math.round((exp / c.campaign_budget) * 100)}% ngân sách)`;
         const roasWhy = early
-          ? `đầu ngày: ROAS 3 ngày ${roas3.toFixed(1)} ≥ ${targetLabel(c, useProfit)}, gộp cả hôm nay ${blended.toFixed(1)} ≥ hòa vốn ${breakeven.toFixed(1)}`
-          : `ROAS hôm nay ${roas.toFixed(1)} ≥ ${targetLabel(c, useProfit)}`;
+          ? `đầu ngày: ROAS 3 ngày ${roas3.toFixed(1)} ≥ ${tgtLabel}, gộp cả hôm nay ${blended.toFixed(1)} ≥ ${c.econ?.class === "xa_kho" ? "ngưỡng" : "hòa vốn"} ${breakeven.toFixed(1)}`
+          : `ROAS hôm nay ${roas.toFixed(1)} ≥ ${tgtLabel}`;
         candidates.push({
           priority: 1,
           fast,

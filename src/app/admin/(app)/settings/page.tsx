@@ -40,6 +40,7 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   peak_max_increase_pct: "Ngày cao điểm: trần mỗi lần tăng (%)",
   peak_cooldown_minutes: "Ngày cao điểm: nghỉ giữa 2 lần chỉnh (phút)",
   peak_max_edits_per_day: "Ngày cao điểm: số lần chỉnh/chiến dịch/ngày",
+  scale_profit_pct: "Tăng ngân sách khi còn lãi ≥ (%) — nhóm Thường/Chủ lực",
   start_share_pct: "Ngân sách 0h = % chi trung bình 7 ngày thường của chiến dịch",
   burn_trigger_minutes: "Tăng ngay khi với tốc độ hiện tại còn ≤ N phút là hết tiền",
   burn_cover_hours: "Khi tiêu nhanh: thêm đủ tiêu tiếp N giờ",

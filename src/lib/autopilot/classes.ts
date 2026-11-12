@@ -90,9 +90,26 @@ export function targetForClass(e: EconBase, cls: ProductClass, p: RuleParams): {
     return { target: allow > 0 ? round1(fee / allow) : null, label: `xả kho: QC ≤ ${p.clear_ads_share_pct}% tiền thu về` };
   }
   const pct = cls === "chu_luc" ? p.profit_core_pct : cls === "moi" ? p.profit_new_pct : p.profit_target_pct;
+  return profitTarget(e, pct, `${CLASS_VI[cls].toLowerCase()}: ${pct > 0 ? `lãi ${pct}%` : "hòa vốn"}`);
+}
+
+function profitTarget(e: EconBase, pct: number, label: string): { target: number | null; label: string } {
+  const fee = 1 + (e.ad_fee_pct ?? 0) / 100;
+  const keepC = 1 - e.cancel_rate;
   const allow = e.margin - keepC * (1 - e.return_rate) * (pct / 100);
-  return {
-    target: allow > 0 ? round1(fee / allow) : null,
-    label: `${CLASS_VI[cls].toLowerCase()}: ${pct > 0 ? `lãi ${pct}%` : "hòa vốn"}`,
-  };
+  return { target: allow > 0 ? round1(fee / allow) : null, label };
+}
+
+/**
+ * Ngưỡng ROAS để TĂNG ngân sách: còn lãi ≥ scale_profit_pct là tăng (thấp hơn mục tiêu nhóm nếu nhóm đòi lãi cao hơn).
+ * Xả kho / Mới giữ ngưỡng của nhóm (đã thấp hơn). Không có số kinh tế thì null (luật dùng ngưỡng thường).
+ */
+export function scaleTargetFor(e: (EconBase & { class?: ProductClass; target?: number | null }) | null, p: RuleParams): { target: number | null; label: string } | null {
+  if (!e?.margin) return null;
+  const cls = (e.class ?? "thuong") as ProductClass;
+  const own = targetForClass(e, cls, p);
+  if (cls === "xa_kho" || cls === "moi") return own;
+  const classPct = cls === "chu_luc" ? p.profit_core_pct : p.profit_target_pct;
+  if (p.scale_profit_pct >= classPct) return own;
+  return profitTarget(e, p.scale_profit_pct, `tăng khi lãi ≥ ${p.scale_profit_pct}%`);
 }
