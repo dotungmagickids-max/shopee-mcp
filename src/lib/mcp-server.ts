@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { ApiKeyContext } from "./api-keys";
 import { catalog } from "./catalog.generated";
 import type { CatalogEntry, CatalogParam } from "./catalog-types";
+import { registerMagickidsTools } from "./magickids-tools";
 import { shopSdk } from "./shopee";
 import { db } from "./supabase";
 
@@ -110,6 +111,9 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
         "Prefer the task-specific tools (list_orders, get_order_details, …).",
         "For anything else use search_endpoints → describe_endpoint → call_read_endpoint / call_write_endpoint.",
         "Timestamps in requests are unix seconds. Always confirm with the user before calling write tools.",
+        "Magickids company data (all channels, not only Shopee): mk_get_rules first, then mk_query_sales, " +
+          "mk_product_profit, mk_get_products, mk_list_decisions, mk_search_knowledge, mk_find_cases. " +
+          "Changes to real systems go through mk_create_proposal for the owner to approve.",
       ].join("\n"),
     }
   );
@@ -611,6 +615,8 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
       safe(async ({ shop_id, ...params }) => callEndpoint("order.cancel_order", shop_id, params))
     );
   }
+
+  registerMagickidsTools(server, ctx);
 
   return server;
 }

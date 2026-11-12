@@ -22,6 +22,7 @@ let tokens: Row[];
 let audit: Row[];
 let authRequests: Row[];
 let shopeeCalls: { path: string; method: string; query: URLSearchParams; body: unknown }[];
+let rpcCalls: { fn: string; args: Row }[];
 
 function reset() {
   apiKeys = [
@@ -35,6 +36,7 @@ function reset() {
   audit = [];
   authRequests = [];
   shopeeCalls = [];
+  rpcCalls = [];
 }
 
 function json(body: unknown, status = 200): Response {
@@ -55,6 +57,11 @@ function filterRows(rows: Row[], query: URLSearchParams): Row[] {
 
 async function fakeSupabase(url: URL, init: RequestInit): Promise<Response> {
   const table = url.pathname.replace("/rest/v1/", "");
+  if (table.startsWith("rpc/")) {
+    const fn = table.slice(4);
+    rpcCalls.push({ fn, args: JSON.parse(String(init.body ?? "{}")) });
+    return json({ fn, ok: true });
+  }
   const rows =
     { api_keys: apiKeys, shopee_tokens: tokens, audit_log: audit, auth_requests: authRequests }[table] ?? [];
   const method = init.method ?? "GET";
@@ -165,6 +172,31 @@ describe("/api/mcp", () => {
       assert.ok(rw.includes(name), `${name} should be visible`);
     }
     assert.ok(read.includes("list_orders") && read.includes("call_read_endpoint"));
+  });
+
+  it("exposes Magickids data tools; proposals and inbox only to read_write keys", async () => {
+    const read = (await rpc(READ_KEY, "tools/list")).body.result.tools.map((t: any) => t.name);
+    const rw = (await rpc(RW_KEY, "tools/list")).body.result.tools.map((t: any) => t.name);
+    for (const name of ["mk_get_rules", "mk_query_sales", "mk_list_decisions", "mk_get_products"]) {
+      assert.ok(read.includes(name) && rw.includes(name), `${name} should be visible`);
+    }
+    for (const name of ["mk_create_proposal", "mk_add_to_inbox"]) {
+      assert.ok(!read.includes(name), `${name} should be hidden`);
+      assert.ok(rw.includes(name), `${name} should be visible`);
+    }
+  });
+
+  it("calls the mk_* database function with the key as agent", async () => {
+    apiKeys[0].label = "chatgpt";
+    const result = await callTool(READ_KEY, "mk_query_sales", { from: "2026-11-01", to: "2026-11-11" });
+    assert.ok(!result.isError, result.content[0].text);
+    assert.deepEqual(rpcCalls.at(-1), {
+      fn: "mk_sales",
+      args: { p_agent: "chatgpt", p_from: "2026-11-01", p_to: "2026-11-11", p_group: "channel" },
+    });
+    assert.equal(shopeeCalls.length, 0);
+    const bad = await rpc(READ_KEY, "tools/call", { name: "mk_query_sales", arguments: { from: "11/2026", to: "x" } });
+    assert.ok(bad.body.error || bad.body.result?.isError);
   });
 
   it("calls Shopee with the shop's token and writes an audit row", async () => {
