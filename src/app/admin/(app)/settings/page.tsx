@@ -83,6 +83,11 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   steps_max_pct: "Thử bậc: lãi mong muốn cao nhất (%)",
   steps_min_daily_spend: "Thử bậc: chỉ thử chiến dịch chi TB ≥ (đ/ngày thường)",
   steps_gain_pct: "Thử bậc: lãi/ngày hơn kém ≥ N% mới tính là khác",
+  price_tests_enabled: "Thử giá tự động, không chờ duyệt (1 = bật)",
+  price_test_pct: "Thử giá: mỗi lần đổi tối đa (%, ≤ 5)",
+  price_test_max_running: "Thử giá: số mã thử cùng lúc (≤ 3)",
+  price_test_min_units30: "Thử giá: chỉ thử mã bán ≥ N cái/30 ngày",
+  price_test_discount_id: "Thử giá: id chương trình giảm giá của shop (0 = tắt)",
 };
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {

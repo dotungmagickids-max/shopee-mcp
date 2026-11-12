@@ -66,7 +66,11 @@ export async function POST(request: Request) {
     if (params.fast_cooldown_minutes != null) params.fast_cooldown_minutes = Math.max(5, params.fast_cooldown_minutes);
     if (params.start_share_pct != null) params.start_share_pct = Math.min(100, Math.max(0, params.start_share_pct));
     if (params.peak_cooldown_minutes != null) params.peak_cooldown_minutes = Math.max(15, params.peak_cooldown_minutes);
-    if (params.steps_enabled != null) params.steps_enabled = params.steps_enabled ? 1 : 0;
+    // Anh chốt 13/11/2026: tự đổi giá tối đa ±5%, tối đa 3 mã.
+    if (params.price_test_pct != null) params.price_test_pct = Math.min(5, Math.max(1, params.price_test_pct));
+    if (params.price_test_max_running != null) params.price_test_max_running = Math.min(3, Math.max(0, params.price_test_max_running));
+    if (params.price_tests_enabled != null) params.price_tests_enabled = params.price_tests_enabled ? 1 : 0;
+    if (params.steps_enabled != null)params.steps_enabled = params.steps_enabled ? 1 : 0;
     if (params.steps_roas_pct != null) params.steps_roas_pct = Math.min(15, Math.max(3, params.steps_roas_pct));
     if (params.steps_min_pct != null) params.steps_min_pct = Math.max(0, params.steps_min_pct);
     if (params.steps_test_days != null) params.steps_test_days = Math.max(2, params.steps_test_days);

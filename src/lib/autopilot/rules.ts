@@ -619,7 +619,10 @@ export async function proposeRoasTargets(shopId: number) {
   if (blocked) return { skipped: blocked };
   const p = s.params;
   const today = vnDate();
-  const camps = (await ongoingCampaigns(shopId)).filter((c) => c.roas_target != null && c.roas_target > 0);
+  // Chiến dịch có sản phẩm đang thử giá: giữ nguyên ROAS mục tiêu tới khi chấm xong (mỗi mã một thay đổi một lúc).
+  const { data: priceRows } = await db().from("price_tests").select("campaign_ids").eq("shop_id", shopId).eq("status", "running");
+  const frozen = new Set((priceRows ?? []).flatMap((r: any) => (r.campaign_ids ?? []).map(Number)));
+  const camps = (await ongoingCampaigns(shopId)).filter((c) => c.roas_target != null && c.roas_target > 0 && !frozen.has(c.campaign_id));
   if (!camps.length) return { items: 0 };
   const data = await allRows(() =>
     db()

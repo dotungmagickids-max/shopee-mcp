@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import { DEFAULT_RULE_PARAMS } from "../src/lib/autopilot/settings";
 import { profitTarget, scaleTargetFor } from "../src/lib/autopilot/classes";
 import { average, judge, nextLevel, type Avg } from "../src/lib/autopilot/steps";
+import { testPrices } from "../src/lib/autopilot/price-tests";
 import { behindRevenue, daysBetween, daysInMonth, deadlineDate, paceLines } from "../src/lib/autopilot/goals";
 
 const p = { ...DEFAULT_RULE_PARAMS };
@@ -62,6 +63,24 @@ describe("thử bậc lãi", () => {
     assert.match(own.label, /bậc lãi 6%/);
     const cls = scaleTargetFor({ ...econ, class: "xa_kho", level_pct: 6 }, p)!;
     assert.doesNotMatch(cls.label, /bậc lãi/);
+  });
+});
+
+describe("thử giá", () => {
+  const models = [
+    { model_id: 1, current: 200_000, original: 250_000 },
+    { model_id: 2, current: 180_000, original: 250_000 },
+  ];
+  it("đổi tối đa 5%, làm tròn nghìn không vượt 5%", () => {
+    const up = testPrices(models, "up", 5, 0)!;
+    assert.deepEqual(up.map((m) => m.new), [210_000, 189_000]);
+    const down = testPrices(models, "down", 5, 0)!;
+    assert.deepEqual(down.map((m) => m.new), [190_000, 171_000]);
+    for (const m of [...up, ...down]) assert.ok(Math.abs(m.new / m.old - 1) <= 0.05 + 1e-9);
+  });
+  it("không tăng chạm giá gốc, không giảm dưới giá tối thiểu", () => {
+    assert.equal(testPrices([{ model_id: 1, current: 200_000, original: 205_000 }], "up", 5, 0), null);
+    assert.equal(testPrices(models, "down", 5, 175_000), null);
   });
 });
 

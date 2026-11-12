@@ -27,6 +27,7 @@ import { computeEconomics } from "./profit";
 import { memoryDigestLine } from "../tri-nho";
 import { syncReturns } from "./returns";
 import { runProfitSteps } from "./steps";
+import { runPriceTests } from "./price-tests";
 
 type Step = [name: string, fn: () => Promise<unknown>];
 
@@ -207,6 +208,8 @@ export async function dailyJob(part: "ads" | "orders" | "escrow" | "costs" | "ro
     } else if (part === "steps") {
       // 01:30: thử bậc lãi (cải tiến liên tục) — chấm bậc đang thử, mở bậc mới.
       steps.push(["profit_steps", () => runProfitSteps(shop.shopId)]);
+      // Thử giá ±5%, tối đa 3 mã (anh cho tự chạy 13/11/2026).
+      steps.push(["price_tests", () => runPriceTests(shop.shopId)]);
     } else {
       steps.push(["escrow", async () => syncEscrow(shop.shopId, await escrowCandidates(shop.shopId))]);
     }

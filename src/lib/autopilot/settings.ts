@@ -104,6 +104,13 @@ export const DEFAULT_RULE_PARAMS = {
   steps_max_pct: 25, // bậc lãi cao nhất (%)
   steps_min_daily_spend: 100_000, // chỉ thử chiến dịch chi trung bình ≥ N/ngày thường
   steps_gain_pct: 5, // lãi/ngày hơn kém ≥ N% mới tính là tốt/xấu hơn
+  // Thử giá (anh chốt 13/11/2026): tự đổi giá khuyến mãi ±5%, tối đa 3 mã, không chờ duyệt, báo kết quả.
+  // Chỉ thử mã mà mọi phân loại đang nằm trong chương trình giảm giá của shop (price_test_discount_id).
+  price_tests_enabled: 1,
+  price_test_pct: 5, // mỗi lần đổi tối đa N% (≤ 5)
+  price_test_max_running: 3, // số mã thử cùng lúc (≤ 3)
+  price_test_min_units30: 90, // chỉ thử mã bán ≥ N cái/30 ngày (đủ đơn để đo)
+  price_test_discount_id: 0, // id chương trình giảm giá của shop dùng để đổi giá (0 = tắt)
 };
 
 export type RuleParams = typeof DEFAULT_RULE_PARAMS;
