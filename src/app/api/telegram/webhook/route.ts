@@ -4,7 +4,7 @@ import { todayOverview } from "@/lib/autopilot/dashboard";
 import { morningReportJob } from "@/lib/autopilot/jobs";
 import { proposePauseAll, proposeResumeAll } from "@/lib/autopilot/rules";
 import { suggestDays } from "@/lib/autopilot/settings";
-import { answerCallback, esc, sendTelegram, vnd } from "@/lib/autopilot/telegram";
+import { answerCallback, esc, isOwner, sendTelegram, vnd } from "@/lib/autopilot/telegram";
 import { db } from "@/lib/supabase";
 import { handleMemoryCallback, handleMemoryMessage, isMemoryCommand, MEMORY_HELP } from "@/lib/tri-nho";
 
@@ -27,7 +27,8 @@ const HELP = [
 
 /**
  * Webhook bot Telegram, có header X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
- * Lệnh điều khiển và nút bấm chỉ nhận từ TELEGRAM_CHAT_ID; nhóm khác chỉ được dùng lệnh Trí nhớ.
+ * Lệnh điều khiển và nút bấm chỉ nhận từ anh (xem isOwner: chat riêng TELEGRAM_CHAT_ID, hoặc nhóm
+ * Phòng họp + TELEGRAM_OWNER_IDS); người/nhóm khác chỉ được dùng lệnh Trí nhớ.
  */
 export async function POST(request: Request) {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -35,12 +36,11 @@ export async function POST(request: Request) {
   if (!expected || !safeEqual(got, expected)) return new Response("forbidden", { status: 403 });
 
   const update = await request.json().catch(() => null);
-  const allowedChat = String(process.env.TELEGRAM_CHAT_ID);
 
   // Nút Đồng ý / Bỏ qua
   const cb = update?.callback_query;
   if (cb) {
-    if (String(cb.message?.chat?.id ?? cb.from?.id) !== allowedChat) return Response.json({ ok: true });
+    if (!isOwner(cb.message?.chat?.id ?? cb.from?.id, cb.from?.id)) return Response.json({ ok: true });
     try {
       if (await handleMemoryCallback(cb)) return Response.json({ ok: true });
     } catch (err) {
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
   const msg = update?.message;
   if (!msg?.text) return Response.json({ ok: true });
-  const ownerChat = String(msg.chat?.id ?? "") === allowedChat;
+  const ownerChat = isOwner(msg.chat?.id, msg.from?.id);
   // Nhóm khác: chỉ nhận lệnh Trí nhớ (nhóm phải được anh cho phép).
   if (!ownerChat) {
     if (isMemoryCommand(msg.text)) {
@@ -86,7 +86,8 @@ export async function POST(request: Request) {
         if (!g) await sendTelegram(`${esc(s.name)}: không có chiến dịch nào do tool tạm dừng.`);
       }
     } else if (command === "/mode") await mode(arg?.toLowerCase());
-    else await sendTelegram(HELP);
+    // Nhóm Phòng họp có nhiều nhân viên: lệnh lạ không gọi đích danh bot này thì bỏ qua, tránh mọi bot cùng trả lời.
+    else if (!String(msg.chat?.id).startsWith("-") || command === "/help" || cmd.includes("@")) await sendTelegram(HELP);
   } catch (err) {
     await sendTelegram(`Lỗi: <code>${esc(err instanceof Error ? err.message : String(err))}</code>`);
   }

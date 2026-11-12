@@ -12,15 +12,43 @@ async function tg(method: string, body: Record<string, unknown>): Promise<any | 
   return res.json().catch(() => null);
 }
 
+/**
+ * Nơi nhận tin: TELEGRAM_CHAT_ID (chat riêng của anh, hoặc nhóm "Phòng họp").
+ * Nếu là nhóm có Chủ đề, TELEGRAM_THREAD_ID = id chủ đề của nhân viên này; tin gửi vào nhóm đó
+ * mà không chỉ định chủ đề sẽ vào chủ đề này.
+ */
+function target(chatId?: string | number): Record<string, unknown> | null {
+  const def = process.env.TELEGRAM_CHAT_ID;
+  const id = chatId ?? def;
+  if (!id) return null;
+  const thread = Number(process.env.TELEGRAM_THREAD_ID);
+  return String(id) === String(def) && thread > 0 ? { chat_id: id, message_thread_id: thread } : { chat_id: id };
+}
+
+/**
+ * Người được ra lệnh / bấm nút. Chat riêng: đúng TELEGRAM_CHAT_ID. Nhóm: phải đúng nhóm đó VÀ
+ * người gửi nằm trong TELEGRAM_OWNER_IDS (danh sách user id, cách nhau bằng dấu phẩy).
+ */
+export function isOwner(chatId: unknown, fromId: unknown): boolean {
+  const def = String(process.env.TELEGRAM_CHAT_ID ?? "");
+  if (!def || String(chatId) !== def) return false;
+  if (!def.startsWith("-")) return true; // chat riêng
+  const owners = String(process.env.TELEGRAM_OWNER_IDS ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return owners.includes(String(fromId));
+}
+
 /** Gửi tin Telegram (HTML). Trả về message_id, hoặc null nếu chưa cấu hình / lỗi. */
 export async function sendTelegramMessage(
   text: string,
   opts: { chatId?: string | number; replyMarkup?: unknown } = {}
 ): Promise<number | null> {
-  const chatId = opts.chatId ?? process.env.TELEGRAM_CHAT_ID;
-  if (!chatId) return null;
+  const to = target(opts.chatId);
+  if (!to) return null;
   const r = await tg("sendMessage", {
-    chat_id: chatId,
+    ...to,
     text: text.slice(0, 4000),
     parse_mode: "HTML",
     disable_web_page_preview: true,
@@ -38,11 +66,11 @@ export async function sendTelegramPhoto(
   caption: string,
   opts: { chatId?: string | number; replyMarkup?: unknown } = {}
 ): Promise<number | null> {
-  const chatId = opts.chatId ?? process.env.TELEGRAM_CHAT_ID;
-  if (!chatId) return null;
+  const to = target(opts.chatId);
+  if (!to) return null;
   if (photoUrl && caption.length <= 1024) {
     const r = await tg("sendPhoto", {
-      chat_id: chatId,
+      ...to,
       photo: photoUrl,
       caption,
       parse_mode: "HTML",
