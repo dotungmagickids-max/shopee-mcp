@@ -47,6 +47,19 @@ export const DEFAULT_RULE_PARAMS = {
   peak_max_increase_pct: 100, // trần mỗi lần tăng (%) — thay cho trần 30% ngày thường
   peak_cooldown_minutes: 30,
   peak_max_edits_per_day: 12,
+  // Ngân sách khởi điểm 0h riêng từng chiến dịch = % chi trung bình 7 ngày thường (thấp nhất = start_budget).
+  // 0 = tắt: mọi chiến dịch về start_budget (anh chốt 12/11: về 100k, tăng nhanh trong ngày).
+  start_share_pct: 0,
+  // Tăng theo tốc độ tiêu: sắp hết tiền trong N phút thì tăng ngay, đủ tiêu thêm M giờ
+  burn_trigger_minutes: 30,
+  burn_cover_hours: 2,
+  fast_max_increase_pct: 100, // trần mỗi lần tăng khi đang tiêu nhanh (%)
+  fast_cooldown_minutes: 10,
+  fast_max_edits_per_day: 24,
+  // Đầu ngày (đã tiêu < N% mức chi ngày bình thường): xét ROAS 3 ngày gần nhất thay vì chỉ ROAS hôm nay
+  early_spend_pct: 50,
+  // 1 = tự chạy việc TĂNG ngân sách (tăng do luật + nới lại sau siết) không chờ duyệt; siết/dừng vẫn chờ duyệt
+  auto_scale_up: 1,
 };
 
 export type RuleParams = typeof DEFAULT_RULE_PARAMS;
@@ -165,8 +178,17 @@ export function dailyCap(s: ShopSettings, date = vnDate()): number | null {
 }
 
 /** Mức tăng tối đa mỗi lần và số lần chỉnh/ngày theo loại ngày. */
-export function increaseLimit(s: ShopSettings, date = vnDate()): number {
-  return isPeakDay(s, date) ? Math.max(s.max_increase_pct, s.params.peak_max_increase_pct) : s.max_increase_pct;
+export function increaseLimit(s: ShopSettings, date = vnDate(), fast = false): number {
+  const base = isPeakDay(s, date) ? Math.max(s.max_increase_pct, s.params.peak_max_increase_pct) : s.max_increase_pct;
+  return fast ? Math.max(base, s.params.fast_max_increase_pct) : base;
+}
+
+/** Việc tăng ngân sách được tự chạy không chờ duyệt (tăng theo luật, nới lại sau siết). */
+export function autoRunnable(s: ShopSettings, source: string, action: string, before: any, after: any): boolean {
+  if (!s.params.auto_scale_up || action !== "change_budget") return false;
+  if (source !== "rule:scale_up" && source !== "rule:restore") return false;
+  const b = Number(before?.budget ?? 0);
+  return b > 0 && Number(after?.budget ?? 0) > b;
 }
 
 export function editsLimit(s: ShopSettings, date = vnDate()): number {

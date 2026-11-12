@@ -56,19 +56,20 @@ async function runSteps(job: string, shop: ShopConf, steps: Step[]) {
       60
     );
   }
-  return { shop_id: shop.shopId, ok, errors, stats };
+  return { shop_id: shop.shopId, run_id: (run?.id ?? null) as number | null, ok, errors, stats };
 }
 
 // ---------------------------------------------------------------------------
 // Job 15 phút
 // ---------------------------------------------------------------------------
 
-export async function collectJob() {
+export async function collectJob(fast = false) {
   const today = vnDate();
   const hour = vnHour();
   const results = [];
   for (const shop of shops()) {
-    const steps: Step[] = [
+    // Quét nhanh (5 phút, giờ cao điểm): chỉ lấy số theo giờ của chiến dịch rồi chạy luật.
+    const steps: Step[] = fast ? [["campaign_hourly", () => collectCampaignHourly(shop.shopId, today)]] : [
       ["campaigns", () => refreshCampaigns(shop.shopId)],
       ["campaign_hourly", () => collectCampaignHourly(shop.shopId, today)],
       ["shop_hourly", () => collectShopHourly(shop.shopId, today)],
@@ -76,18 +77,20 @@ export async function collectJob() {
       ["orders_today", () => syncOrdersForDay(shop.shopId, today)],
     ];
     // Đầu ngày: chốt nốt giờ cuối của hôm qua.
-    if (hour === 0) {
+    if (hour === 0 && !fast) {
       const y = addDays(today, -1);
       steps.push(["campaign_hourly_yesterday", () => collectCampaignHourly(shop.shopId, y)]);
       steps.push(["shop_hourly_yesterday", () => collectShopHourly(shop.shopId, y)]);
       steps.push(["orders_yesterday", () => syncOrdersForDay(shop.shopId, y)]);
     }
-    steps.push(["alerts", () => checkAlerts(shop)]);
-    const res = await runSteps("collect", shop, steps);
+    if (!fast) steps.push(["alerts", () => checkAlerts(shop)]);
+    const res = await runSteps(fast ? "collect_fast" : "collect", shop, steps);
     // Luật chỉ chạy khi số liệu vừa thu đầy đủ: thiếu số liệu thì không chỉnh.
     if (res.ok) {
       try {
-        (res.stats as Record<string, unknown>).rules = await evaluateIntraday(shop.shopId);
+        const rules = await evaluateIntraday(shop.shopId);
+        (res.stats as Record<string, unknown>).rules = rules;
+        if (res.run_id) await db().from("job_runs").update({ stats: res.stats }).eq("id", res.run_id);
       } catch (err) {
         await sendAlertOnce(`rules:${shop.shopId}`, `⚠️ Luật autopilot lỗi — ${esc(shop.name)}: <code>${esc(String(err)).slice(0, 500)}</code>`, 60);
       }
@@ -267,6 +270,46 @@ export async function checkAlerts(shop: ShopConf) {
 // Báo cáo sáng 8h
 // ---------------------------------------------------------------------------
 
+/** Tóm tắt việc tool tự tăng ngân sách trong 24 giờ qua (không chờ duyệt). */
+async function autoSummary(shopId: number): Promise<string[]> {
+  const { data } = await db()
+    .from("autopilot_actions")
+    .select("campaign_id, before, after, status, executed_at")
+    .eq("shop_id", shopId)
+    .eq("decided_by", "auto")
+    .in("source", ["rule:scale_up", "rule:restore"])
+    .gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString())
+    .order("created_at");
+  const rows = data ?? [];
+  if (!rows.length) return [];
+  const done = rows.filter((r) => r.status === "executed" || r.status === "dry_run");
+  const byCamp = new Map<number, { from: number; to: number; times: number }>();
+  for (const r of done) {
+    const id = Number(r.campaign_id);
+    const cur = byCamp.get(id) ?? { from: Number(r.before?.budget ?? 0), to: 0, times: 0 };
+    cur.to = Number(r.after?.budget ?? 0);
+    cur.times++;
+    byCamp.set(id, cur);
+  }
+  const added = [...byCamp.values()].reduce((t, c) => t + Math.max(0, c.to - c.from), 0);
+  const { data: names } = await db()
+    .from("ads_campaigns")
+    .select("campaign_id, ad_name")
+    .eq("shop_id", shopId)
+    .in("campaign_id", [...byCamp.keys()]);
+  const nameOf = new Map((names ?? []).map((x) => [Number(x.campaign_id), String(x.ad_name ?? "")]));
+  const top = [...byCamp.entries()].sort((a, b) => b[1].to - b[1].from - (a[1].to - a[1].from)).slice(0, 8);
+  const out = [
+    `• Tool tự tăng ngân sách 24h qua: <b>${done.length}</b> lần, ${byCamp.size} chiến dịch, tổng thêm ${vnd(added)}${
+      rows.length > done.length ? ` (${rows.length - done.length} lần bị chặn bởi trần/cầu chì)` : ""
+    }`,
+  ];
+  for (const [id, c] of top) {
+    out.push(`  – ${esc((nameOf.get(id) ?? `#${id}`).slice(0, 40))}: ${vnd(c.from)} → ${vnd(c.to)} (${c.times} lần)`);
+  }
+  return out;
+}
+
 export async function morningReportJob() {
   const yesterday = addDays(vnDate(), -1);
   const parts: string[] = [`☀️ <b>Báo cáo ngày ${yesterday.split("-").reverse().join("/")}</b>`];
@@ -291,6 +334,7 @@ export async function morningReportJob() {
       lines.push(`• Lãi: <i>chưa có bảng giá vốn</i>`);
     }
     if (r.balance != null) lines.push(`• Số dư ví QC: ${vnd(r.balance)}`);
+    lines.push(...(await autoSummary(shop.shopId)));
     parts.push(lines.join("\n"));
   }
   const dash = process.env.APP_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
