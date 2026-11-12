@@ -69,6 +69,20 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   new_promote_orders: "Đánh giá hàng Mới: đủ N đơn/14 ngày và lãi 10% thì đề xuất lên nhóm",
   new_stop_min_spend: "Đánh giá hàng Mới: đã chi ≥ (đ) mà không ra đơn/lỗ thì báo nên dừng",
   auto_scale_up: "Tự chạy việc tăng ngân sách không chờ duyệt (1 = bật, 0 = tắt)",
+  goal_month_revenue: "Mục tiêu doanh số tháng của shop (đ, 0 = chưa đặt)",
+  goal_profit_pct: "Mục tiêu lãi cả tháng (% doanh số)",
+  clear_deadline: "Hạn bán hết hàng xả (YYYYMMDD, vd 20270117; 0 = chưa đặt)",
+  steps_enabled: "Thử bậc lãi tự động cho Chủ lực / Thường (1 = bật)",
+  steps_max_running: "Thử bậc: số chiến dịch thử cùng lúc",
+  steps_test_days: "Thử bậc: số ngày thường đo mỗi bậc",
+  steps_max_days: "Thử bậc: chấm sau tối đa N ngày lịch",
+  steps_base_days: "Thử bậc: số ngày nền tối đa trước khi đổi",
+  steps_min_base_days: "Thử bậc: cần ≥ N ngày thường ở bậc hiện tại",
+  steps_roas_pct: "Thử bậc: mỗi bậc đổi ROAS mục tiêu khoảng (%)",
+  steps_min_pct: "Thử bậc: lãi mong muốn thấp nhất (%)",
+  steps_max_pct: "Thử bậc: lãi mong muốn cao nhất (%)",
+  steps_min_daily_spend: "Thử bậc: chỉ thử chiến dịch chi TB ≥ (đ/ngày thường)",
+  steps_gain_pct: "Thử bậc: lãi/ngày hơn kém ≥ N% mới tính là khác",
 };
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {

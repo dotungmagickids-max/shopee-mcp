@@ -66,7 +66,12 @@ export async function POST(request: Request) {
     if (params.fast_cooldown_minutes != null) params.fast_cooldown_minutes = Math.max(5, params.fast_cooldown_minutes);
     if (params.start_share_pct != null) params.start_share_pct = Math.min(100, Math.max(0, params.start_share_pct));
     if (params.peak_cooldown_minutes != null) params.peak_cooldown_minutes = Math.max(15, params.peak_cooldown_minutes);
-    if (params.return_fee_per_order != null) params.return_fee_per_order = Math.max(0, params.return_fee_per_order);
+    if (params.steps_enabled != null) params.steps_enabled = params.steps_enabled ? 1 : 0;
+    if (params.steps_roas_pct != null) params.steps_roas_pct = Math.min(15, Math.max(3, params.steps_roas_pct));
+    if (params.steps_min_pct != null) params.steps_min_pct = Math.max(0, params.steps_min_pct);
+    if (params.steps_test_days != null) params.steps_test_days = Math.max(2, params.steps_test_days);
+    if (params.clear_deadline != null && !/^20\d{6}$/.test(String(params.clear_deadline))) params.clear_deadline = 0;
+    if (params.return_fee_per_order != null)params.return_fee_per_order = Math.max(0, params.return_fee_per_order);
     const saleDates = String(form.get("sale_dates") ?? "")
       .split(/[\s,;]+/)
       .map((d) => d.trim())

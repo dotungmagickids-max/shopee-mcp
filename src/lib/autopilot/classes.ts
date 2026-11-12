@@ -150,7 +150,20 @@ export function floorBlock(
   return null;
 }
 
-function profitTarget(e: EconBase, pct: number, label: string): { target: number | null; label: string } {
+/** Nhóm được thử bậc lãi (cải tiến liên tục): Ngôi sao và Bò sữa. */
+export function stepsClass(cls: ProductClass | undefined | null): boolean {
+  return cls === "chu_luc" || cls === "thuong";
+}
+
+/**
+ * Mục tiêu của chiến dịch khi có bậc lãi riêng (thử bậc đã chọn / đang thử) thay cho lãi cố định của nhóm.
+ * Dùng cho cả ROAS mục tiêu Shopee lẫn ngưỡng tăng ngân sách.
+ */
+export function levelTarget(e: EconBase, cls: ProductClass, levelPct: number): { target: number | null; label: string } {
+  return profitTarget(e, levelPct, `${CLASS_VI[cls].toLowerCase()} (${CLASS_BCG[cls].toLowerCase()}): bậc lãi ${levelPct}%`);
+}
+
+export function profitTarget(e: EconBase, pct: number, label: string): { target: number | null; label: string } {
   const fee = 1 + (e.ad_fee_pct ?? 0) / 100;
   const keepC = 1 - e.cancel_rate;
   const allow = e.margin - keepC * (1 - e.return_rate) * (pct / 100);
@@ -163,9 +176,14 @@ function profitTarget(e: EconBase, pct: number, label: string): { target: number
  *   Bò sữa (Thường), Dấu hỏi (Mới), Chó (Xả kho): đúng mục tiêu của nhóm (10% / hòa vốn / lỗ tối đa 5%).
  * Không có số kinh tế thì null (luật dùng ngưỡng thường).
  */
-export function scaleTargetFor(e: (EconBase & { class?: ProductClass; target?: number | null }) | null, p: RuleParams): { target: number | null; label: string } | null {
+export function scaleTargetFor(
+  e: (EconBase & { class?: ProductClass; target?: number | null; level_pct?: number | null }) | null,
+  p: RuleParams
+): { target: number | null; label: string } | null {
   if (!e?.margin) return null;
   const cls = (e.class ?? "thuong") as ProductClass;
+  // Có bậc lãi riêng (thử bậc): tăng ngân sách theo đúng bậc đó.
+  if (e.level_pct != null && stepsClass(cls)) return levelTarget(e, cls, Number(e.level_pct));
   if (cls === "chu_luc" && p.scale_core_profit_pct !== p.profit_core_pct) {
     return profitTarget(e, p.scale_core_profit_pct, `chủ lực (ngôi sao): tăng khi lãi ≥ ${p.scale_core_profit_pct}%`);
   }

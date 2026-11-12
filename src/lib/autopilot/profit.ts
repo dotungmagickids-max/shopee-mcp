@@ -1,6 +1,6 @@
 import { db } from "../supabase";
 import { cancelReturnRates, shopFees, type FeeStats } from "./fees";
-import { classify, daysOfStock, targetForClass, type ClassInput, type ProductClass } from "./classes";
+import { classify, daysOfStock, levelTarget, stepsClass, targetForClass, type ClassInput, type ProductClass } from "./classes";
 import { costOf, loadCostMap, loadProductStats, normSku, productCode, type ProductStats } from "./pancake";
 import { callShopee, chunk } from "./shopee-call";
 import { vnDate } from "./time";
@@ -48,6 +48,7 @@ export interface Econ {
   price_source?: "current" | "orders"; // giá bán: giá đang bán (theo cơ cấu phân loại 30 ngày) hay TB đơn 30 ngày
   stock?: number | null;
   days_of_stock?: number | null;
+  level_pct?: number | null; // bậc lãi riêng của chiến dịch (thử bậc), null = theo nhóm
 }
 
 export interface EconCtx {
@@ -218,7 +219,7 @@ export async function computeEconomics(shopId: number) {
 
   const { data: camps, error } = await db()
     .from("ads_campaigns")
-    .select("campaign_id, item_ids, campaign_status, ad_name, start_time")
+    .select("*")
     .eq("shop_id", shopId)
     .in("campaign_status", ["ongoing", "paused", "scheduled"]);
   if (error) throw new Error(error.message);
@@ -303,7 +304,9 @@ export async function computeEconomics(shopId: number) {
     const auto = classify(input, s.params);
     const manualCls = ids.map((id) => manualMap.get(id)).find(Boolean);
     const cls = manualCls ?? auto.cls;
-    const t = targetForClass(base, cls, s.params);
+    // Bậc lãi riêng (thử bậc) thay cho lãi cố định của nhóm Chủ lực / Thường.
+    const level = stepsClass(cls) && c.profit_level_pct != null ? Number(c.profit_level_pct) : null;
+    const t = level != null ? levelTarget(base, cls, level) : targetForClass(base, cls, s.params);
     const dos = daysOfStock(input);
     counts[cls] = (counts[cls] ?? 0) + 1;
     await db()
@@ -321,6 +324,7 @@ export async function computeEconomics(shopId: number) {
           price_source: econ ? priceSource : undefined,
           stock,
           days_of_stock: dos == null ? null : dos === Infinity ? 9999 : Math.round(dos),
+          level_pct: level,
         },
       })
       .eq("shop_id", shopId)
@@ -379,11 +383,14 @@ export async function setProductClass(shopId: number, campaignId: number, cls: P
     const e = c.econ as Econ | null;
     if (!e || !(c.item_ids ?? []).map(Number).some((id: number) => ids.includes(id))) continue;
     const next = cls ?? e.auto_class ?? "thuong";
-    const t = targetForClass(e, next, s.params);
+    // Bậc lãi thử bậc chỉ giữ khi vẫn là Chủ lực / Thường.
+    const level = stepsClass(next) ? e.level_pct ?? null : null;
+    const t = level != null ? levelTarget(e, next, level) : targetForClass(e, next, s.params);
     await db()
       .from("ads_campaigns")
       .update({
-        econ: { ...e, class: next, class_source: cls ? "manual" : "auto", class_reason: cls ? "Anh chọn" : e.class_reason, target: t.target, target_label: t.label },
+        econ: { ...e, class: next, class_source: cls ? "manual" : "auto", class_reason: cls ? "Anh chọn" : e.class_reason, target: t.target, target_label: t.label, level_pct: level },
+        ...(level == null ? { profit_level_pct: null } : {}),
       })
       .eq("shop_id", shopId)
       .eq("campaign_id", c.campaign_id);

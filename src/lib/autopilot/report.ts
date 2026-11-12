@@ -1,4 +1,4 @@
-import { db } from "../supabase";
+import { allRows, db } from "../supabase";
 import { shopFees } from "./fees";
 import { loadSettings } from "./settings";
 import { costOf, loadCostMap } from "./pancake";
@@ -40,7 +40,12 @@ function itemsSubtotal(o: OrderRow): number {
 }
 
 export async function dayReport(shopId: number, date: string) {
-  const orders = await ordersBetween(shopId, vnDayStartUnix(date), vnDayStartUnix(addDays(date, 1)));
+  return { date, ...(await periodReport(shopId, date, addDays(date, 1))) };
+}
+
+/** Số tổng của các ngày [from, toExcl) (giờ VN): đơn, doanh số, chi QC, lãi sau QC. */
+export async function periodReport(shopId: number, from: string, toExcl: string) {
+  const orders = await ordersBetween(shopId, vnDayStartUnix(from), vnDayStartUnix(toExcl));
   const valid = orders.filter((o) => !INVALID_STATUSES.includes(o.order_status ?? ""));
   const cancelled = orders.length - valid.length;
 
@@ -57,15 +62,20 @@ export async function dayReport(shopId: number, date: string) {
   });
   const revenue = kept.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
 
-  const { data: hours } = await db()
-    .from("ads_shop_hourly")
-    .select("expense, broad_gmv, broad_order")
-    .eq("shop_id", shopId)
-    .eq("date", date);
-  const adExpense = (hours ?? []).reduce((s, h) => s + Number(h.expense), 0);
-  const adGmv = (hours ?? []).reduce((s, h) => s + Number(h.broad_gmv), 0);
-  const adOrders = (hours ?? []).reduce((s, h) => s + Number(h.broad_order), 0);
-  const { data: gms } = await db().from("ads_gms_daily").select("expense").eq("shop_id", shopId).eq("date", date);
+  const hours = await allRows(() =>
+    db()
+      .from("ads_shop_hourly")
+      .select("date, hour, expense, broad_gmv, broad_order")
+      .eq("shop_id", shopId)
+      .gte("date", from)
+      .lt("date", toExcl)
+      .order("date")
+      .order("hour")
+  );
+  const adExpense = hours.reduce((s, h) => s + Number(h.expense), 0);
+  const adGmv = hours.reduce((s, h) => s + Number(h.broad_gmv), 0);
+  const adOrders = hours.reduce((s, h) => s + Number(h.broad_order), 0);
+  const { data: gms } = await db().from("ads_gms_daily").select("expense").eq("shop_id", shopId).gte("date", from).lt("date", toExcl);
   const gmsExpense = (gms ?? []).reduce((s, g) => s + Number(g.expense), 0);
 
   // Lãi: tiền về − giá vốn − chi QC.
@@ -108,7 +118,6 @@ export async function dayReport(shopId: number, date: string) {
     .limit(1);
 
   return {
-    date,
     orders: kept.length,
     cancelled,
     revenue,

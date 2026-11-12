@@ -26,6 +26,7 @@ import { syncPancakeVariations } from "./pancake";
 import { computeEconomics } from "./profit";
 import { memoryDigestLine } from "../tri-nho";
 import { syncReturns } from "./returns";
+import { runProfitSteps } from "./steps";
 
 type Step = [name: string, fn: () => Promise<unknown>];
 
@@ -177,7 +178,7 @@ export async function backfillJob(date: string) {
 // Job hằng ngày (01:00). Chia 3 phần để mỗi lần gọi nằm trong giới hạn thời gian.
 // ---------------------------------------------------------------------------
 
-export async function dailyJob(part: "ads" | "orders" | "escrow" | "costs" | "roas") {
+export async function dailyJob(part: "ads" | "orders" | "escrow" | "costs" | "roas" | "steps") {
   const yesterday = addDays(vnDate(), -1);
   const results = [];
   for (const [i, shop] of shops().entries()) {
@@ -203,6 +204,9 @@ export async function dailyJob(part: "ads" | "orders" | "escrow" | "costs" | "ro
       steps.push(["orders_status_3d", () => syncOrders(shop.shopId, "update_time", now - 3 * 86400, now, 500)]);
     } else if (part === "roas") {
       steps.push(["roas_targets", () => proposeRoasTargets(shop.shopId)]);
+    } else if (part === "steps") {
+      // 01:30: thử bậc lãi (cải tiến liên tục) — chấm bậc đang thử, mở bậc mới.
+      steps.push(["profit_steps", () => runProfitSteps(shop.shopId)]);
     } else {
       steps.push(["escrow", async () => syncEscrow(shop.shopId, await escrowCandidates(shop.shopId))]);
     }

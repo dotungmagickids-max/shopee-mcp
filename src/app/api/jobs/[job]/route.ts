@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PARTS = ["ads", "orders", "escrow", "costs", "roas"] as const;
+const PARTS = ["ads", "orders", "escrow", "costs", "roas", "steps"] as const;
 
 /**
  * Job do Supabase pg_cron gọi (xem supabase/cron.sql):
@@ -15,6 +15,7 @@ const PARTS = ["ads", "orders", "escrow", "costs", "roas"] as const;
  *   POST /api/jobs/collect?fast=1                       mỗi 5 phút cả ngày, 2 phút lúc 0h (chỉ số giờ chiến dịch + luật)
  *   POST /api/jobs/reset                                00:00 (reset ngân sách, bật lại chiến dịch tool dừng)
  *   POST /api/jobs/daily?part=ads|orders|escrow|costs|roas  01:00 / 01:05 / 01:10 / 01:15 / 01:20
+ *   POST /api/jobs/daily?part=steps                     01:30 (thử bậc lãi: cải tiến liên tục)
  *   POST /api/jobs/report                               08:00
  *   POST /api/jobs/lifecycle                            thứ Hai 06:40 (vòng đời sản phẩm, trang /admin/lifecycle)
  *   POST /api/jobs/launch                              thứ Hai 07:10 (đề xuất lên QC mã chưa chạy + đánh giá hàng Mới)

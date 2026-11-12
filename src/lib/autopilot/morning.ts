@@ -4,6 +4,8 @@ import { CLASS_VI, mixTargets, type ProductClass } from "./classes";
 import { INVALID_STATUSES, dayReport, ordersBetween } from "./report";
 import { isPeakDay, loadSettings, SALE_TIER_VI, saleTier } from "./settings";
 import { healthMorning } from "./care";
+import { clearanceLines, clearancePace, monthPace, paceLines } from "./goals";
+import { stepsLines } from "./steps";
 import { callShopee, chunk } from "./shopee-call";
 import { esc, vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix } from "./time";
@@ -225,6 +227,18 @@ export async function shopMorning(shop: ShopConf): Promise<string[]> {
     todo.push(...health.todo);
   }
 
+  // ---------- MỤC TIÊU (doanh số tháng, lãi tháng, hạn xả kho) ----------
+  const pace = await safe(() => monthPace(shopId, s, today));
+  const clear = await safe(() => clearancePace(shopId, s, today));
+  if (pace || clear) {
+    lines.push(`\n🎯 <b>MỤC TIÊU</b>`);
+    for (const g of [pace ? paceLines(pace) : null, clear ? clearanceLines(clear) : null]) {
+      if (!g) continue;
+      lines.push(...g.lines);
+      todo.push(...g.todo);
+    }
+  }
+
   // ---------- MARKETING ----------
   const fee = 1 + s.params.ad_fee_pct / 100;
   lines.push(`\n📣 <b>MARKETING</b>`);
@@ -261,6 +275,9 @@ export async function shopMorning(shop: ShopConf): Promise<string[]> {
   });
   if (mix) lines.push(mix);
   lines.push(...(await safe(() => autoSummary(shopId))) ?? []);
+  // Thử bậc lãi: hằng ngày báo kết luận đêm qua; thứ Hai tổng kết 7 ngày.
+  const monday = new Date(`${today}T00:00:00Z`).getUTCDay() === 1;
+  lines.push(...(await safe(() => stepsLines(shopId, monday ? 7 : 1))) ?? []);
   const pending = await safe(async () => {
     const { count } = await db()
       .from("autopilot_actions")
