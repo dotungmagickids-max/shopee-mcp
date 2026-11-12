@@ -399,7 +399,8 @@ describe("fast scale-up helpers", () => {
     // Bộ đồ Annie Baby 12/11: hòa vốn 6,5; lãi 10% cần 12,4; lãi 5% ≈ 8,5; xả kho 3,6
     const e: any = { margin: 0.167, payout: 0.637, cancel_rate: 0.15, return_rate: 0.064, return_fee_ratio: 0.001, ad_fee_pct: 8, class: "thuong" };
     assert.equal(scaleTargetFor(e, DEFAULT_RULE_PARAMS)!.target, 12.4, "bò sữa: tăng khi đủ lãi 10%");
-    assert.equal(scaleTargetFor({ ...e, class: "chu_luc" }, DEFAULT_RULE_PARAMS)!.target, 8.5, "ngôi sao: lãi ≥ 5%");
+    assert.equal(scaleTargetFor({ ...e, class: "chu_luc" }, DEFAULT_RULE_PARAMS)!.target, 12.4, "ngôi sao: tăng nhanh nhưng vẫn lãi ≥ 10%");
+    assert.equal(scaleTargetFor({ ...e, class: "chu_luc" }, { ...DEFAULT_RULE_PARAMS, scale_core_profit_pct: 5 })!.target, 8.5);
     assert.equal(scaleTargetFor({ ...e, class: "moi" }, DEFAULT_RULE_PARAMS)!.target, 6.5, "dấu hỏi: hòa vốn");
     assert.equal(scaleTargetFor({ ...e, class: "xa_kho" }, DEFAULT_RULE_PARAMS)!.target, 3.6, "chó: QC ≤ 60% tiền thu");
     assert.equal(scaleTargetFor(null, DEFAULT_RULE_PARAMS), null);
@@ -477,6 +478,16 @@ describe("rules and actions", () => {
     assert.ok(a.after.budget > 130000, "tiêu hết tiền: được tăng quá 30%");
     assert.equal(editBodies.length, 1);
     assert.equal(telegramCalls.filter((t) => t.method === "sendPhoto").length, 0, "không gửi nút duyệt");
+  });
+
+  it("stops scaling when today's ROAS falls well below the 7-day ROAS", async () => {
+    seedCampaign();
+    const y = time.addDays(time.vnDate(), -2);
+    tables.ads_campaign_daily = [{ shop_id: 111, campaign_id: 1, date: y, expense: 1_000_000, broad_gmv: 20_000_000 }];
+    // 7 ngày ROAS 20; hôm nay 14 (< 80% × 20) dù vẫn trên ngưỡng → thôi tăng
+    seedHour(0, { clicks: 20, expense: 150_000, broad_gmv: 2_100_000 });
+    tables.ads_campaigns[0].campaign_budget = 160_000;
+    assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
   });
 
   it("approves in dry-run without calling Shopee and caps the increase", async () => {

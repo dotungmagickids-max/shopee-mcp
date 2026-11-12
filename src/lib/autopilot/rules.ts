@@ -275,7 +275,12 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const tgtLabel = scaleT?.target ? `${scaleT.target} (${scaleT.label})` : targetLabel(c, useProfit);
       // Xả kho: giá vốn coi như đã chi nên mốc dưới là chính ngưỡng nhóm, không phải hòa vốn.
       const breakeven = c.econ?.class === "xa_kho" ? tgt : c.econ?.breakeven ?? tgt * 0.6;
-      const roasOk = early ? roas3 >= tgt && blended >= breakeven : roas >= tgt;
+      // Phanh: đã tiêu kha khá mà ROAS hôm nay tụt sâu so với 7 ngày → tăng thêm chỉ mua lượt kém, thôi tăng.
+      const last7 = days.filter((d) => d.date >= addDays(today, -7));
+      const exp7 = last7.reduce((t, d) => t + d.exp, 0);
+      const roas7 = exp7 > 0 ? last7.reduce((t, d) => t + d.gmv, 0) / exp7 : 0;
+      const decayed = !early && p.scale_decay_pct > 0 && exp >= p.scale_decay_min_spend && roas7 > 0 && roas < (roas7 * p.scale_decay_pct) / 100;
+      const roasOk = !decayed && (early ? roas3 >= tgt && blended >= breakeven : roas >= tgt);
       if ((nearFull || burning) && roasOk) {
         const fast = burning || exhausted;
         const step = Math.max(p.scale_min_step, (c.campaign_budget * stepPct) / 100);
