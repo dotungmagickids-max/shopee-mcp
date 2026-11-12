@@ -1,4 +1,4 @@
-import { db } from "../supabase";
+import { allRows, db } from "../supabase";
 import { propose } from "./actions";
 import { CLASS_BCG, CLASS_VI, classify, daysOfStock, targetForClass, type ClassInput, type ProductClass } from "./classes";
 import { costOf, loadCostMap, loadProductStats, normSku, productCode, type ProductStats } from "./pancake";
@@ -398,14 +398,17 @@ export async function reviewNewProducts(shopId: number) {
   const fresh = (camps ?? []).filter((c) => c.econ?.class === "moi" && n(c.start_time) > 0 && n(c.start_time) <= minStart);
   if (!fresh.length) return { reviewed: 0 };
   const today = vnDate();
-  const { data: daily } = await db()
-    .from("ads_campaign_daily")
-    .select("campaign_id, expense, broad_gmv, broad_order")
-    .eq("shop_id", shopId)
-    .gte("date", addDays(today, -15))
-    .lte("date", addDays(today, -2))
-    .in("campaign_id", fresh.map((c) => Number(c.campaign_id)))
-    .limit(10000);
+  const daily = await allRows(() =>
+    db()
+      .from("ads_campaign_daily")
+      .select("campaign_id, expense, broad_gmv, broad_order")
+      .eq("shop_id", shopId)
+      .gte("date", addDays(today, -15))
+      .lte("date", addDays(today, -2))
+      .in("campaign_id", fresh.map((c) => Number(c.campaign_id)))
+      .order("campaign_id")
+      .order("date")
+  );
   const sum = new Map<number, { spend: number; gmv: number; orders: number }>();
   for (const r of daily ?? []) {
     const id = Number(r.campaign_id);

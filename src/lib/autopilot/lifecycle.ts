@@ -1,4 +1,4 @@
-import { db } from "../supabase";
+import { allRows, db } from "../supabase";
 import { CLASS_BCG, CLASS_VI, daysOfStock, outOfSeason, type ProductClass } from "./classes";
 import { econForItem, itemInfos, modelInfo, normalItemIds } from "./launch";
 import { costOf, loadCostMap, loadProductStats, productCode, type ProductStats } from "./pancake";
@@ -236,15 +236,18 @@ export async function computeLifecycle(shopId: number) {
   const campIds = (camps ?? []).map((c) => Number(c.campaign_id));
   const adsByCamp = new Map<number, { impr: number; clicks: number; spend: number; gmv: number; orders: number }>();
   for (const part of chunk(campIds, 100)) {
-    const { data } = await db()
-      .from("ads_campaign_daily")
-      .select("campaign_id, impression, clicks, expense, broad_gmv, broad_order")
-      .eq("shop_id", shopId)
-      .gte("date", addDays(today, -15))
-      .lte("date", addDays(today, -2))
-      .in("campaign_id", part)
-      .limit(10000);
-    for (const r of data ?? []) {
+    const data = await allRows(() =>
+      db()
+        .from("ads_campaign_daily")
+        .select("campaign_id, impression, clicks, expense, broad_gmv, broad_order")
+        .eq("shop_id", shopId)
+        .gte("date", addDays(today, -15))
+        .lte("date", addDays(today, -2))
+        .in("campaign_id", part)
+        .order("campaign_id")
+        .order("date")
+    );
+    for (const r of data) {
       const id = Number(r.campaign_id);
       const a = adsByCamp.get(id) ?? { impr: 0, clicks: 0, spend: 0, gmv: 0, orders: 0 };
       a.impr += n(r.impression);

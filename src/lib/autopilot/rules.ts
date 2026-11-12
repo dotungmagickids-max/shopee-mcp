@@ -1,4 +1,4 @@
-import { db } from "../supabase";
+import { allRows, db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
 import { ruleTarget, type Econ } from "./profit";
 import { floorBlock, scaleStyle, scaleTargetFor, type ProductClass } from "./classes";
@@ -104,30 +104,35 @@ async function campaignDays(shopId: number, ids: number[], from: string, to: str
     if (!out.has(id)) out.set(id, []);
     out.get(id)!.push(r);
   };
-  const { data, error } = await db()
-    .from("ads_campaign_daily")
-    .select("campaign_id, date, expense, broad_gmv")
-    .eq("shop_id", shopId)
-    .gte("date", from)
-    .lte("date", to)
-    .in("campaign_id", ids)
-    .limit(10000);
-  if (error) throw new Error(error.message);
+  const data = await allRows(() =>
+    db()
+      .from("ads_campaign_daily")
+      .select("campaign_id, date, expense, broad_gmv")
+      .eq("shop_id", shopId)
+      .gte("date", from)
+      .lte("date", to)
+      .in("campaign_id", ids)
+      .order("campaign_id")
+      .order("date")
+  );
   let hasTo = false;
-  for (const r of data ?? []) {
+  for (const r of data) {
     if (r.date === to) hasTo = true;
     add(Number(r.campaign_id), { date: r.date, exp: n(r.expense), gmv: n(r.broad_gmv) });
   }
   if (!hasTo) {
-    const { data: hourly } = await db()
-      .from("ads_campaign_hourly")
-      .select("campaign_id, expense, broad_gmv")
-      .eq("shop_id", shopId)
-      .eq("date", to)
-      .in("campaign_id", ids)
-      .limit(10000);
+    const hourly = await allRows(() =>
+      db()
+        .from("ads_campaign_hourly")
+        .select("campaign_id, expense, broad_gmv")
+        .eq("shop_id", shopId)
+        .eq("date", to)
+        .in("campaign_id", ids)
+        .order("campaign_id")
+        .order("hour")
+    );
     const agg = new Map<number, DayRow>();
-    for (const r of hourly ?? []) {
+    for (const r of hourly) {
       const id = Number(r.campaign_id);
       const a = agg.get(id) ?? { date: to, exp: 0, gmv: 0 };
       a.exp += n(r.expense);
@@ -225,17 +230,19 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
 
   const camps = await ongoingCampaigns(shopId);
   if (!camps.length) return { proposals: 0 };
-  const { data: hourly, error } = await db()
-    .from("ads_campaign_hourly")
-    .select("campaign_id, hour, clicks, expense, broad_gmv")
-    .eq("shop_id", shopId)
-    .eq("date", today)
-    .in("campaign_id", camps.map((c) => c.campaign_id))
-    .gt("impression", 0)
-    .limit(10000);
-  if (error) throw new Error(error.message);
+  const hourly = await allRows(() =>
+    db()
+      .from("ads_campaign_hourly")
+      .select("campaign_id, hour, clicks, expense, broad_gmv")
+      .eq("shop_id", shopId)
+      .eq("date", today)
+      .in("campaign_id", camps.map((c) => c.campaign_id))
+      .gt("impression", 0)
+      .order("campaign_id")
+      .order("hour")
+  );
   const byCamp = new Map<number, { hour: number; clicks: number; expense: number; gmv: number }[]>();
-  for (const r of hourly ?? []) {
+  for (const r of hourly) {
     const id = Number(r.campaign_id);
     if (!byCamp.has(id)) byCamp.set(id, []);
     byCamp.get(id)!.push({ hour: r.hour, clicks: n(r.clicks), expense: n(r.expense), gmv: n(r.broad_gmv) });
@@ -490,16 +497,18 @@ export async function proposeCapsForUnlimited(shopId: number, source = "rule:cap
     const [, m, dd] = date.split("-").map(Number);
     if (m !== dd && saleTier(s, date) === "thuong") days.push(date);
   }
-  const { data, error } = await db()
-    .from("ads_campaign_daily")
-    .select("campaign_id, date, expense, broad_gmv")
-    .eq("shop_id", shopId)
-    .in("date", days)
-    .in("campaign_id", camps.map((c) => c.campaign_id))
-    .limit(10000);
-  if (error) throw new Error(error.message);
+  const data = await allRows(() =>
+    db()
+      .from("ads_campaign_daily")
+      .select("campaign_id, date, expense, broad_gmv")
+      .eq("shop_id", shopId)
+      .in("date", days)
+      .in("campaign_id", camps.map((c) => c.campaign_id))
+      .order("campaign_id")
+      .order("date")
+  );
   const sum = new Map<number, { e: number; g: number }>();
-  for (const r of data ?? []) {
+  for (const r of data) {
     const a = sum.get(Number(r.campaign_id)) ?? { e: 0, g: 0 };
     a.e += n(r.expense);
     a.g += n(r.broad_gmv);
@@ -542,18 +551,20 @@ export async function proposeRoasTargets(shopId: number) {
   const today = vnDate();
   const camps = (await ongoingCampaigns(shopId)).filter((c) => c.roas_target != null && c.roas_target > 0);
   if (!camps.length) return { items: 0 };
-  const { data, error } = await db()
-    .from("ads_campaign_daily")
-    .select("campaign_id, date, expense, broad_gmv")
-    .eq("shop_id", shopId)
-    .gte("date", addDays(today, -8))
-    .lte("date", addDays(today, -2))
-    .in("campaign_id", camps.map((c) => c.campaign_id))
-    .limit(10000);
-  if (error) throw new Error(error.message);
+  const data = await allRows(() =>
+    db()
+      .from("ads_campaign_daily")
+      .select("campaign_id, date, expense, broad_gmv")
+      .eq("shop_id", shopId)
+      .gte("date", addDays(today, -8))
+      .lte("date", addDays(today, -2))
+      .in("campaign_id", camps.map((c) => c.campaign_id))
+      .order("campaign_id")
+      .order("date")
+  );
   const recentFrom = addDays(today, -4);
   const agg = new Map<number, { e: number; g: number; re: number; rg: number }>();
-  for (const r of data ?? []) {
+  for (const r of data) {
     const a = agg.get(Number(r.campaign_id)) ?? { e: 0, g: 0, re: 0, rg: 0 };
     a.e += n(r.expense);
     a.g += n(r.broad_gmv);

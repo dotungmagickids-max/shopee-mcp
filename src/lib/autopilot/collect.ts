@@ -1,4 +1,4 @@
-import { db } from "../supabase";
+import { allRows, db } from "../supabase";
 import { callShopee, chunk } from "./shopee-call";
 import { addDays, apiDate, fromApiDate, vnDate, vnDayStartUnix } from "./time";
 
@@ -379,14 +379,16 @@ export async function syncEscrow(shopId: number, orderSns: string[]): Promise<nu
 /** Đơn đã hoàn tất trong 30 ngày mà chưa có escrow (hoặc escrow lấy trước khi hoàn tất). */
 export async function escrowCandidates(shopId: number, limit = 1000): Promise<string[]> {
   const since = Math.floor(Date.now() / 1000) - 30 * 86400;
-  const { data: done } = await db()
-    .from("orders")
-    .select("order_sn, updated_at")
-    .eq("shop_id", shopId)
-    .eq("order_status", "COMPLETED")
-    .gte("create_time", since)
-    .limit(5000);
-  if (!done?.length) return [];
+  const done = await allRows<{ order_sn: string; updated_at: string }>(() =>
+    db()
+      .from("orders")
+      .select("order_sn, updated_at")
+      .eq("shop_id", shopId)
+      .eq("order_status", "COMPLETED")
+      .gte("create_time", since)
+      .order("order_sn")
+  );
+  if (!done.length) return [];
   const have = new Map<string, string>();
   for (const batch of chunk(done.map((o) => o.order_sn), 200)) {
     const { data } = await db().from("order_escrow").select("order_sn, updated_at").in("order_sn", batch);
