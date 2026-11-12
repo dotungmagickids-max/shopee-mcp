@@ -50,6 +50,7 @@ Vercel → project `magickids-shopee` → Settings → Environment Variables (Pr
 | `FB_TELEGRAM_WEBHOOK_SECRET` | Nhân viên Facebook: secret webhook `/api/telegram/facebook` |
 | `FB_TELEGRAM_BOT_USERNAME` | Nhân viên Facebook: tên bot (không có @), để bỏ qua lệnh gọi đích danh bot khác |
 | `META_SYSTEM_TOKEN` | Nhân viên Facebook: token System User Meta (`ads_read`, `ads_management`) |
+| `META_APP_SECRET` | App secret của Magickids Ads Tool: mọi request Meta kèm `appsecret_proof` |
 | `META_AD_ACCOUNTS` | (không bắt buộc) chỉ theo dõi các tài khoản này, id cách nhau bằng dấu phẩy. Luôn bỏ BOSS TUYỀN 3/4/5/6 |
 | `FB_RULES` | (không bắt buộc) JSON ghi đè ngưỡng luật, xem `src/lib/facebook/rules.ts` |
 | `TELEGRAM_WEBHOOK_SECRET` | chuỗi ngẫu nhiên (chỉ chữ, số, `_`, `-`) |

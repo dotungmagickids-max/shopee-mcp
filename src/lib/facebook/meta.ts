@@ -1,9 +1,46 @@
 /**
- * Đọc Meta Marketing API bằng token System User (META_SYSTEM_TOKEN). Chỉ đọc.
- * Không bao giờ đưa URL (chứa token) vào thông báo lỗi.
+ * Meta Graph / Marketing API bằng token System User (META_SYSTEM_TOKEN) của app Magickids Ads Tool.
+ * Mọi request kèm appsecret_proof (META_APP_SECRET). Không bao giờ đưa URL hay token vào thông báo lỗi.
  */
+import { createHmac } from "node:crypto";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
+/** Phiên bản Graph API. v27.0 ra 04/11/2026; đổi ở đây khi Meta ra bản mới. */
+export const GRAPH_VERSION = "v27.0";
+const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
+
+/** Mã lỗi giới hạn tốc độ của Meta: thử lại có giãn cách. */
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613, ...Array.from({ length: 15 }, (_, i) => 80000 + i)]);
+
+export function appSecretProof(token: string, secret: string): string {
+  return createHmac("sha256", secret).update(token).digest("hex");
+}
+
+/** Xóa token khỏi chuỗi trước khi ghi log / trả lỗi. */
+export function scrub(s: string): string {
+  return s.replace(/(access_token|appsecret_proof)=[^&\s"]+/gi, "$1=***");
+}
+
+function authParams(): Record<string, string> {
+  const t = token();
+  const secret = process.env.META_APP_SECRET?.trim();
+  return secret ? { access_token: t, appsecret_proof: appSecretProof(t, secret) } : { access_token: t };
+}
+
+async function send(url: URL, init: RequestInit): Promise<any> {
+  const delays = [2000, 8000, 20000];
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init).catch(() => null);
+    if (!res) throw new MetaError("Meta API: không kết nối được");
+    const body: any = await res.json().catch(() => null);
+    if (res.ok && !body?.error && body?.success !== false) return body;
+    const e = body?.error;
+    const retry = RATE_LIMIT_CODES.has(Number(e?.code)) && init.method !== "POST" && attempt < delays.length;
+    if (!retry) {
+      throw new MetaError(scrub(`Meta API ${res.status}: ${String(e?.error_user_msg ?? e?.message ?? "lỗi").slice(0, 200)}${e?.code ? ` (mã ${e.code})` : ""}`));
+    }
+    await new Promise((r) => setTimeout(r, delays[attempt]));
+  }
+}
 
 /** Tài khoản không tính khi báo cáo (anh chốt): BOSS TUYỀN 3, 4, 5, 6. */
 export const EXCLUDED_ACCOUNTS = new Set(["263854262635122", "1221559028478456", "203632012307325", "242962362083925"]);
@@ -21,15 +58,9 @@ async function get(pathOrUrl: string, params: Record<string, string> = {}): Prom
     ? new URL(pathOrUrl)
     : new URL(`${GRAPH}/${pathOrUrl.replace(/^\//, "")}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  if (!url.searchParams.has("access_token")) url.searchParams.set("access_token", token());
-  const res = await fetch(url, { headers: { Accept: "application/json" } }).catch(() => null);
-  if (!res) throw new MetaError("Meta API: không kết nối được");
-  const body: any = await res.json().catch(() => null);
-  if (!res.ok || body?.error) {
-    const e = body?.error;
-    throw new MetaError(`Meta API ${res.status}: ${String(e?.message ?? "lỗi").slice(0, 200)}${e?.code ? ` (mã ${e.code})` : ""}`);
-  }
-  return body;
+  // Trang tiếp (paging.next) đã kèm token; vẫn đặt lại để chắc có appsecret_proof.
+  for (const [k, v] of Object.entries(authParams())) url.searchParams.set(k, v);
+  return send(url, { method: "GET", headers: { Accept: "application/json" } });
 }
 
 /** Lấy hết các trang (paging.next đã kèm token). */
@@ -86,19 +117,12 @@ export async function listAccounts(): Promise<MetaAccount[]> {
 }
 
 async function post(id: string, params: Record<string, string>): Promise<any> {
-  const body = new URLSearchParams({ ...params, access_token: token() });
-  const res = await fetch(`${GRAPH}/${id}`, {
+  // Lệnh ghi không tự thử lại (tránh làm 2 lần).
+  return send(new URL(`${GRAPH}/${id}`), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  }).catch(() => null);
-  if (!res) throw new MetaError("Meta API: không kết nối được");
-  const j: any = await res.json().catch(() => null);
-  if (!res.ok || j?.error || j?.success === false) {
-    const e = j?.error;
-    throw new MetaError(`Meta API ${res.status}: ${String(e?.message ?? "lỗi").slice(0, 200)}${e?.code ? ` (mã ${e.code})` : ""}`);
-  }
-  return j;
+    body: new URLSearchParams({ ...params, ...authParams() }),
+  });
 }
 
 export type AdState = {

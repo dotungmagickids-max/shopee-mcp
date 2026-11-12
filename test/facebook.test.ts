@@ -172,3 +172,37 @@ describe("thao tác Meta", () => {
     assert.equal(scaledBudget(5_000_000, 0.2, 500_000), 5_500_000);
   });
 });
+
+describe("bảo mật Meta", () => {
+  it("appsecret_proof = HMAC-SHA256(token, app secret)", async () => {
+    const { appSecretProof } = await import("../src/lib/facebook/meta");
+    const { createHmac } = await import("node:crypto");
+    assert.equal(appSecretProof("tok", "sec"), createHmac("sha256", "sec").update("tok").digest("hex"));
+    assert.match(appSecretProof("tok", "sec"), /^[0-9a-f]{64}$/);
+    assert.notEqual(appSecretProof("tok", "sec"), appSecretProof("tok", "khac"));
+  });
+  it("lỗi không lộ token", async () => {
+    const { scrub } = await import("../src/lib/facebook/meta");
+    assert.equal(scrub("https://x/?access_token=EAAB123&appsecret_proof=abc&limit=5"), "https://x/?access_token=***&appsecret_proof=***&limit=5");
+  });
+  it("mọi request gửi kèm appsecret_proof, lỗi trả về không chứa token", async () => {
+    const { adInsights } = await import("../src/lib/facebook/meta");
+    const real = globalThis.fetch;
+    const urls: string[] = [];
+    process.env.META_SYSTEM_TOKEN = "EAABsecret";
+    process.env.META_APP_SECRET = "appsec";
+    globalThis.fetch = (async (u: any) => {
+      urls.push(String(u));
+      return new Response(JSON.stringify({ error: { message: "Invalid token access_token=EAABsecret", code: 190 } }), { status: 400 });
+    }) as any;
+    try {
+      await assert.rejects(adInsights("123", "2026-11-12"), (e: Error) => !e.message.includes("EAABsecret"));
+      assert.match(urls[0], /appsecret_proof=[0-9a-f]{64}/);
+      assert.match(urls[0], /\/v27\.0\//);
+    } finally {
+      globalThis.fetch = real;
+      delete process.env.META_SYSTEM_TOKEN;
+      delete process.env.META_APP_SECRET;
+    }
+  });
+});
