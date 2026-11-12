@@ -53,6 +53,7 @@ Vercel → project `magickids-shopee` → Settings → Environment Variables (Pr
 | `META_APP_SECRET` | App secret của Magickids Ads Tool: mọi request Meta kèm `appsecret_proof` |
 | `META_AD_ACCOUNTS` | (không bắt buộc) chỉ theo dõi các tài khoản này, id cách nhau bằng dấu phẩy. Luôn bỏ BOSS TUYỀN 3/4/5/6 |
 | `FB_CPAS_ACCOUNTS` | (không bắt buộc) id tài khoản chạy CPAS thật (đơn về Shopee, đo bằng số mua Meta). Mặc định không có: tên "CPAS SHOPEE…" vẫn chạy Facebook |
+| `FB_EXECUTE` | `1` thì nút Đồng ý của Nhân viên Facebook thao tác thật trên Meta (tắt / tăng ngân sách). Mặc định không đặt: chỉ ghi nhận (giai đoạn 1, anh chốt 13/11) |
 | `FB_RULES` | (không bắt buộc) JSON ghi đè ngưỡng luật, xem `src/lib/facebook/rules.ts` |
 | `TELEGRAM_WEBHOOK_SECRET` | chuỗi ngẫu nhiên (chỉ chữ, số, `_`, `-`) |
 | `AUTOPILOT_DRY_RUN` | `true` |

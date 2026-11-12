@@ -70,9 +70,55 @@ export type AdDay = {
   cpas: boolean;
   meta_purchases: number;
   meta_purchase_value: number;
+  /** Giá vốn các đơn đó (giá nhập gần nhất ghi trên đơn Pancake). */
+  cogs?: number;
+  /** Mã sản phẩm bán nhiều nhất qua quảng cáo này (từ đơn), hoặc đoán từ tên quảng cáo. */
+  product_code?: string | null;
 };
 
 export const realSpend = (spend: number) => Math.round(spend * META_FEE);
+
+/** Thuế doanh thu Facebook (1% VAT + 0,5% TNCN, mức 2026) và phí đóng gói mỗi đơn. */
+export const FB_TAX = 0.015;
+export const PACKING_PER_ORDER = 5000;
+
+/**
+ * Lãi ước tính của một quảng cáo = doanh thu − giá vốn − chi QC thật − thuế 1,5% − đóng gói 5k/đơn.
+ * Phí ship khách trả coi như hòa; chưa trừ hàng hoàn. CPAS (đơn về Shopee) không tính được → null.
+ */
+export function profit(a: Pick<AdDay, "cpas" | "spend" | "orders" | "revenue" | "cogs">): number | null {
+  if (a.cpas) return null;
+  return Math.round(a.revenue - (a.cogs ?? 0) - realSpend(a.spend) - a.revenue * FB_TAX - PACKING_PER_ORDER * a.orders);
+}
+
+/** Mã sản phẩm từ tên quảng cáo / chiến dịch theo quy ước (vd "ADT25002-P01-A01", "TT-MG-ADT25003-01"). */
+export function codeFromName(...names: (string | null | undefined)[]): string | null {
+  for (const n of names) {
+    const m = /([A-Z]{2,3}\d{5})/.exec(String(n ?? "").toUpperCase());
+    if (m) return m[1];
+  }
+  return null;
+}
+
+export type Group = { key: string; label: string; spend: number; orders: number; revenue: number; profit: number; ratio: number | null };
+
+/** Gom nhiều dòng theo một khóa (quảng cáo qua nhiều ngày, hoặc mã sản phẩm). Bỏ CPAS khỏi phần lãi. */
+export function groupRows(rows: AdDay[], keyOf: (a: AdDay) => string | null, labelOf: (a: AdDay) => string): Group[] {
+  const m = new Map<string, Group>();
+  for (const a of rows) {
+    if (a.cpas) continue;
+    const key = keyOf(a);
+    if (!key) continue;
+    const g = m.get(key) ?? { key, label: labelOf(a), spend: 0, orders: 0, revenue: 0, profit: 0, ratio: null };
+    g.spend += a.spend;
+    g.orders += a.orders;
+    g.revenue += a.revenue;
+    g.profit += profit(a) ?? 0;
+    m.set(key, g);
+  }
+  for (const g of m.values()) g.ratio = g.revenue > 0 ? realSpend(g.spend) / g.revenue : null;
+  return [...m.values()];
+}
 
 /** Đơn và doanh thu dùng để đánh giá: CPAS lấy số Meta, còn lại lấy Pancake. */
 export function outcome(a: Pick<AdDay, "cpas" | "orders" | "revenue" | "meta_purchases" | "meta_purchase_value">) {

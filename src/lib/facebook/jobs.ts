@@ -1,8 +1,8 @@
 /**
  * Nhân viên Facebook — job chạy theo lịch (pg_cron → /api/jobs/fb-*):
- *   fb-report  08:00  thu số hôm qua, báo sáng, đề xuất tăng ngân sách
+ *   fb-report  08:05  thu số hôm qua; báo hiệu quả, lãi/lỗ, content hiệu quả 7 ngày, lãi theo mã, đề xuất
  *   fb-watch   mỗi giờ 9h–23h  thu số hôm nay, cảnh báo quảng cáo chi nhiều mà 0 đơn, tài khoản lỗi
- * Đề xuất có nút: anh bấm Đồng ý thì làm ngay trên Meta (tắt quảng cáo / tăng ngân sách ngày). Chưa tự làm khi chưa duyệt.
+ * Giai đoạn 1 (anh chốt 13/11): chỉ báo cáo + đề xuất. Nút Đồng ý chỉ ghi nhận; thực thi trên Meta chỉ bật khi FB_EXECUTE=1.
  */
 import { db } from "../supabase";
 import { esc, vnd } from "../autopilot/telegram";
@@ -12,7 +12,10 @@ import { ordersByAd } from "./orders";
 import {
   loadRules,
   outcome,
+  codeFromName,
+  groupRows,
   pauseCandidates,
+  profit,
   rankAds,
   ratio,
   realSpend,
@@ -42,7 +45,7 @@ export async function collectDay(day: string, accounts?: MetaAccount[]) {
   for (const acc of accs) {
     try {
       for (const r of await adInsights(acc.id, day)) {
-        const o = orders.get(r.ad_id) ?? { orders: 0, revenue: 0 };
+        const o = orders.get(r.ad_id) ?? { orders: 0, revenue: 0, cogs: 0, product_code: null };
         rows.push({
           ngay: day,
           ad_id: r.ad_id,
@@ -57,6 +60,8 @@ export async function collectDay(day: string, accounts?: MetaAccount[]) {
           cpas: acc.cpas,
           meta_purchases: r.purchases,
           meta_purchase_value: r.purchase_value,
+          cogs: o.cogs,
+          product_code: o.product_code ?? codeFromName(r.ad_name, r.campaign_name),
         });
       }
     } catch (err) {
@@ -75,18 +80,32 @@ export async function collectDay(day: string, accounts?: MetaAccount[]) {
 async function loadHistory(from: string, to: string): Promise<AdDay[]> {
   const { data, error } = await db().from("fb_ad_daily").select("*").gte("ngay", from).lte("ngay", to).limit(10000);
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r: any) => ({ ...r, spend: Number(r.spend), revenue: Number(r.revenue), meta_purchase_value: Number(r.meta_purchase_value) }));
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    spend: Number(r.spend),
+    revenue: Number(r.revenue),
+    cogs: Number(r.cogs ?? 0),
+    meta_purchase_value: Number(r.meta_purchase_value),
+  }));
 }
 
 const pct = (q: number | null) => (q == null ? "∞" : `${Math.round(q * 100)}%`);
 
+const lailo = (p: number | null) => (p == null ? "-" : `${p >= 0 ? "lãi" : "<b>lỗ</b>"} ${vnd(Math.abs(p))}`);
+
 function adLine(a: AdDay): string {
   const o = outcome(a);
-  return `• ${esc(a.ad_name ?? a.ad_id)} — <i>${esc(a.account_name)} / ${esc(a.campaign_name ?? "-")}</i>\n  chi ${vnd(realSpend(a.spend))}, ${o.orders} đơn, ${vnd(o.revenue)} → ${pct(ratio(a))}`;
+  return `• ${esc(a.ad_name ?? a.ad_id)} — <i>${esc(a.account_name)} / ${esc(a.campaign_name ?? "-")}</i>\n  chi ${vnd(realSpend(a.spend))}, ${o.orders} đơn, ${vnd(o.revenue)} → ${pct(ratio(a))}, ${lailo(profit(a))}`;
 }
 
-/** Nội dung báo sáng (hàm thuần trên số đã thu). */
-export function morningText(day: string, rows: AdDay[], errors: string[] = []): string {
+/** Hàng tồn theo mã: tồn và số ngày còn bán (từ pancake_variations). */
+export type StockInfo = Map<string, { stock: number; days: number | null }>;
+
+/**
+ * Nội dung báo sáng (hàm thuần trên số đã thu).
+ * rows = số hôm qua; week = 7 ngày gần nhất (để chấm content), stock = tồn theo mã (để cảnh báo hết hàng).
+ */
+export function morningText(day: string, rows: AdDay[], errors: string[] = [], week: AdDay[] = [], stock: StockInfo = new Map()): string {
   const rules = loadRules();
   const accs = sumByAccount(rows);
   const pancake = accs.filter((a) => !a.cpas);
@@ -97,22 +116,84 @@ export function morningText(day: string, rows: AdDay[], errors: string[] = []): 
     return { spendReal, revenue, orders: xs.reduce((s, a) => s + a.orders, 0), ratio: revenue > 0 ? spendReal / revenue : null };
   };
   const t = tot(pancake);
+  const profitOf = (accountId: string) => rows.filter((r) => r.account_id === accountId).reduce((s, r) => s + (profit(r) ?? 0), 0);
+  const totalProfit = rows.reduce((s, r) => s + (profit(r) ?? 0), 0);
   const lines = [
     `📘 <b>Facebook ${day.split("-").reverse().join("/")}</b>`,
     `Chi thật ${vnd(t.spendReal)} — ${t.orders} đơn — ${vnd(t.revenue)} → <b>${pct(t.ratio)}</b> (mục tiêu &lt; ${Math.round(rules.targetRatio * 100)}%)`,
+    `Lãi ước tính: <b>${lailo(totalProfit)}</b> (đã trừ giá vốn, QC, thuế 1,5%, đóng gói; chưa trừ hoàn)`,
     "",
     "<b>Theo tài khoản</b>",
-    ...pancake.map((a) => `• ${esc(a.account_name)} (${a.account_id}): ${vnd(a.spendReal)}, ${a.orders} đơn, ${pct(a.ratio)}`),
+    ...pancake.map((a) => `• ${esc(a.account_name)} (${a.account_id}): ${vnd(a.spendReal)}, ${a.orders} đơn, ${pct(a.ratio)}, ${lailo(profitOf(a.account_id))}`),
   ];
   if (cpas.length) {
     const c = tot(cpas);
     lines.push("", `<b>CPAS → Shopee</b> (số mua Meta ghi nhận): chi ${vnd(c.spendReal)}, ${c.orders} đơn, ${vnd(c.revenue)} → ${pct(c.ratio)}`);
   }
+
+  // Lãi theo mã sản phẩm (hôm qua)
+  const byCode = groupRows(rows, (a) => a.product_code ?? null, (a) => a.product_code ?? "").filter((g) => g.spend > 0);
+  if (byCode.length) {
+    lines.push("", "<b>Theo mã sản phẩm</b>");
+    for (const g of byCode.sort((x, y) => y.spend - x.spend).slice(0, 8)) {
+      const st = stock.get(g.key);
+      lines.push(
+        `• ${esc(g.key)}: chi ${vnd(realSpend(g.spend))}, ${g.orders} đơn, ${pct(g.ratio)}, ${lailo(g.profit)}${st && st.days != null && st.days < 7 ? ` · ⚠️ tồn ${st.stock}, đủ ~${Math.max(0, Math.round(st.days))} ngày` : ""}`
+      );
+    }
+  }
+
   const { best, worst } = rankAds(rows, rules);
-  if (best.length) lines.push("", "✅ <b>Tốt nhất</b>", ...best.map(adLine));
-  if (worst.length) lines.push("", "⚠️ <b>Kém nhất</b>", ...worst.map(adLine));
+  if (best.length) lines.push("", "✅ <b>Quảng cáo tốt nhất hôm qua</b>", ...best.map(adLine));
+  if (worst.length) lines.push("", "⚠️ <b>Quảng cáo kém nhất hôm qua</b>", ...worst.map(adLine));
+
+  // Content hiệu quả 7 ngày: gom theo tên quảng cáo (quy ước [Mã]-Pxx-Axx/Vxx)
+  const content = groupRows(week, (a) => a.ad_name ?? a.ad_id, (a) => `${a.ad_name ?? a.ad_id} (${a.account_name})`).filter(
+    (g) => realSpend(g.spend) >= rules.rankMinSpend
+  );
+  const winners = content.filter((g) => g.profit > 0 && g.ratio != null && g.ratio <= rules.targetRatio).sort((a, b) => b.profit - a.profit).slice(0, 3);
+  const losers = content.filter((g) => g.profit < 0).sort((a, b) => a.profit - b.profit).slice(0, 3);
+  if (winners.length || losers.length) {
+    lines.push("", "🎯 <b>Content 7 ngày</b>");
+    for (const g of winners) lines.push(`• 🟢 ${esc(g.label)}: ${g.orders} đơn, ${pct(g.ratio)}, ${lailo(g.profit)}`);
+    for (const g of losers) lines.push(`• 🔴 ${esc(g.label)}: ${g.orders} đơn, ${pct(g.ratio)}, ${lailo(g.profit)}`);
+  }
+
+  // Đề xuất thêm (theo sổ tay Kiều Trang)
+  const ideas: string[] = [];
+  for (const g of winners.slice(0, 2)) ideas.push(`Nhân bản content thắng ${esc(g.label)} sang tài khoản/page khác (không động vào bản đang chạy).`);
+  for (const g of byCode) {
+    const st = stock.get(g.key);
+    if (st && st.days != null && st.days < 7 && g.spend > 0) ideas.push(`${esc(g.key)} sắp hết hàng (đủ ~${Math.max(0, Math.round(st.days))} ngày): không tăng ngân sách, chuẩn bị tái.`);
+  }
+  if (t.ratio != null && t.ratio > rules.targetRatio) ideas.push(`Tỉ lệ chung ${pct(t.ratio)} vượt mục tiêu: ưu tiên cắt các quảng cáo lỗ ở trên trước khi mở test mới.`);
+  if (ideas.length) lines.push("", "💡 <b>Đề xuất thêm</b>", ...ideas.slice(0, 5).map((x) => `• ${x}`));
+
   if (errors.length) lines.push("", `Không đọc được: ${esc(errors.join("; ").slice(0, 500))}`);
   return lines.join("\n");
+}
+
+/** Tồn và số ngày còn bán theo mã sản phẩm (bảng pancake_variations đồng bộ đêm). */
+async function loadStock(): Promise<StockInfo> {
+  const out: StockInfo = new Map();
+  for (let page = 0; page < 20; page++) {
+    const { data, error } = await db()
+      .from("pancake_variations")
+      .select("product_code, stock, selling_avg")
+      .range(page * 1000, page * 1000 + 999);
+    if (error) return out;
+    for (const r of data ?? []) {
+      const code = String(r.product_code ?? "");
+      if (!code) continue;
+      const cur = out.get(code) ?? { stock: 0, days: null, rate: 0 } as any;
+      cur.stock += Math.max(0, Number(r.stock ?? 0));
+      cur.rate = (cur.rate ?? 0) + Number(r.selling_avg ?? 0);
+      out.set(code, cur);
+    }
+    if (!data || data.length < 1000) break;
+  }
+  for (const v of out.values() as any) v.days = v.rate > 0 ? v.stock / v.rate : null;
+  return out;
 }
 
 /** Ghi đề xuất và gửi kèm nút. Không gửi trùng (cùng quảng cáo, cùng loại, cùng ngày). */
@@ -153,9 +234,11 @@ async function propose(p: Proposal, day: string): Promise<boolean> {
 export async function fbReportJob(day = shiftDay(vnDate(), -1)) {
   if (await isStopped()) return { skipped: "stopped" };
   const { rows, errors } = await collectDay(day);
-  await fbSend(morningText(day, rows, errors));
   const rules = loadRules();
-  const history = await loadHistory(shiftDay(day, -(rules.scaleDays - 1)), day);
+  const week = await loadHistory(shiftDay(day, -6), day).catch(() => rows);
+  const stock = await loadStock();
+  await fbSend(morningText(day, rows, errors, week, stock));
+  const history = week.filter((r) => r.ngay >= shiftDay(day, -(rules.scaleDays - 1)));
   let proposed = 0;
   for (const p of scaleCandidates(history, day, rules).slice(0, 5)) if (await propose(p, day)) proposed++;
   return { day, ads: rows.length, errors, proposed };
@@ -191,6 +274,7 @@ export async function fbWatchJob() {
 const PROPOSAL_TTL_HOURS = 20;
 
 const STATUS_TEXT: Record<string, string> = {
+  approved: "được anh đồng ý",
   executed: "đã làm",
   failed: "lỗi",
   rejected: "bỏ qua",
@@ -221,6 +305,13 @@ export async function fbDecide(id: number, approve: boolean): Promise<string> {
   if (Date.now() - Date.parse(p.created_at) > PROPOSAL_TTL_HOURS * 3600_000)
     return finish({ status: "expired" }, "⌛ Đề xuất đã cũ, em không làm. Lần quét sau sẽ đề xuất lại nếu vẫn cần.", "Đề xuất đã hết hạn");
   if (await isStopped()) return "Đang dừng khẩn cấp (/release để chạy lại)";
+  // Giai đoạn 1 (anh chốt 13/11): chỉ báo cáo + đề xuất; Đồng ý = ghi nhận, người chạy QC làm tay.
+  if (process.env.FB_EXECUTE !== "1")
+    return finish(
+      { status: "approved" },
+      "✅ Anh đồng ý. Giai đoạn này Kiều Trang chưa tự thao tác trên Meta: người chạy quảng cáo làm tay giúp.",
+      "Đã ghi nhận"
+    );
 
   try {
     const state = await adState(p.ad_id);

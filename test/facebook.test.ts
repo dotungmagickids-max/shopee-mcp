@@ -86,13 +86,14 @@ describe("tỉ lệ và tổng theo tài khoản", () => {
 
 describe("đầu vào", () => {
   it("gom đơn Pancake theo ad_id, bỏ đơn hủy và đơn không có quảng cáo", () => {
+    const it = (code: string, qty: number, cost: number) => ({ quantity: qty, variation_info: { last_imported_price: cost, product_display_id: code } });
     const m = groupByAd([
-      { ad_id: "120", status: 0, total_price: 298000 },
-      { ad_id: "120", status: 3, total_price: 200000 },
-      { ad_id: "120", status: 6, total_price: 999999 },
+      { ad_id: "120", status: 0, total_price: 298000, items: [it("ADT25002", 2, 75000)] },
+      { ad_id: "120", status: 3, total_price: 200000, items: [it("ADT25002", 1, 75000), it("QD26001", 1, 60000)] },
+      { ad_id: "120", status: 6, total_price: 999999, items: [it("BD24066", 5, 1)] },
       { ad_id: null, status: 1, total_price: 100 },
     ]);
-    assert.deepEqual(m.get("120"), { orders: 2, revenue: 498000 });
+    assert.deepEqual(m.get("120"), { orders: 2, revenue: 498000, cogs: 285000, product_code: "ADT25002" });
     assert.equal(m.size, 1);
   });
   it("số mua Meta: lấy một loại, không cộng trùng", () => {
@@ -204,5 +205,31 @@ describe("bảo mật Meta", () => {
       delete process.env.META_SYSTEM_TOKEN;
       delete process.env.META_APP_SECRET;
     }
+  });
+});
+
+describe("lãi / lỗ và content", () => {
+  it("lãi = doanh thu − giá vốn − QC thật − thuế 1,5% − đóng gói 5k/đơn; CPAS không tính", async () => {
+    const { profit, codeFromName } = await import("../src/lib/facebook/rules");
+    // 1.000.000 − 400.000 − 222.200 − 15.000 − 4×5.000 = 342.800
+    assert.equal(profit({ cpas: false, spend: 200_000, orders: 4, revenue: 1_000_000, cogs: 400_000 }), 342_800);
+    assert.equal(profit({ cpas: true, spend: 1, orders: 1, revenue: 1, cogs: 0 }), null);
+    assert.equal(codeFromName("ADT25002-P01-A01-L5"), "ADT25002");
+    assert.equal(codeFromName(null, "TT-MG-ADT26001.ADT26002-01"), "ADT26001");
+    assert.equal(codeFromName("Bài mới"), null);
+  });
+  it("báo sáng có lãi/lỗ, mã sắp hết hàng, content thắng/thua 7 ngày, đề xuất thêm", () => {
+    const yesterday = [
+      ad({ ad_id: "w", ad_name: "ADT25002-P01-A01", product_code: "ADT25002", spend: 300_000, orders: 8, revenue: 2_400_000, cogs: 900_000 }),
+      ad({ ad_id: "l", ad_name: "QD26001-P02-V01", product_code: "QD26001", spend: 400_000, orders: 1, revenue: 300_000, cogs: 120_000 }),
+    ];
+    const week = [...yesterday, { ...yesterday[0], ngay: "2026-11-11" }, { ...yesterday[1], ngay: "2026-11-11" }];
+    const t = morningText("2026-11-12", yesterday, [], week, new Map([["ADT25002", { stock: 100, days: 4 }]]));
+    assert.match(t, /Lãi ước tính/);
+    assert.match(t, /ADT25002: chi .*lãi .*⚠️ tồn 100, đủ ~4 ngày/);
+    assert.match(t, /QD26001: chi .*<b>lỗ<\/b>/);
+    assert.match(t, /Content 7 ngày[\s\S]*🟢 ADT25002-P01-A01[\s\S]*🔴 QD26001-P02-V01/);
+    assert.match(t, /Nhân bản content thắng ADT25002-P01-A01/);
+    assert.match(t, /ADT25002 sắp hết hàng/);
   });
 });

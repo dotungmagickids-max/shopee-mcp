@@ -15,6 +15,8 @@ create table if not exists public.fb_ad_daily (
   cpas boolean not null default false,
   meta_purchases integer not null default 0,
   meta_purchase_value numeric not null default 0,
+  cogs numeric not null default 0,           -- giá vốn các đơn (giá nhập gần nhất ghi trên đơn Pancake)
+  product_code text,                         -- mã sản phẩm bán nhiều nhất qua quảng cáo
   updated_at timestamptz not null default now(),
   primary key (ngay, ad_id)
 );
@@ -32,7 +34,7 @@ create table if not exists public.fb_proposals (
   account_name text,
   campaign_name text,
   reason text,
-  status text not null default 'proposed' check (status in ('proposed', 'executed', 'failed', 'rejected', 'expired')),
+  status text not null default 'proposed' check (status in ('proposed', 'approved', 'executed', 'failed', 'rejected', 'expired')),
   decided_at timestamptz,
   message_id bigint,
   target_level text,                          -- ad | adset | campaign: nơi đã sửa trên Meta
