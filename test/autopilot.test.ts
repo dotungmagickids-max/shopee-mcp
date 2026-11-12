@@ -402,7 +402,19 @@ describe("fast scale-up helpers", () => {
     assert.equal(scaleTargetFor({ ...e, class: "chu_luc" }, DEFAULT_RULE_PARAMS)!.target, 12.4, "ngôi sao: tăng nhanh nhưng vẫn lãi ≥ 10%");
     assert.equal(scaleTargetFor({ ...e, class: "chu_luc" }, { ...DEFAULT_RULE_PARAMS, scale_core_profit_pct: 5 })!.target, 8.5);
     assert.equal(scaleTargetFor({ ...e, class: "moi" }, DEFAULT_RULE_PARAMS)!.target, 6.5, "dấu hỏi: hòa vốn");
-    assert.equal(scaleTargetFor({ ...e, class: "xa_kho" }, DEFAULT_RULE_PARAMS)!.target, 3.6, "chó: QC ≤ 60% tiền thu");
+    assert.equal(scaleTargetFor({ ...e, class: "xa_kho" }, DEFAULT_RULE_PARAMS)!.target, 5.2, "chó: lỗ tối đa 5%");
+    // Sàn lãi 12%: gần sàn dừng Xả kho trước, rồi Mới; dưới sàn chỉ mã tự lãi ≥ 12%
+    const { floorBlock } = await import("../src/lib/autopilot/classes");
+    const P = DEFAULT_RULE_PARAMS;
+    assert.equal(floorBlock("xa_kho", 15, 5, {}, P), null);
+    assert.ok(floorBlock("xa_kho", 13.5, 5, {}, P));
+    assert.equal(floorBlock("moi", 13.5, 0, {}, P), null);
+    assert.ok(floorBlock("moi", 12.5, 0, {}, P));
+    assert.equal(floorBlock("thuong", 12.5, 10, {}, P), null);
+    assert.ok(floorBlock("thuong", 11, 10, {}, P));
+    assert.equal(floorBlock("chu_luc", 11, 16, {}, P), null, "dưới sàn nhưng mã này lãi 16% vẫn được tăng");
+    assert.ok(floorBlock("xa_kho", 20, 5, { xa_kho: 0.25 }, P), "xả kho quá 20% tổng chi");
+    assert.ok(floorBlock("moi", 20, 5, { moi: 0.12 }, P), "hàng mới quá 10% tổng chi");
     assert.equal(scaleTargetFor(null, DEFAULT_RULE_PARAMS), null);
     assert.equal(increaseLimit(s, "2026-11-04", true), 100);
     assert.equal(increaseLimit(s, "2026-11-04"), 30);
@@ -813,6 +825,8 @@ describe("profit from Pancake costs", () => {
     const profit = await import("../src/lib/autopilot/profit");
     await pancake.syncPancakeVariations();
     seedCampaign({ roas_target: 10 });
+    // Tắt sàn lãi toàn hệ thống: test này chỉ kiểm ngưỡng theo lãi của từng mã.
+    tables.autopilot_settings[0].rule_params = { ...tables.autopilot_settings[0].rule_params, system_profit_floor_pct: 0 };
     await profit.computeEconomics(111);
 
     // ROAS hôm nay 5,3: dưới mục tiêu đang đặt (10) nhưng trên ROAS theo lãi (5) → được tăng ngân sách.
@@ -841,9 +855,9 @@ describe("profit from Pancake costs", () => {
     assert.equal(classes.classify({ ...base, units30: 80, stock: 100, dailySales: 3 }, p).cls, "chu_luc");
     assert.equal(classes.classify({ ...base, units30: 80, costRatio: 0.45 }, p).cls, "thuong", "giá vốn cao không vào chủ lực");
 
-    // Xả kho: tiền thu về 0,7/1đ GMV, QC được dùng 60% → ROAS 1/0,42 = 2,4
+    // Xả kho: lỗ tối đa 5% → ROAS 1/(0,3 + 0,05) = 2,9
     const e = { margin: 0.3, cancel_rate: 0, return_rate: 0, payout: 0.7, return_fee_ratio: 0, ad_fee_pct: 0 };
-    assert.equal(classes.targetForClass(e, "xa_kho", p).target, 2.4);
+    assert.equal(classes.targetForClass(e, "xa_kho", p).target, 2.9);
     assert.equal(classes.targetForClass(e, "moi", p).target, 3.3, "mới: hòa vốn");
     assert.equal(classes.targetForClass(e, "chu_luc", p).target, 4.5, "chủ lực lãi 8%: 1/(0,3 − 0,08)");
 
@@ -856,7 +870,7 @@ describe("profit from Pancake costs", () => {
     assert.equal(tables.ads_campaigns[0].econ.class, "thuong");
     await profit.setProductClass(111, 1, "xa_kho");
     const econ = tables.ads_campaigns[0].econ;
-    assert.deepEqual([econ.class, econ.class_source, econ.target], ["xa_kho", "manual", 2.4]);
+    assert.deepEqual([econ.class, econ.class_source, econ.target], ["xa_kho", "manual", 2.9]);
     await profit.computeEconomics(111);
     assert.equal(tables.ads_campaigns[0].econ.class, "xa_kho", "job đêm giữ lựa chọn của anh");
     await profit.setProductClass(111, 1, null);

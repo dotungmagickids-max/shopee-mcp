@@ -1,7 +1,8 @@
 import { db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
 import { ruleTarget, type Econ } from "./profit";
-import { scaleStyle, scaleTargetFor } from "./classes";
+import { floorBlock, scaleStyle, scaleTargetFor, type ProductClass } from "./classes";
+import { sendAlertOnce } from "./telegram";
 import { automationBlocked, editsLimit, isPeakDay, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
@@ -168,6 +169,42 @@ export function burnRate(rows: { hour: number; expense: number }[], hour: number
   return { rate, peak };
 }
 
+/**
+ * Lãi của đơn từ quảng cáo hôm qua + hôm nay, % trên doanh thu thực nhận (sau hủy, hoàn), dùng giá vốn thật
+ * (cả hàng xả). Chiến dịch chưa có số kinh tế dùng số trung bình shop. Kèm tỷ trọng chi hôm nay theo nhóm.
+ */
+export function portfolioProfit(
+  camps: { campaign_id: number; econ: (Econ & { class?: string }) | null }[],
+  today: Map<number, { expense: number; gmv: number }[]>,
+  history: Map<number, DayRow[]>,
+  yesterday: string,
+  shopEcon: Econ | null,
+  fee: number
+): { pct: number | null; share: Partial<Record<ProductClass, number>> } {
+  let profit = 0;
+  let net = 0;
+  let total = 0;
+  const byClass: Partial<Record<ProductClass, number>> = {};
+  for (const c of camps) {
+    const rows = today.get(c.campaign_id) ?? [];
+    const expT = rows.reduce((t, r) => t + r.expense, 0);
+    const gmvT = rows.reduce((t, r) => t + r.gmv, 0);
+    const y = (history.get(c.campaign_id) ?? []).find((d) => d.date === yesterday);
+    const e = c.econ?.margin ? c.econ : shopEcon;
+    total += expT;
+    const cls = (c.econ?.class ?? "thuong") as ProductClass;
+    byClass[cls] = (byClass[cls] ?? 0) + expT;
+    if (!e?.margin) continue;
+    const g = gmvT + (y?.gmv ?? 0);
+    const x = expT + (y?.exp ?? 0);
+    profit += g * e.margin - x * fee;
+    net += g * (1 - e.cancel_rate) * (1 - e.return_rate);
+  }
+  const share: Partial<Record<ProductClass, number>> = {};
+  if (total > 0) for (const [k, v] of Object.entries(byClass)) share[k as ProductClass] = (v ?? 0) / total;
+  return { pct: net > 0 ? (100 * profit) / net : null, share };
+}
+
 // ---------------------------------------------------------------------------
 // F2: luật trong ngày (chạy sau mỗi lần thu số liệu)
 // ---------------------------------------------------------------------------
@@ -216,6 +253,17 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
   // Số 14 ngày trước: mức chi ngày thường (khởi điểm, "đầu ngày") và ROAS 3 ngày gần nhất.
   const history = await campaignDays(shopId, camps.map((c) => c.campaign_id), addDays(today, -14), addDays(today, -1));
   const minute = new Date().getUTCMinutes();
+  // Lãi toàn hệ thống (hôm nay + hôm qua) và tỷ trọng chi theo nhóm hôm nay — cho sàn lãi.
+  const { data: st } = await db().from("autopilot_settings").select("econ_summary").eq("shop_id", shopId).maybeSingle();
+  const shopEcon = (st?.econ_summary?.shop ?? null) as Econ | null;
+  const portfolio = portfolioProfit(camps, byCamp, history, addDays(today, -1), shopEcon, 1 + p.ad_fee_pct / 100);
+  if (portfolio.pct != null && portfolio.pct < p.system_profit_floor_pct) {
+    await sendAlertOnce(
+      `floor:${shopId}:${today}`,
+      `📉 <b>Lãi chung dưới sàn</b> — shop ${shopId}\nĐơn từ quảng cáo hôm qua + hôm nay lãi ${portfolio.pct.toFixed(1)}% (sàn ${p.system_profit_floor_pct}%). Tool chỉ còn tăng ngân sách cho mã tự nó lãi ≥ ${p.system_profit_floor_pct}%, không cắt gì.`,
+      360
+    );
+  }
 
   const candidates: (ProposalInput & { priority: number; fast?: boolean })[] = [];
   for (const c of camps) {
@@ -281,7 +329,10 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const roas7 = exp7 > 0 ? last7.reduce((t, d) => t + d.gmv, 0) / exp7 : 0;
       const decayed = !early && p.scale_decay_pct > 0 && exp >= p.scale_decay_min_spend && roas7 > 0 && roas < (roas7 * p.scale_decay_pct) / 100;
       const roasOk = !decayed && (early ? roas3 >= tgt && blended >= breakeven : roas >= tgt);
-      if ((nearFull || burning) && roasOk) {
+      const econ = c.econ?.margin ? c.econ : shopEcon;
+      const ownPct = econ && gmv > 0 ? (100 * (gmv * econ.margin - exp * (1 + p.ad_fee_pct / 100))) / (gmv * (1 - econ.cancel_rate) * (1 - econ.return_rate)) : null;
+      const blocked = roasOk ? floorBlock(c.econ?.class, portfolio.pct, ownPct, portfolio.share, p) : null;
+      if ((nearFull || burning) && roasOk && !blocked) {
         const fast = burning || exhausted;
         const step = Math.max(p.scale_min_step, (c.campaign_budget * stepPct) / 100);
         // Tiêu nhanh: thêm đủ tiêu tiếp burn_cover_hours giờ theo tốc độ hiện tại (trần mỗi lần fast_max_increase_pct).
