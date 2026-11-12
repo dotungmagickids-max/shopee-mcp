@@ -1,7 +1,8 @@
 import { db } from "../supabase";
 import { cancelReturnRates, shopFees, type FeeStats } from "./fees";
 import { classify, daysOfStock, targetForClass, type ClassInput, type ProductClass } from "./classes";
-import { costOf, loadCostMap, loadProductStats, productCode, type ProductStats } from "./pancake";
+import { costOf, loadCostMap, loadProductStats, normSku, productCode, type ProductStats } from "./pancake";
+import { callShopee, chunk } from "./shopee-call";
 import { vnDate } from "./time";
 import { REASON_VI } from "./returns";
 import { INVALID_STATUSES, ordersBetween } from "./report";
@@ -44,6 +45,7 @@ export interface Econ {
   auto_class?: ProductClass;
   target_label?: string;
   product_code?: string | null;
+  price_source?: "current" | "orders"; // giá bán: giá đang bán (theo cơ cấu phân loại 30 ngày) hay TB đơn 30 ngày
   stock?: number | null;
   days_of_stock?: number | null;
 }
@@ -125,6 +127,33 @@ export interface EconSummary {
  * và tóm tắt vào autopilot_settings.econ_summary. Sản phẩm bán ít (< 5 đơn vị) hoặc thiếu giá vốn quá nửa
  * thì dùng số trung bình shop.
  */
+/**
+ * Giá đang bán của từng phân loại (SKU chuẩn hóa → giá khách trả hiện tại, đã gồm khuyến mãi), 8 sản phẩm/lượt.
+ * Lỗi đọc sản phẩm nào thì bỏ qua sản phẩm đó (dùng giá trung bình đơn 30 ngày).
+ */
+async function currentPrices(shopId: number, itemIds: number[]): Promise<Map<number, Map<string, number>>> {
+  const out = new Map<number, Map<string, number>>();
+  for (const part of chunk(itemIds, 8)) {
+    await Promise.all(
+      part.map(async (id) => {
+        try {
+          const res = await callShopee(shopId, "product.get_model_list", { item_id: id });
+          const m = new Map<string, number>();
+          for (const x of res.response?.model ?? []) {
+            const sku = normSku(x.model_sku);
+            const p = Number(x.price_info?.[0]?.current_price ?? 0);
+            if (sku && p > 0) m.set(sku, p);
+          }
+          if (m.size) out.set(id, m);
+        } catch {
+          /* dùng giá đơn 30 ngày */
+        }
+      })
+    );
+  }
+  return out;
+}
+
 export async function computeEconomics(shopId: number) {
   const s = await loadSettings(shopId);
   const costs = await loadCostMap(shopId);
@@ -138,6 +167,8 @@ export async function computeEconomics(shopId: number) {
   const empty = (): Agg => ({ revenue: 0, units: 0, costedRevenue: 0, cogs: 0, costedUnits: 0 });
   const byItem = new Map<number, Agg>();
   const itemCodes = new Map<number, Set<string>>(); // item Shopee → mã sản phẩm Pancake (từ SKU đã bán)
+  // Cơ cấu phân loại đã bán của từng sản phẩm (SKU → số lượng, giá vốn): để tính lại theo giá đang bán.
+  const itemLines = new Map<number, Map<string, { qty: number; cost: number | null; revenue: number }>>();
   const shop = empty();
   for (const o of orders) {
     if (INVALID_STATUSES.includes(o.order_status ?? "")) continue;
@@ -150,6 +181,15 @@ export async function computeEconomics(shopId: number) {
       const c = costOf(costs, it);
       const code = productCode(it.model_sku) ?? productCode(it.item_sku);
       if (code) itemCodes.set(id, (itemCodes.get(id) ?? new Set()).add(code));
+      const sku = normSku(it.model_sku) || normSku(it.item_sku);
+      if (sku) {
+        const lines = itemLines.get(id) ?? new Map();
+        const l = lines.get(sku) ?? { qty: 0, cost: c, revenue: 0 };
+        l.qty += qty;
+        l.revenue += price * qty;
+        lines.set(sku, l);
+        itemLines.set(id, lines);
+      }
       for (const x of [a, shop]) {
         x.revenue += price * qty;
         x.units += qty;
@@ -186,12 +226,37 @@ export async function computeEconomics(shopId: number) {
   const { data: manual } = await db().from("product_classes").select("item_id, manual_class").eq("shop_id", shopId);
   const manualMap = new Map((manual ?? []).filter((m) => m.manual_class).map((m) => [Number(m.item_id), m.manual_class as ProductClass]));
   const month = Number(vnDate().slice(5, 7));
+  // Giá đang bán (anh đổi giá / khuyến mãi là có hiệu lực ngay, không chờ 30 ngày đơn mới).
+  const campItems = [...new Set((camps ?? []).flatMap((c) => (c.item_ids ?? []).map(Number)))].filter((id) => itemLines.has(id));
+  const current = await currentPrices(shopId, campItems);
+  const repriced = new Map<number, Agg>();
+  for (const id of campItems) {
+    const prices = current.get(id);
+    const old = byItem.get(id);
+    if (!prices?.size || !old) continue;
+    const a = empty();
+    let hit = 0;
+    for (const [sku, l] of itemLines.get(id)!) {
+      const p = prices.get(sku);
+      const rev = p ? p * l.qty : l.revenue;
+      if (p) hit += l.qty;
+      a.revenue += rev;
+      a.units += l.qty;
+      if (l.cost != null) {
+        a.costedRevenue += rev;
+        a.cogs += l.cost * l.qty;
+        a.costedUnits += l.qty;
+      }
+    }
+    if (hit >= a.units * 0.5) repriced.set(id, a);
+  }
   const counts: Record<string, number> = {};
   let item = 0;
   for (const c of camps ?? []) {
     const ids: number[] = (c.item_ids ?? []).map(Number);
+    const priceSource = ids.some((id) => repriced.has(id)) ? "current" : "orders";
     const agg = ids.reduce<Agg>((m, id) => {
-      const a = byItem.get(id);
+      const a = repriced.get(id) ?? byItem.get(id);
       if (a) for (const k of Object.keys(m) as (keyof Agg)[]) m[k] += a[k];
       return m;
     }, empty());
@@ -253,6 +318,7 @@ export async function computeEconomics(shopId: number) {
           class_reason: manualCls ? "Anh chọn" : auto.reason,
           auto_class: auto.cls,
           product_code: [...codes][0] ?? null,
+          price_source: econ ? priceSource : undefined,
           stock,
           days_of_stock: dos == null ? null : dos === Infinity ? 9999 : Math.round(dos),
         },
