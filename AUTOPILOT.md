@@ -45,6 +45,8 @@ Vercel → project `magickids-shopee` → Settings → Environment Variables (Pr
 | `TELEGRAM_CHAT_ID` | chat_id của anh, hoặc id nhóm "Phòng họp Magickids" (số âm, dạng `-100…`) |
 | `TELEGRAM_THREAD_ID` | (khi dùng nhóm) id chủ đề "Shopee" trong nhóm; bỏ trống thì tin vào chủ đề chung |
 | `TELEGRAM_OWNER_IDS` | (khi dùng nhóm) user id được ra lệnh và bấm duyệt, cách nhau bằng dấu phẩy. Thiếu biến này thì trong nhóm không ai duyệt được |
+| `TELEGRAM_STAFF` | Bảng việc chung: người thật được nhận/bấm việc, dạng `Hiền=111,Vân=222,Hường=333` (lấy id bằng /id trong nhóm) |
+| `TASKS_THREAD_ID` | Bảng việc chung: id chủ đề "Việc chung" trong nhóm Phòng họp |
 | `FB_TELEGRAM_BOT_TOKEN` | Nhân viên Facebook: token bot riêng (dùng chung `TELEGRAM_CHAT_ID`, `TELEGRAM_OWNER_IDS`) |
 | `FB_TELEGRAM_THREAD_ID` | Nhân viên Facebook: id chủ đề Facebook trong nhóm Phòng họp |
 | `FB_TELEGRAM_WEBHOOK_SECRET` | Nhân viên Facebook: secret webhook `/api/telegram/facebook` |
