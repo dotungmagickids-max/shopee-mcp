@@ -98,19 +98,38 @@ const round1 = (x: number) => Math.round(x * 10) / 10;
 /**
  * ROAS mục tiêu (theo chi Shopee báo) của một nhóm:
  *   Chủ lực / Thường / Mới: lãi mong muốn riêng của nhóm (như ROAS theo lãi).
- *   Xả kho: giá vốn coi như đã chi; tiền mặt thu về trên 1đ GMV = (1 − hủy) × (tiền về × (1 − hoàn) − phí hoàn),
- *           quảng cáo được dùng tối đa clear_ads_share_pct% số đó.
+ *   Xả kho: lãi clear_profit_pct (âm = chấp nhận lỗ tối đa N% để đẩy hàng; anh chốt 12/11: lỗ tối đa 5%).
  */
 export function targetForClass(e: EconBase, cls: ProductClass, p: RuleParams): { target: number | null; label: string } {
-  const fee = 1 + (e.ad_fee_pct ?? 0) / 100;
-  const keepC = 1 - e.cancel_rate;
   if (cls === "xa_kho") {
-    const cash = keepC * (e.payout * (1 - e.return_rate) - (e.return_fee_ratio ?? 0));
-    const allow = cash * (p.clear_ads_share_pct / 100);
-    return { target: allow > 0 ? round1(fee / allow) : null, label: `xả kho: QC ≤ ${p.clear_ads_share_pct}% tiền thu về` };
+    const pct = p.clear_profit_pct;
+    return profitTarget(e, pct, `xả kho: ${pct < 0 ? `lỗ tối đa ${-pct}%` : pct > 0 ? `lãi ${pct}%` : "hòa vốn"}`);
   }
   const pct = cls === "chu_luc" ? p.profit_core_pct : cls === "moi" ? p.profit_new_pct : p.profit_target_pct;
   return profitTarget(e, pct, `${CLASS_VI[cls].toLowerCase()}: ${pct > 0 ? `lãi ${pct}%` : "hòa vốn"}`);
+}
+
+/**
+ * Sàn lãi toàn hệ thống: trả lý do không được tăng (hoặc null). Gần sàn thì dừng nhóm lãi mỏng trước:
+ *   < sàn + 2 điểm: dừng Xả kho;  < sàn + 1: dừng thêm Mới;  < sàn: chỉ mã tự nó đang lãi ≥ sàn mới được tăng.
+ * Thêm trần tỷ trọng chi trong ngày cho Xả kho và Mới.
+ */
+export function floorBlock(
+  cls: ProductClass | undefined,
+  sysPct: number | null,
+  ownPct: number | null,
+  share: Partial<Record<ProductClass, number>>,
+  p: RuleParams
+): string | null {
+  const floor = p.system_profit_floor_pct;
+  if (cls === "xa_kho" && (share.xa_kho ?? 0) * 100 >= p.clear_max_spend_share_pct) return `Xả kho đã chiếm ${Math.round((share.xa_kho ?? 0) * 100)}% chi hôm nay (trần ${p.clear_max_spend_share_pct}%)`;
+  if (cls === "moi" && (share.moi ?? 0) * 100 >= p.new_max_spend_share_pct) return `Hàng mới đã chiếm ${Math.round((share.moi ?? 0) * 100)}% chi hôm nay (trần ${p.new_max_spend_share_pct}%)`;
+  if (sysPct == null || !(floor > 0)) return null;
+  const sys = `lãi chung ${sysPct.toFixed(1)}%`;
+  if (sysPct < floor) return ownPct != null && ownPct >= floor ? null : `${sys} dưới sàn ${floor}%, mã này lãi ${ownPct == null ? "?" : ownPct.toFixed(1)}%`;
+  if (sysPct < floor + 1 && (cls === "xa_kho" || cls === "moi")) return `${sys} sát sàn ${floor}%`;
+  if (sysPct < floor + 2 && cls === "xa_kho") return `${sys} gần sàn ${floor}%`;
+  return null;
 }
 
 function profitTarget(e: EconBase, pct: number, label: string): { target: number | null; label: string } {
@@ -123,7 +142,7 @@ function profitTarget(e: EconBase, pct: number, label: string): { target: number
 /**
  * Ngưỡng ROAS để TĂNG ngân sách theo nhóm:
  *   Ngôi sao (Chủ lực): lãi ≥ scale_core_profit_pct (mặc định 10%: vừa bán nhiều vừa lãi tốt), tăng nhanh hơn.
- *   Bò sữa (Thường), Dấu hỏi (Mới), Chó (Xả kho): đúng mục tiêu của nhóm (10% / hòa vốn / QC ≤ 60% tiền thu).
+ *   Bò sữa (Thường), Dấu hỏi (Mới), Chó (Xả kho): đúng mục tiêu của nhóm (10% / hòa vốn / lỗ tối đa 5%).
  * Không có số kinh tế thì null (luật dùng ngưỡng thường).
  */
 export function scaleTargetFor(e: (EconBase & { class?: ProductClass; target?: number | null }) | null, p: RuleParams): { target: number | null; label: string } | null {

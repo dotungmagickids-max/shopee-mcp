@@ -33,7 +33,11 @@ export const DEFAULT_RULE_PARAMS = {
   // Nhóm hàng: mục tiêu riêng (nhóm Thường dùng profit_target_pct)
   profit_core_pct: 8, // Chủ lực: lãi mong muốn thấp hơn để mở rộng, tối đa tổng lãi
   profit_new_pct: 0, // Mới: chạy ở mức hòa vốn để học
-  clear_ads_share_pct: 60, // Xả kho: quảng cáo được dùng tối đa % tiền mặt thu về
+  clear_profit_pct: -5, // Xả kho: lãi mong muốn (âm = chấp nhận lỗ tối đa N% để đẩy hàng)
+  // Sàn lãi toàn hệ thống (hôm nay + hôm qua, đơn từ quảng cáo): gần sàn thì dừng tăng nhóm lãi mỏng trước
+  system_profit_floor_pct: 12,
+  clear_max_spend_share_pct: 20, // Xả kho: tối đa % tổng chi quảng cáo hôm nay
+  new_max_spend_share_pct: 10, // Mới: tối đa % tổng chi quảng cáo hôm nay
   // Ngưỡng tự phân nhóm
   new_days: 30, // Mới: sản phẩm tạo trên Pancake chưa tới N ngày
   clear_stock_days: 120, // Xả kho: tồn đủ bán ≥ N ngày
