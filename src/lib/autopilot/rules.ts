@@ -3,6 +3,7 @@ import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput 
 import { ruleTarget, type Econ } from "./profit";
 import { floorBlock, scaleStyle, scaleTargetFor, type ProductClass } from "./classes";
 import { esc, sendAlertOnce } from "./telegram";
+import { shopName } from "./config";
 import { automationBlocked, editsLimit, isPeakDay, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix, vnHour } from "./time";
@@ -268,7 +269,7 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
   if (portfolio.pct != null && portfolio.pct < p.system_profit_floor_pct) {
     await sendAlertOnce(
       `floor:${shopId}:${today}`,
-      `📉 <b>Lãi chung dưới sàn</b> — shop ${shopId}\nĐơn từ quảng cáo hôm qua + hôm nay lãi ${portfolio.pct.toFixed(1)}% (sàn ${p.system_profit_floor_pct}%). Tool chỉ còn tăng ngân sách cho mã tự nó lãi ≥ ${p.system_profit_floor_pct}%, không cắt gì.`,
+      `📉 <b>Lãi chung dưới sàn</b> — ${esc(shopName(shopId))}\nĐơn từ quảng cáo hôm qua + hôm nay lãi ${portfolio.pct.toFixed(1)}% (sàn ${p.system_profit_floor_pct}%). Tool chỉ còn tăng ngân sách cho mã tự nó lãi ≥ ${p.system_profit_floor_pct}%, không cắt gì.`,
       360
     );
   }

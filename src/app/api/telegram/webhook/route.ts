@@ -1,5 +1,5 @@
 import { decide } from "@/lib/autopilot/actions";
-import { safeEqual, shops } from "@/lib/autopilot/config";
+import { safeEqual, shopName, shops } from "@/lib/autopilot/config";
 import { todayOverview } from "@/lib/autopilot/dashboard";
 import { morningReportJob } from "@/lib/autopilot/jobs";
 import { proposePauseAll, proposeResumeAll } from "@/lib/autopilot/rules";
@@ -104,7 +104,7 @@ async function status() {
   }
   const { data } = await db().from("autopilot_settings").select("shop_id, emergency_stop, mode, halt_reason");
   for (const r of data ?? []) {
-    parts.push(`\n${r.shop_id}: chế độ <b>${r.mode}</b>${r.emergency_stop ? ` — 🛑 ĐANG DỪNG${r.halt_reason ? ` (${esc(r.halt_reason)})` : ""}` : ""}`);
+    parts.push(`\n${esc(shopName(r.shop_id))}: chế độ <b>${r.mode}</b>${r.emergency_stop ? ` — 🛑 ĐANG DỪNG${r.halt_reason ? ` (${esc(r.halt_reason)})` : ""}` : ""}`);
   }
   const { count } = await db().from("autopilot_actions").select("id", { count: "exact", head: true }).eq("status", "proposed").is("parent_id", null);
   if (count) parts.push(`\n💡 ${count} đề xuất đang chờ duyệt`);
