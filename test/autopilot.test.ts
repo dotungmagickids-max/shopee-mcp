@@ -483,6 +483,37 @@ describe("launch new products", () => {
   });
 });
 
+describe("product lifecycle", () => {
+  it("suggests class moves both ways and diagnoses the funnel", async () => {
+    const { suggestClass, diagnose } = await import("../src/lib/autopilot/lifecycle");
+    const { DEFAULT_RULE_PARAMS: P } = await import("../src/lib/autopilot/settings");
+    const base = { cls: "moi" as const, inAds: false, units7: 0, units30: 0, stock: 100, dos: 60, ageDays: 200, oos: false, profitPct: 25 };
+    // Chưa chạy QC, bán đều, lãi tốt → Bò sữa
+    assert.equal(suggestClass({ ...base, units30: 30, units7: 7 }, P)?.cls, "thuong");
+    // Bán nhanh, lãi tốt, đủ hàng → Ngôi sao
+    assert.equal(suggestClass({ ...base, cls: "thuong", inAds: true, units30: 90, units7: 21, profitPct: 14 }, P)?.cls, "chu_luc");
+    // Ngôi sao chững lại → Bò sữa
+    assert.equal(suggestClass({ ...base, cls: "chu_luc", inAds: true, units30: 90, units7: 10, profitPct: 14 }, P)?.cls, "thuong");
+    // Trái mùa, tồn nhiều → Chó
+    assert.equal(suggestClass({ ...base, cls: "thuong", inAds: true, units30: 20, oos: true }, P)?.cls, "xa_kho");
+    // Chó vào mùa, bán đều, lãi tốt → Bò sữa
+    assert.equal(suggestClass({ ...base, cls: "xa_kho", inAds: true, units30: 30, units7: 8, dos: 40, profitPct: 12 }, P)?.cls, "thuong");
+    // Đang là Bò sữa, vẫn ổn → giữ
+    assert.equal(suggestClass({ ...base, cls: "thuong", inAds: true, units30: 30, units7: 7, profitPct: 12 }, P), null);
+
+    const d = diagnose(
+      { inAds: true, units30: 40, dos: 5, impr14: 20000, clicks14: 200, orders14: 2, profitPct: 3, rating: 4.5, comments: 30, imageCount: 4, hasVideo: false, descLen: 120 },
+      0.02,
+      0.05
+    );
+    for (const u of ["Nhập thêm hàng", "Thay ảnh bìa", "Thêm video", "Seeding đánh giá", "Xem lại giá bán / combo", "Kiểm tra chất lượng / size", "Thêm ảnh"]) {
+      assert.ok(d.upgrades.includes(u), u);
+    }
+    const quiet = diagnose({ inAds: false, units30: 3, dos: 100, impr14: 0, clicks14: 0, orders14: 0, profitPct: null, rating: 4.9, comments: 50, imageCount: 9, hasVideo: true, descLen: 900 }, null, null);
+    assert.deepEqual(quiet.upgrades, ["Lên quảng cáo thử 14 ngày", "Flash sale shop", "KOC / tiếp thị liên kết", "Seeding"]);
+  });
+});
+
 describe("time helpers", () => {
   it("uses Vietnam time", () => {
     // 2026-11-10T17:30:00Z = 00:30 ngày 11/11 giờ VN

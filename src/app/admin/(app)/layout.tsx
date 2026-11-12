@@ -11,6 +11,7 @@ export default async function ProtectedLayout({ children }: { children: ReactNod
       <nav className="nav">
         <a href="/admin">Tổng quan</a>
         <a href="/admin/campaigns">Chiến dịch</a>
+        <a href="/admin/lifecycle">Vòng đời sản phẩm</a>
         <a href="/admin/heatmap">Bản đồ nhiệt</a>
         <a href="/admin/log">Nhật ký</a>
         <a href="/admin/settings">Cài đặt</a>

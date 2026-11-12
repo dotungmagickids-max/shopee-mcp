@@ -35,7 +35,7 @@ export interface LaunchCandidate {
   days_of_stock: number | null;
 }
 
-interface ItemInfo {
+export interface ItemInfo {
   item_id: number;
   name: string;
   image: string | null;
@@ -44,10 +44,13 @@ interface ItemInfo {
   status: string;
   created: number | null; // ms
   item_sku: string | null;
+  image_count: number;
+  has_video: boolean;
+  desc_len: number;
 }
 
 /** Mọi sản phẩm đang bán (NORMAL) của shop. */
-async function normalItemIds(shopId: number): Promise<number[]> {
+export async function normalItemIds(shopId: number): Promise<number[]> {
   const ids: number[] = [];
   let offset = 0;
   for (let page = 0; page < 30; page++) {
@@ -59,7 +62,7 @@ async function normalItemIds(shopId: number): Promise<number[]> {
   return ids;
 }
 
-async function itemInfos(shopId: number, ids: number[]): Promise<Map<number, ItemInfo>> {
+export async function itemInfos(shopId: number, ids: number[]): Promise<Map<number, ItemInfo>> {
   const out = new Map<number, ItemInfo>();
   for (const part of chunk(ids, 50)) {
     const res = await callShopee(shopId, "product.get_item_base_info", { item_id_list: part.join(",") });
@@ -74,6 +77,11 @@ async function itemInfos(shopId: number, ids: number[]): Promise<Map<number, Ite
         status: String(it.item_status ?? "NORMAL"),
         created: Number.isFinite(created) ? created : null,
         item_sku: it.item_sku || null,
+        image_count: (it.image?.image_id_list ?? []).length,
+        has_video: (it.video_info ?? []).length > 0,
+        desc_len:
+          String(it.description ?? "").length ||
+          (it.description_info?.extended_description?.field_list ?? []).reduce((t: number, f: any) => t + String(f?.text ?? "").length, 0),
       });
     }
   }
@@ -84,7 +92,7 @@ async function itemInfos(shopId: number, ids: number[]): Promise<Map<number, Ite
  * Phân loại (model) của sản phẩm: SKU từng phân loại để ghép giá vốn Pancake, giá bán và tồn Shopee.
  * Sản phẩm chưa bán trong 30 ngày không có SKU trong đơn, nên phải đọc ở đây.
  */
-async function modelInfo(
+export async function modelInfo(
   shopId: number,
   itemId: number,
   costs: Map<string, number>
