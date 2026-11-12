@@ -1,5 +1,5 @@
 import { adminFromRequest } from "@/lib/autopilot/admin-auth";
-import { shops } from "@/lib/autopilot/config";
+import { shopName, shops } from "@/lib/autopilot/config";
 import { esc, sendTelegram } from "@/lib/autopilot/telegram";
 import { DEFAULT_RULE_PARAMS, parseHours, suggestDays } from "@/lib/autopilot/settings";
 import { db } from "@/lib/supabase";
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     };
     await db().from("autopilot_settings").update(after).eq("shop_id", shopId);
     await log("settings", shopId, before, after);
-    await sendTelegram(`⚙️ Cài đặt autopilot của shop ${esc(String(shopId))} vừa được sửa trên dashboard.`);
+    await sendTelegram(`⚙️ Cài đặt autopilot của ${esc(shopName(shopId))} vừa được sửa trên dashboard.`);
   } else {
     return new Response("bad action", { status: 400 });
   }
