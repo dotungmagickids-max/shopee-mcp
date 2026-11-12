@@ -398,9 +398,10 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
   for (const cand of candidates) {
     if (made >= MAX_PROPOSALS_PER_RUN) break;
     const fast = !!cand.fast;
-    if (await recentlyTouched(shopId, cand.campaign_id, fast ? Math.min(cooldown, p.fast_cooldown_minutes) : cooldown)) continue;
+    const cid = Number(cand.campaign_id);
+    if (await recentlyTouched(shopId, cid, fast ? Math.min(cooldown, p.fast_cooldown_minutes) : cooldown)) continue;
     const maxEdits = fast ? Math.max(editsLimit(s, today), p.fast_max_edits_per_day) : editsLimit(s, today);
-    if ((await editsToday(shopId, cand.campaign_id)) >= maxEdits) continue;
+    if ((await editsToday(shopId, cid)) >= maxEdits) continue;
     const { priority: _p, fast: _f, ...input } = cand;
     await propose(input, p.proposal_ttl_minutes, s);
     made++;

@@ -55,6 +55,14 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   fast_cooldown_minutes: "Khi tiêu nhanh: nghỉ giữa 2 lần tăng (phút)",
   fast_max_edits_per_day: "Khi tiêu nhanh: số lần chỉnh/chiến dịch/ngày",
   early_spend_pct: "Đầu ngày (đã tiêu < % mức chi ngày thường): xét ROAS 3 ngày",
+  launch_max_per_week: "Lên quảng cáo mã mới: tối đa mã đề xuất/tuần",
+  launch_min_stock: "Lên quảng cáo mã mới: tồn tối thiểu (cái)",
+  launch_min_stock_days: "Lên quảng cáo mã mới: tồn đủ bán tối thiểu (ngày)",
+  launch_max_breakeven: "Lên quảng cáo mã mới: bỏ mã có ROAS hòa vốn cao hơn",
+  launch_cooldown_days: "Lên quảng cáo mã mới: mã đã đề xuất thì N ngày sau mới đề xuất lại",
+  launch_live: "Lên quảng cáo mã mới: duyệt là tạo thật trên Shopee (1 = bật, 0 = thử)",
+  new_promote_orders: "Đánh giá hàng Mới: đủ N đơn/14 ngày và lãi 10% thì đề xuất lên nhóm",
+  new_stop_min_spend: "Đánh giá hàng Mới: đã chi ≥ (đ) mà không ra đơn/lỗ thì báo nên dừng",
   auto_scale_up: "Tự chạy việc tăng ngân sách không chờ duyệt (1 = bật, 0 = tắt)",
 };
 

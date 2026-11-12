@@ -19,6 +19,7 @@ import { dayReport } from "./report";
 import { expireOld } from "./actions";
 import { evaluateIntraday, proposeCapsForUnlimited, proposeMidnightReset, proposeRoasTargets } from "./rules";
 import { proposeRefresh } from "./refresh";
+import { proposeLaunches, reviewNewProducts } from "./launch";
 import { syncPancakeVariations } from "./pancake";
 import { computeEconomics } from "./profit";
 import { syncReturns } from "./returns";
@@ -118,6 +119,20 @@ export async function refreshJob() {
   const results = [];
   for (const shop of shops()) {
     results.push(await runSteps("refresh", shop, [["refresh", () => proposeRefresh(shop.shopId)]]));
+  }
+  return results;
+}
+
+/** Thứ Hai 7h10: đề xuất lên quảng cáo mã chưa chạy + đánh giá hàng Mới đủ 14 ngày. */
+export async function launchJob() {
+  const results = [];
+  for (const shop of shops()) {
+    results.push(
+      await runSteps("launch", shop, [
+        ["launch", () => proposeLaunches(shop.shopId)],
+        ["new_review", () => reviewNewProducts(shop.shopId)],
+      ])
+    );
   }
   return results;
 }

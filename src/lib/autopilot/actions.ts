@@ -2,10 +2,12 @@ import { db } from "../supabase";
 import { isDryRun, shopName } from "./config";
 import { automationBlocked, autoRunnable, dailyCap, editsLimit, increaseLimit, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
 import { callShopee, ShopeeCallError } from "./shopee-call";
+import { CLASS_VI, type ProductClass } from "./classes";
+import { setProductClass } from "./profit";
 import { approveButtons, editTelegram, esc, sendAlertOnce, sendTelegram, sendTelegramMessage, sendTelegramPhoto, vnd } from "./telegram";
 import { apiDate, vnDate, vnDayStartUnix } from "./time";
 
-export type ActionKind = "change_budget" | "change_roas_target" | "pause" | "resume" | "refresh";
+export type ActionKind = "change_budget" | "change_roas_target" | "pause" | "resume" | "refresh" | "launch" | "set_class";
 
 /** Tạo chiến dịch GMV Max theo sản phẩm (đặt giá thầu tự động). */
 export const CREATE_ENDPOINT = "ads.create_manual_product_ads";
@@ -15,7 +17,7 @@ export const EDIT_ENDPOINT = "ads.edit_manual_product_ads";
 
 export interface ProposalInput {
   shop_id: number;
-  campaign_id: number;
+  campaign_id: number | null; // null khi lên quảng cáo sản phẩm chưa có chiến dịch
   action: ActionKind;
   before: Record<string, unknown>;
   after: Record<string, unknown>;
@@ -97,6 +99,12 @@ export function describeChange(action: string, before: any, after: any): string 
       return `<b>Làm mới</b>: dừng hẳn, tạo chiến dịch mới NS ${vnd(after?.budget)}, ROAS ${after?.roas_target ?? "-"}${
         after?.why ? ` <i>(${esc(after.why)})</i>` : ""
       }${after?.new_campaign_id ? ` → #${after.new_campaign_id}` : ""}`;
+    case "launch":
+      return `<b>Lên quảng cáo</b> GMV Max: ngân sách ${vnd(after?.budget)}/ngày, ROAS mục tiêu ${after?.roas_target ?? "-"}${
+        after?.new_campaign_id ? ` → #${after.new_campaign_id}` : ""
+      }`;
+    case "set_class":
+      return `Nhóm hàng ${CLASS_VI[before?.cls as ProductClass] ?? before?.cls ?? "-"} → <b>${CLASS_VI[after?.cls as ProductClass] ?? after?.cls}</b>`;
     default:
       return action;
   }
@@ -127,8 +135,9 @@ async function proposalText(row: ActionRow, children?: ActionRow[]): Promise<str
     if (children.length > 25) lines.push(`… và ${children.length - 25} chiến dịch khác (xem dashboard)`);
     return `📋 <b>${esc(row.after?.title ?? row.action)}</b>\n${head}\n${esc(row.reason ?? "")}\n\n${lines.join("\n")}`;
   }
-  const name = await campaignName(row.shop_id, row.campaign_id);
-  return `💡 <b>Đề xuất</b> — ${head}\n${esc(name)} #${row.campaign_id}\n${describeChange(row.action, row.before, row.after)}\nLý do: ${esc(row.reason ?? "")}`;
+  const name = row.campaign_id ? await campaignName(row.shop_id, row.campaign_id) : String(row.after?.name ?? "");
+  const ref = row.campaign_id ? ` #${row.campaign_id}` : row.after?.item_id ? ` (sản phẩm ${row.after.item_id})` : "";
+  return `💡 <b>Đề xuất</b> — ${head}\n${esc(name)}${ref}\n${describeChange(row.action, row.before, row.after)}\nLý do: ${esc(row.reason ?? "")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +194,8 @@ export async function propose(input: ProposalInput, ttlMinutes: number, settings
     await decide(row.id, true, "auto");
     return row;
   }
-  const msgId = await sendTelegramPhoto(await campaignImage(row.shop_id, row.campaign_id), await proposalText(row), {
+  const image = row.campaign_id ? await campaignImage(row.shop_id, row.campaign_id) : (row.after?.image as string | undefined) ?? null;
+  const msgId = await sendTelegramPhoto(image, await proposalText(row), {
     replyMarkup: approveButtons(row.id),
   });
   if (msgId) await db().from("autopilot_actions").update({ telegram_message_id: msgId }).eq("id", row.id);
@@ -366,7 +376,14 @@ export async function execute(row: ActionRow): Promise<{ status: string; halted?
   const s = await loadSettings(row.shop_id);
   const blocked = automationBlocked(s);
   if (blocked) return { status: await finish(row, "skipped", blocked) };
+  if (row.action === "launch") return executeLaunch(row, s);
   if (!row.campaign_id) return { status: await finish(row, "skipped", "Thiếu campaign_id") };
+  if (row.action === "set_class") {
+    const cls = row.after?.cls as ProductClass;
+    if (!CLASS_VI[cls]) return { status: await finish(row, "skipped", `Nhóm không hợp lệ: ${cls}`) };
+    const n = await setProductClass(row.shop_id, row.campaign_id, cls);
+    return { status: await finish(row, n > 0 ? "executed" : "skipped", n > 0 ? null : "Không tìm thấy sản phẩm của chiến dịch") };
+  }
 
   const maxEdits = row.after?.fast ? Math.max(editsLimit(s), s.params.fast_max_edits_per_day) : editsLimit(s);
   if ((await editsToday(row.shop_id, row.campaign_id)) >= maxEdits) {
@@ -543,6 +560,66 @@ async function executeRefresh(row: ActionRow): Promise<{ status: string; halted?
     });
   }
   return { status: await finish(row, "executed", null, after) };
+}
+
+/**
+ * Lên quảng cáo: tạo chiến dịch GMV Max (đặt giá thầu tự động) cho một sản phẩm chưa có chiến dịch.
+ * Luôn cần người duyệt. Chạy thật khi AUTOPILOT_LIVE_ACTIONS có "launch" hoặc tham số launch_live = 1.
+ */
+async function executeLaunch(row: ActionRow, s: ShopSettings): Promise<{ status: string; halted?: boolean }> {
+  if (row.decided_by === "auto") return { status: await finish(row, "skipped", "Lên quảng cáo luôn cần anh duyệt") };
+  const itemId = Number(row.after?.item_id);
+  const budget = Number(row.after?.budget);
+  if (!itemId || !(budget > 0)) return { status: await finish(row, "skipped", "Thiếu item_id hoặc ngân sách") };
+  const { data: existing } = await db()
+    .from("ads_campaigns")
+    .select("campaign_id")
+    .eq("shop_id", row.shop_id)
+    .in("campaign_status", ["ongoing", "paused", "scheduled"])
+    .contains("item_ids", [itemId]);
+  if (existing?.length) return { status: await finish(row, "skipped", `Sản phẩm đã có chiến dịch #${existing[0].campaign_id}`) };
+  if (isDryRun("launch") && !s.params.launch_live) return { status: await finish(row, "dry_run", null) };
+
+  let newId: number | null = null;
+  try {
+    const params: Record<string, unknown> = {
+      reference_id: row.reference_id,
+      budget,
+      start_date: apiDate(vnDate()),
+      bidding_method: "auto",
+      item_id: itemId,
+    };
+    if (row.after?.roas_target) params.roas_target = Math.round(Number(row.after.roas_target) * 10) / 10;
+    const res = await callShopee(row.shop_id, CREATE_ENDPOINT, params, { allowWrite: true });
+    const r = Array.isArray(res.response) ? res.response[0] : res.response;
+    newId = r?.campaign_id ? Number(r.campaign_id) : null;
+  } catch (err) {
+    const e = err instanceof ShopeeCallError ? err : new ShopeeCallError(String(err), "network");
+    await finish(row, "failed", e.message.slice(0, 500));
+    if (e.kind !== "api") {
+      await halt(row.shop_id, `Lỗi ${e.kind} khi tạo chiến dịch cho sản phẩm ${itemId}`);
+      return { status: "failed", halted: true };
+    }
+    return { status: "failed" };
+  }
+  if (newId) {
+    await db().from("ads_campaigns").upsert({
+      shop_id: row.shop_id,
+      campaign_id: newId,
+      ad_type: "manual",
+      ad_name: row.after?.name ?? null,
+      bidding_method: "auto",
+      campaign_placement: "all",
+      campaign_status: "ongoing",
+      campaign_budget: budget,
+      roas_target: row.after?.roas_target ?? null,
+      item_ids: [itemId],
+      image_url: row.after?.image ?? null,
+      start_time: Math.floor(Date.now() / 1000),
+      updated_at: new Date().toISOString(),
+    });
+  }
+  return { status: await finish(row, "executed", null, { ...row.after, new_campaign_id: newId }) };
 }
 
 /** Thay đổi anh tự làm trên dashboard: ghi nhật ký rồi thực thi ngay (vẫn qua trần cứng và dry-run). */
