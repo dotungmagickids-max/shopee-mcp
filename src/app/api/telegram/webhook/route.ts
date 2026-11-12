@@ -6,6 +6,7 @@ import { proposePauseAll, proposeResumeAll } from "@/lib/autopilot/rules";
 import { suggestDays } from "@/lib/autopilot/settings";
 import { answerCallback, esc, sendTelegram, vnd } from "@/lib/autopilot/telegram";
 import { db } from "@/lib/supabase";
+import { handleMemoryCallback, handleMemoryMessage, isMemoryCommand, MEMORY_HELP } from "@/lib/tri-nho";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,11 +21,13 @@ const HELP = [
   "/mode — xem chế độ; /mode suggest | off | auto",
   "/stop — DỪNG KHẨN CẤP mọi tự động",
   "/release — gỡ dừng khẩn cấp",
+  "",
+  MEMORY_HELP,
 ].join("\n");
 
 /**
- * Webhook bot Telegram. Chỉ nhận từ TELEGRAM_CHAT_ID và có header
- * X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+ * Webhook bot Telegram, có header X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+ * Lệnh điều khiển và nút bấm chỉ nhận từ TELEGRAM_CHAT_ID; nhóm khác chỉ được dùng lệnh Trí nhớ.
  */
 export async function POST(request: Request) {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -38,6 +41,12 @@ export async function POST(request: Request) {
   const cb = update?.callback_query;
   if (cb) {
     if (String(cb.message?.chat?.id ?? cb.from?.id) !== allowedChat) return Response.json({ ok: true });
+    try {
+      if (await handleMemoryCallback(cb)) return Response.json({ ok: true });
+    } catch (err) {
+      await answerCallback(cb.id, `Lỗi: ${err instanceof Error ? err.message : String(err)}`);
+      return Response.json({ ok: true });
+    }
     const m = /^([ar]):(\d+)$/.exec(String(cb.data ?? ""));
     if (m) {
       const res = await decide(Number(m[2]), m[1] === "a", "telegram").catch((e) => ({ ok: false, message: String(e) }));
@@ -47,11 +56,22 @@ export async function POST(request: Request) {
   }
 
   const msg = update?.message;
-  if (!msg?.text || String(msg.chat?.id ?? "") !== allowedChat) return Response.json({ ok: true });
+  if (!msg?.text) return Response.json({ ok: true });
+  const ownerChat = String(msg.chat?.id ?? "") === allowedChat;
+  // Nhóm khác: chỉ nhận lệnh Trí nhớ (nhóm phải được anh cho phép).
+  if (!ownerChat) {
+    if (isMemoryCommand(msg.text)) {
+      await handleMemoryMessage(msg, false).catch((err) =>
+        sendTelegram(`Lỗi ghi Trí nhớ: <code>${esc(err instanceof Error ? err.message : String(err))}</code>`)
+      );
+    }
+    return Response.json({ ok: true });
+  }
   const [cmd, arg] = String(msg.text).trim().split(/\s+/);
   const command = cmd.toLowerCase().replace(/@.*$/, "");
   try {
-    if (command === "/status") await status();
+    if (isMemoryCommand(msg.text)) await handleMemoryMessage(msg, true);
+    else if (command === "/status") await status();
     else if (command === "/report") await morningReportJob();
     else if (command === "/stop") await emergency(true);
     else if (command === "/release") await emergency(false);

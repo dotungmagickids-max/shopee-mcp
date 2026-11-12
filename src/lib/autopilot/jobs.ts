@@ -23,6 +23,7 @@ import { proposeLaunches, reviewNewProducts } from "./launch";
 import { computeLifecycle } from "./lifecycle";
 import { syncPancakeVariations } from "./pancake";
 import { computeEconomics } from "./profit";
+import { memoryDigestLine } from "../tri-nho";
 import { syncReturns } from "./returns";
 
 type Step = [name: string, fn: () => Promise<unknown>];
@@ -363,6 +364,8 @@ export async function morningReportJob() {
     parts.push(lines.join("\n"));
   }
   const dash = process.env.APP_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
+  const memory = await memoryDigestLine();
+  if (memory) parts.push(memory);
   if (dash) parts.push(`\n<a href="${dash}/admin">Mở dashboard</a>`);
   const text = parts.join("\n");
   const sent = await sendTelegram(text);
