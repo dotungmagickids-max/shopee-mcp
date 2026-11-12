@@ -28,8 +28,12 @@ let editBodies: any[] = [];
 let createBodies: any[] = [];
 let itemStock = 10;
 let returnList: any[] = [];
+let rpcCalls: { fn: string; args: any }[] = [];
+let rpcResults: Record<string, unknown> = {};
 
 function reset() {
+  rpcCalls = [];
+  rpcResults = {};
   tables = {
     shopee_tokens: [{ region: "GLOBAL", shop_id: 111, access_token: "at-plain", refresh_token: "rt-plain", expired_at: Date.now() + 3_600_000, refresh_lock_until: null }],
     ads_campaigns: [],
@@ -114,6 +118,11 @@ function filterRows(rows: Row[], q: URLSearchParams) {
 
 async function fakeSupabase(url: URL, init: RequestInit): Promise<Response> {
   const table = url.pathname.replace("/rest/v1/", "");
+  if (table.startsWith("rpc/")) {
+    const fn = table.slice(4);
+    rpcCalls.push({ fn, args: JSON.parse(String(init.body ?? "{}")) });
+    return json(rpcResults[fn] ?? null);
+  }
   const rows = (tables[table] ??= []);
   const method = init.method ?? "GET";
   const wantsObject = new Headers(init.headers).get("accept")?.includes("vnd.pgrst.object");
@@ -979,5 +988,66 @@ describe("profit from Pancake costs", () => {
     await profit.computeEconomics(111);
     seedHour(0, { clicks: 20, expense: 85000, broad_gmv: 450000 });
     assert.equal((await rules.evaluateIntraday(111)).proposals, 0);
+  });
+});
+
+describe("Trí nhớ qua Telegram", () => {
+  beforeEach(reset);
+  const post = (update: unknown) =>
+    webhook.POST(
+      new Request("https://app.test/api/telegram/webhook", {
+        method: "POST",
+        headers: { "X-Telegram-Bot-Api-Secret-Token": "wh-secret" },
+        body: JSON.stringify(update),
+      })
+    );
+
+  it("ignores ordinary group messages and never runs control commands from groups", async () => {
+    await post({ message: { chat: { id: -100, title: "Kho" }, from: { first_name: "Vân" }, text: "hôm nay nhập 200 áo" } });
+    await post({ message: { chat: { id: -100, title: "Kho" }, from: { first_name: "Vân" }, text: "/stop" } });
+    assert.equal(rpcCalls.length, 0);
+    assert.equal(telegramCalls.length, 0);
+    assert.equal(tables.autopilot_settings[0].emergency_stop, false);
+  });
+
+  it("asks the owner once when an unknown group tries to save", async () => {
+    rpcResults.mk_tg_capture = { status: "chua_cho_phep", moi: true };
+    await post({ message: { chat: { id: -100, title: "Xưởng" }, from: { first_name: "Hường" }, text: "/cakho@bot Khách đổi size 140 lấy 150" } });
+    assert.deepEqual(rpcCalls[0], {
+      fn: "mk_tg_capture",
+      args: { p_chat_id: -100, p_chat_title: "Xưởng", p_author: "Hường", p_kind: "ca_kho", p_content: "Khách đổi size 140 lấy 150", p_owner_chat: false },
+    });
+    const sent = telegramCalls.filter((t) => t.method === "sendMessage");
+    assert.equal(sent[0].body.chat_id, -100);
+    assert.equal(sent[1].body.chat_id, "42");
+    assert.equal(sent[1].body.reply_markup.inline_keyboard[0][0].callback_data, "g:a:-100");
+  });
+
+  it("saves the replied-to message in the owner chat", async () => {
+    rpcResults.mk_tg_capture = { status: "ok", id: 7, kind: "quyet_dinh" };
+    await post({
+      message: {
+        chat: { id: 42 }, from: { first_name: "Tùng" }, text: "/quyetdinh vì hàng xả",
+        reply_to_message: { text: "Giảm 30% mã AO24006", from: { first_name: "Hiền" } },
+      },
+    });
+    assert.equal(rpcCalls[0].args.p_content, "Giảm 30% mã AO24006\n(Ghi chú: vì hàng xả)");
+    assert.equal(rpcCalls[0].args.p_author, "Hiền");
+    assert.equal(rpcCalls[0].args.p_owner_chat, true);
+    assert.match(telegramCalls.at(-1)!.body.text, /#7/);
+  });
+
+  it("Lưu/Bỏ and group approval buttons only work from the owner chat", async () => {
+    rpcResults.mk_inbox_decide = { status: "da_luu", ref: "decisions/x" };
+    rpcResults.mk_tg_allow = { status: "ok", title: "Xưởng", allowed: true };
+    const cb = (chat: number, data: string) =>
+      post({ callback_query: { id: "c", data, from: { first_name: "Tùng" }, message: { message_id: 5, chat: { id: chat }, text: "Ca khó #7" } } });
+    await cb(-100, "m:a:7");
+    assert.equal(rpcCalls.length, 0);
+    await cb(42, "m:a:7");
+    assert.deepEqual(rpcCalls[0], { fn: "mk_inbox_decide", args: { p_id: 7, p_approve: true, p_by: "Tùng" } });
+    await cb(42, "g:a:-100");
+    assert.deepEqual(rpcCalls[1], { fn: "mk_tg_allow", args: { p_chat_id: -100, p_allow: true, p_by: "Tùng" } });
+    assert.ok(telegramCalls.some((t) => t.method === "sendMessage" && t.body.chat_id === -100));
   });
 });
