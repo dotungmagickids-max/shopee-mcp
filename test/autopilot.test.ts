@@ -455,6 +455,18 @@ describe("launch new products", () => {
     assert.equal(e.breakeven, 4.8);
   });
 
+  it("sends ROAS target changes to Shopee only when roas_live is on", async () => {
+    const actions = await import("../src/lib/autopilot/actions");
+    tables.ads_campaigns.push({ shop_id: 111, campaign_id: 7, campaign_status: "ongoing", campaign_budget: 200000, roas_target: 16.2, item_ids: [70] });
+    const input = { shop_id: 111, campaign_id: 7, action: "change_roas_target" as const, before: { roas_target: 16.2 }, after: { roas_target: 13.8 }, reason: "t", source: "admin" };
+    assert.equal((await actions.adminChange(input)).status, "dry_run");
+    assert.equal(editBodies.length, 0);
+    tables.autopilot_settings[0].rule_params = { ...tables.autopilot_settings[0].rule_params, roas_live: 1 };
+    assert.equal((await actions.adminChange(input)).status, "executed");
+    assert.deepEqual([editBodies[0].edit_action, editBodies[0].roas_target, editBodies[0].campaign_id], ["change_roas_target", 13.8, 7]);
+    assert.equal(tables.ads_campaigns.find((c) => c.campaign_id === 7)!.roas_target, 13.8);
+  });
+
   it("creates a GMV Max campaign only after a human approves and launch_live is on", async () => {
     const actions = await import("../src/lib/autopilot/actions");
     const input = {
