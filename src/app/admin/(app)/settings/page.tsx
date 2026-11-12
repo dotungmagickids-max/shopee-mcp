@@ -41,6 +41,8 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   peak_cooldown_minutes: "Ngày cao điểm: nghỉ giữa 2 lần chỉnh (phút)",
   peak_max_edits_per_day: "Ngày cao điểm: số lần chỉnh/chiến dịch/ngày",
   scale_core_profit_pct: "Chủ lực (ngôi sao): tăng ngân sách khi còn lãi ≥ (%)",
+  scale_decay_pct: "Phanh tăng: ROAS hôm nay < % ROAS 7 ngày thì thôi tăng (0 = tắt)",
+  scale_decay_min_spend: "Phanh tăng: chỉ xét khi hôm nay đã tiêu ≥ (đ)",
   scale_core_spend_ratio: "Chủ lực (ngôi sao): tăng khi đã tiêu ≥ (tỉ lệ ngân sách)",
   scale_core_step_pct: "Chủ lực (ngôi sao): mỗi lần tăng (%)",
   start_share_pct: "Ngân sách 0h = % chi trung bình 7 ngày thường của chiến dịch",

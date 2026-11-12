@@ -122,14 +122,14 @@ function profitTarget(e: EconBase, pct: number, label: string): { target: number
 
 /**
  * Ngưỡng ROAS để TĂNG ngân sách theo nhóm:
- *   Ngôi sao (Chủ lực): lãi ≥ scale_core_profit_pct (thấp hơn mục tiêu 8% để đẩy số bán).
+ *   Ngôi sao (Chủ lực): lãi ≥ scale_core_profit_pct (mặc định 10%: vừa bán nhiều vừa lãi tốt), tăng nhanh hơn.
  *   Bò sữa (Thường), Dấu hỏi (Mới), Chó (Xả kho): đúng mục tiêu của nhóm (10% / hòa vốn / QC ≤ 60% tiền thu).
  * Không có số kinh tế thì null (luật dùng ngưỡng thường).
  */
 export function scaleTargetFor(e: (EconBase & { class?: ProductClass; target?: number | null }) | null, p: RuleParams): { target: number | null; label: string } | null {
   if (!e?.margin) return null;
   const cls = (e.class ?? "thuong") as ProductClass;
-  if (cls === "chu_luc" && p.scale_core_profit_pct < p.profit_core_pct) {
+  if (cls === "chu_luc" && p.scale_core_profit_pct !== p.profit_core_pct) {
     return profitTarget(e, p.scale_core_profit_pct, `chủ lực (ngôi sao): tăng khi lãi ≥ ${p.scale_core_profit_pct}%`);
   }
   const own = targetForClass(e, cls, p);
