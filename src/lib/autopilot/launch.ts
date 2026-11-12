@@ -1,7 +1,7 @@
 import { db } from "../supabase";
 import { propose } from "./actions";
 import { CLASS_BCG, CLASS_VI, classify, daysOfStock, targetForClass, type ClassInput, type ProductClass } from "./classes";
-import { costOf, loadCostMap, loadProductStats, productCode, type ProductStats } from "./pancake";
+import { costOf, loadCostMap, loadProductStats, normSku, productCode, type ProductStats } from "./pancake";
 import type { Econ } from "./profit";
 import { INVALID_STATUSES, ordersBetween } from "./report";
 import { automationBlocked, loadSettings, type RuleParams } from "./settings";
@@ -35,7 +35,7 @@ export interface LaunchCandidate {
   days_of_stock: number | null;
 }
 
-interface ItemInfo {
+export interface ItemInfo {
   item_id: number;
   name: string;
   image: string | null;
@@ -44,10 +44,13 @@ interface ItemInfo {
   status: string;
   created: number | null; // ms
   item_sku: string | null;
+  image_count: number;
+  has_video: boolean;
+  desc_len: number;
 }
 
 /** Mọi sản phẩm đang bán (NORMAL) của shop. */
-async function normalItemIds(shopId: number): Promise<number[]> {
+export async function normalItemIds(shopId: number): Promise<number[]> {
   const ids: number[] = [];
   let offset = 0;
   for (let page = 0; page < 30; page++) {
@@ -59,7 +62,7 @@ async function normalItemIds(shopId: number): Promise<number[]> {
   return ids;
 }
 
-async function itemInfos(shopId: number, ids: number[]): Promise<Map<number, ItemInfo>> {
+export async function itemInfos(shopId: number, ids: number[]): Promise<Map<number, ItemInfo>> {
   const out = new Map<number, ItemInfo>();
   for (const part of chunk(ids, 50)) {
     const res = await callShopee(shopId, "product.get_item_base_info", { item_id_list: part.join(",") });
@@ -74,10 +77,45 @@ async function itemInfos(shopId: number, ids: number[]): Promise<Map<number, Ite
         status: String(it.item_status ?? "NORMAL"),
         created: Number.isFinite(created) ? created : null,
         item_sku: it.item_sku || null,
+        image_count: (it.image?.image_id_list ?? []).length,
+        has_video: (it.video_info ?? []).length > 0,
+        desc_len:
+          String(it.description ?? "").length ||
+          (it.description_info?.extended_description?.field_list ?? []).reduce((t: number, f: any) => t + String(f?.text ?? "").length, 0),
       });
     }
   }
   return out;
+}
+
+/**
+ * Phân loại (model) của sản phẩm: SKU từng phân loại để ghép giá vốn Pancake, giá bán và tồn Shopee.
+ * Sản phẩm chưa bán trong 30 ngày không có SKU trong đơn, nên phải đọc ở đây.
+ */
+export async function modelInfo(
+  shopId: number,
+  itemId: number,
+  costs: Map<string, number>
+): Promise<{ costRatio: number | null; price: number | null; stock: number; codes: Set<string> }> {
+  const res = await callShopee(shopId, "product.get_model_list", { item_id: itemId });
+  let costSum = 0;
+  let priceSum = 0;
+  let k = 0;
+  let stock = 0;
+  const codes = new Set<string>();
+  for (const m of res.response?.model ?? []) {
+    stock += Number(m.stock_info_v2?.summary_info?.total_available_stock ?? 0);
+    const price = Number(m.price_info?.[0]?.current_price ?? 0);
+    const cost = costs.get(normSku(m.model_sku));
+    const code = productCode(m.model_sku);
+    if (code) codes.add(code);
+    if (cost && price > 0) {
+      costSum += cost;
+      priceSum += price;
+      k++;
+    }
+  }
+  return { costRatio: k ? costSum / priceSum : null, price: k ? priceSum / k : null, stock, codes };
 }
 
 /** Biên lãi trước QC trên 1đ GMV của một sản phẩm, dùng tỉ lệ phí/hủy/hoàn của shop và giá vốn riêng. */
@@ -148,6 +186,23 @@ export async function findLaunchCandidates(shopId: number) {
 
   const infos = await itemInfos(shopId, pool);
   const stats = await loadProductStats();
+  // Đọc phân loại song song (8 mã/lượt) cho mã chưa có giá vốn từ đơn.
+  const needModels = pool.filter((id) => {
+    const a = agg.get(id);
+    return infos.get(id)?.status === "NORMAL" && !(a && a.costedRevenue > 0 && a.costedRevenue >= a.revenue * 0.5);
+  });
+  const models = new Map<number, Awaited<ReturnType<typeof modelInfo>>>();
+  for (const part of chunk(needModels, 8)) {
+    await Promise.all(
+      part.map(async (id) => {
+        try {
+          models.set(id, await modelInfo(shopId, id, costs));
+        } catch {
+          /* bỏ qua mã đọc lỗi */
+        }
+      })
+    );
+  }
   const month = Number(vnDate().slice(5, 7));
   const out: LaunchCandidate[] = [];
   const counts = { pool: pool.length, no_cost: 0, low_stock: 0, no_margin: 0 };
@@ -162,18 +217,35 @@ export async function findLaunchCandidates(shopId: number) {
     if (m) codes.add(m[1]);
     const ps = [...codes].map((c) => stats.get(c)).filter(Boolean) as ProductStats[];
 
-    const price = a && a.units > 0 ? a.revenue / a.units : info.price;
+    let price = a && a.units > 0 ? a.revenue / a.units : info.price;
     let costRatio: number | null = null;
+    let modelStock: number | null = null;
     if (a && a.costedRevenue > 0 && a.costedRevenue >= a.revenue * 0.5) costRatio = a.cogs / a.costedRevenue;
     else {
-      const cost = ps.map((x) => x.cost).find((c): c is number => c != null && c > 0);
-      if (cost && price && price > 0) costRatio = cost / price;
+      // Chưa bán (hoặc bán chưa có giá vốn): ghép từng phân loại với Pancake.
+      const mi = models.get(id);
+      if (mi) {
+        modelStock = mi.stock;
+        for (const c of mi.codes) {
+          codes.add(c);
+          const st = stats.get(c);
+          if (st && !ps.includes(st)) ps.push(st);
+        }
+        if (mi.costRatio != null) {
+          costRatio = mi.costRatio;
+          price = price ?? mi.price;
+        }
+      }
+      if (costRatio == null) {
+        const cost = ps.map((x) => x.cost).find((c): c is number => c != null && c > 0);
+        if (cost && price && price > 0) costRatio = cost / price;
+      }
     }
     if (costRatio == null || !(costRatio > 0) || costRatio >= 1) {
       counts.no_cost++;
       continue;
     }
-    const stock = ps.length ? ps.reduce((t, x) => t + x.stock, 0) : info.stock;
+    const stock = ps.length ? ps.reduce((t, x) => t + x.stock, 0) : info.stock ?? modelStock;
     const pancakeDaily = ps.reduce((t, x) => t + x.sellingAvg, 0);
     const units30 = a?.units ?? 0;
     const created = ps.map((x) => x.created).filter((t): t is number => t != null);

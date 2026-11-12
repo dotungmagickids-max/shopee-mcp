@@ -20,6 +20,7 @@ import { expireOld } from "./actions";
 import { evaluateIntraday, proposeCapsForUnlimited, proposeMidnightReset, proposeRoasTargets } from "./rules";
 import { proposeRefresh } from "./refresh";
 import { proposeLaunches, reviewNewProducts } from "./launch";
+import { computeLifecycle } from "./lifecycle";
 import { syncPancakeVariations } from "./pancake";
 import { computeEconomics } from "./profit";
 import { syncReturns } from "./returns";
@@ -119,6 +120,15 @@ export async function refreshJob() {
   const results = [];
   for (const shop of shops()) {
     results.push(await runSteps("refresh", shop, [["refresh", () => proposeRefresh(shop.shopId)]]));
+  }
+  return results;
+}
+
+/** Thứ Hai 6h40: chấm vòng đời mọi sản phẩm (trang /admin/lifecycle). */
+export async function lifecycleJob() {
+  const results = [];
+  for (const shop of shops()) {
+    results.push(await runSteps("lifecycle", shop, [["lifecycle", () => computeLifecycle(shop.shopId)]]));
   }
   return results;
 }

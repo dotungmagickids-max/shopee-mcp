@@ -5,6 +5,7 @@ import { proposeCapsForUnlimited } from "@/lib/autopilot/rules";
 import { proposeRefresh } from "@/lib/autopilot/refresh";
 import { CLASSES, CLASS_VI, type ProductClass } from "@/lib/autopilot/classes";
 import { setProductClass } from "@/lib/autopilot/profit";
+import { computeLifecycle } from "@/lib/autopilot/lifecycle";
 import { db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -39,6 +40,29 @@ export async function POST(request: Request) {
     msg = "items" in res
       ? `Rà xong: ${res.candidates} chiến dịch nên làm mới, đề xuất ${res.items}; ${res.productIssues} sản phẩm cần xem (Telegram)`
       : String(res.skipped);
+  } else if (op === "item_class") {
+    // Trang Vòng đời: chọn nhóm cho một sản phẩm (kể cả sản phẩm chưa có chiến dịch).
+    const shopId = Number(form.get("shop_id"));
+    const itemId = Number(form.get("item_id"));
+    if (!shops().some((s) => s.shopId === shopId) || !itemId) return new Response("bad input", { status: 400 });
+    const v = String(form.get("class") ?? "");
+    const cls = (CLASSES as string[]).includes(v) ? (v as ProductClass) : null;
+    if (!cls) return new Response("bad class", { status: 400 });
+    await db().from("product_classes").upsert({ shop_id: shopId, item_id: itemId, manual_class: cls, updated_at: new Date().toISOString() });
+    const { data: row } = await db().from("product_lifecycle").select("campaign_ids, suggested_cls").eq("shop_id", shopId).eq("item_id", itemId).maybeSingle();
+    await db()
+      .from("product_lifecycle")
+      .update({ cls, cls_source: "manual", ...(row?.suggested_cls === cls ? { suggested_cls: null, suggest_reason: null } : {}) })
+      .eq("shop_id", shopId)
+      .eq("item_id", itemId);
+    const campaignId = Number(row?.campaign_ids?.[0] ?? 0);
+    const nCamp = campaignId ? await setProductClass(shopId, campaignId, cls) : 0;
+    msg = `Đã đặt nhóm ${CLASS_VI[cls]} cho sản phẩm ${itemId}${nCamp ? ` (${nCamp} chiến dịch đổi ngưỡng ngay)` : ""}`;
+  } else if (op === "lifecycle") {
+    const shopId = Number(form.get("shop_id"));
+    if (!shops().some((s) => s.shopId === shopId)) return new Response("bad shop", { status: 400 });
+    const res = await computeLifecycle(shopId);
+    msg = `Đã chấm ${res.items} sản phẩm; ${res.suggest ?? 0} mã có đề xuất chuyển nhóm`;
   } else if (op === "caps") {
     const shopId = Number(form.get("shop_id"));
     if (!shops().some((s) => s.shopId === shopId)) return new Response("bad shop", { status: 400 });
