@@ -76,6 +76,8 @@ export const DEFAULT_RULE_PARAMS = {
   launch_min_stock_days: 21, // tồn đủ bán tối thiểu (ngày)
   launch_max_breakeven: 8, // bỏ mã có ROAS hòa vốn cao hơn (lãi quá mỏng để chạy quảng cáo)
   launch_cooldown_days: 21, // mã đã đề xuất (kể cả anh bỏ qua) thì N ngày sau mới đề xuất lại
+  auto_reset: 1, // 1 = reset 0h tự chạy không chờ duyệt
+  auto_roas: 1, // 1 = đổi ROAS mục tiêu hằng đêm (≤ ±15%) tự chạy không chờ duyệt
   roas_live: 0, // 1 = đổi ROAS mục tiêu gửi thật lên Shopee (sau khi duyệt); 0 = chỉ ghi nhận (dry-run)
   launch_live: 0,// 1 = duyệt là tạo chiến dịch thật trên Shopee; 0 = chỉ ghi nhận (dry-run)
   // Đánh giá hàng Mới sau 14 ngày chạy

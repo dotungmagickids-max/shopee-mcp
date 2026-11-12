@@ -471,7 +471,8 @@ export async function proposeMidnightReset(shopId: number) {
       ? "Ngày cao điểm không hạ ngân sách lúc 0h; trong ngày tăng nhanh hơn (tối đa +100%/lần) khi còn lãi, chỉ siết khi dưới hòa vốn."
       : `${s.params.start_share_pct ? `Khởi điểm = ${s.params.start_share_pct}% chi trung bình 7 ngày thường của từng chiến dịch (thấp nhất ${vnd(s.start_budget)})` : `Ngân sách khởi điểm ${vnd(s.start_budget)}`}; trong ngày tool tự tăng khi tiêu nhanh mà còn lãi.${s.reset_unlimited ? "" : " (Chiến dịch không giới hạn ngân sách giữ nguyên; bật 'Áp dụng cho chiến dịch không giới hạn' trong Cài đặt để đưa vào.)"}`,
     10 * 60,
-    { autoExecute: s.mode === "auto" }
+    // Reset 0h tự chạy (anh không thức duyệt lúc 0h), tóm tắt trong báo cáo 8h.
+    { autoExecute: s.mode === "auto" || !!s.params.auto_reset }
   );
   return { items: items.length, group: group?.id ?? null };
 }
@@ -620,7 +621,9 @@ export async function proposeRoasTargets(shopId: number) {
     items,
     "rule:roas_target",
     `Mỗi lần đổi tối đa ±${p.roas_max_change_pct}%, đi dần qua nhiều ngày để Shopee kịp học. Giá vốn lấy từ Pancake; sửa lãi mong muốn trong Cài đặt.`,
-    12 * 60
+    12 * 60,
+    // Anh không thức canh (12/11/2026): đổi ROAS trong giới hạn ±15% tự chạy, tóm tắt trong báo cáo 8h.
+    { autoExecute: s.mode === "auto" || !!p.auto_roas }
   );
   return { items: items.length, group: group?.id ?? null };
 }
