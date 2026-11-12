@@ -508,6 +508,17 @@ describe("launch new products", () => {
   });
 });
 
+describe("spend mix priority", () => {
+  it("boosts Chủ lực / Thường only when below their mix target", async () => {
+    const { mixBoost } = await import("../src/lib/autopilot/classes");
+    const { DEFAULT_RULE_PARAMS: P } = await import("../src/lib/autopilot/settings");
+    assert.ok(mixBoost("thuong", { thuong: 0.11 }, P), "Thường 11% < 30% → ưu tiên");
+    assert.equal(mixBoost("thuong", { thuong: 0.28 }, P), null, "trong khoảng 5 điểm → bình thường");
+    assert.equal(mixBoost("chu_luc", { chu_luc: 0.5 }, P), null, "vượt mục tiêu vẫn không bị chặn, chỉ không ưu tiên");
+    assert.equal(mixBoost("xa_kho", { xa_kho: 0.01 }, P), null, "Xả kho không được ưu tiên");
+  });
+});
+
 describe("morning report", () => {
   it("covers orders, marketing and money with a to-do list", async () => {
     reset();

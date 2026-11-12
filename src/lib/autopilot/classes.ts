@@ -25,6 +25,24 @@ export const CLASS_BCG: Record<ProductClass, string> = {
   xa_kho: "Chó",
 };
 
+/**
+ * Cơ cấu chi quảng cáo mục tiêu (anh chốt 12/11/2026): Chủ lực 40%, Thường 30% là mục tiêu ưu tiên (không phải trần);
+ * Mới, Xả kho dùng trần cứng (new/clear_max_spend_share_pct).
+ */
+export function mixTargets(p: RuleParams): Record<ProductClass, number> {
+  return { chu_luc: p.mix_core_pct, thuong: p.mix_regular_pct, moi: p.new_max_spend_share_pct, xa_kho: p.clear_max_spend_share_pct };
+}
+
+/** Nhóm Chủ lực / Thường đang thấp hơn mục tiêu cơ cấu ≥ 5 điểm: được tăng nhanh như Chủ lực. Trả ghi chú hoặc null. */
+export function mixBoost(cls: ProductClass | undefined, share: Partial<Record<ProductClass, number>>, p: RuleParams): string | null {
+  const c = (cls ?? "thuong") as ProductClass;
+  if (c !== "chu_luc" && c !== "thuong") return null;
+  const target = mixTargets(p)[c];
+  const now = (share[c] ?? 0) * 100;
+  if (!(target > 0) || now >= target - 5) return null;
+  return `ưu tiên cơ cấu: ${CLASS_VI[c]} đang ${Math.round(now)}%/${target}% chi`;
+}
+
 /** Cách tăng ngân sách theo nhóm: tăng khi đã tiêu ≥ ratio ngân sách, mỗi lần +step%. */
 export function scaleStyle(cls: ProductClass | undefined, p: RuleParams): { ratio: number; stepPct: number } {
   if (cls === "chu_luc") return { ratio: p.scale_core_spend_ratio, stepPct: p.scale_core_step_pct };

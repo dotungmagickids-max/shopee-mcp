@@ -1,5 +1,6 @@
 import { allRows, db } from "../supabase";
 import type { ShopConf } from "./config";
+import { CLASS_VI, mixTargets, type ProductClass } from "./classes";
 import { INVALID_STATUSES, dayReport, ordersBetween } from "./report";
 import { isPeakDay, loadSettings, SALE_TIER_VI, saleTier } from "./settings";
 import { callShopee, chunk } from "./shopee-call";
@@ -227,6 +228,32 @@ export async function shopMorning(shop: ShopConf): Promise<string[]> {
   } else {
     lines.push(`• Không chạy quảng cáo`);
   }
+  // Cơ cấu chi hôm qua theo nhóm so với mục tiêu (Chủ lực 40, Thường 30 ưu tiên; Mới, Xả kho trần).
+  const mix = await safe(async () => {
+    const daily = await allRows(() =>
+      db().from("ads_campaign_daily").select("campaign_id, expense").eq("shop_id", shopId).eq("date", yesterday).order("campaign_id")
+    );
+    const { data: camps } = await db().from("ads_campaigns").select("campaign_id, econ").eq("shop_id", shopId);
+    const clsOf = new Map((camps ?? []).map((c: any) => [Number(c.campaign_id), (c.econ?.class ?? "thuong") as ProductClass]));
+    const by: Record<string, number> = {};
+    let total = 0;
+    for (const r of daily) {
+      const e = n(r.expense);
+      if (!e) continue;
+      const k = clsOf.get(Number(r.campaign_id)) ?? "thuong";
+      by[k] = (by[k] ?? 0) + e;
+      total += e;
+    }
+    if (!total) return null;
+    const t = mixTargets(s.params);
+    const part = (k: ProductClass, cap: boolean) => {
+      const v = Math.round((100 * (by[k] ?? 0)) / total);
+      const off = cap ? v > t[k] : v < t[k] - 5;
+      return `${CLASS_VI[k]} ${off ? `<b>${v}%</b>` : `${v}%`} (${cap ? "≤" : ""}${t[k]})`;
+    };
+    return `• Cơ cấu chi: ${part("chu_luc", false)} · ${part("thuong", false)} · ${part("moi", true)} · ${part("xa_kho", true)}`;
+  });
+  if (mix) lines.push(mix);
   lines.push(...(await safe(() => autoSummary(shopId))) ?? []);
   const pending = await safe(async () => {
     const { count } = await db()

@@ -1,7 +1,7 @@
 import { allRows, db } from "../supabase";
 import { editsToday, propose, proposeGroup, recentlyTouched, type ProposalInput } from "./actions";
 import { ruleTarget, type Econ } from "./profit";
-import { floorBlock, scaleStyle, scaleTargetFor, type ProductClass } from "./classes";
+import { floorBlock, mixBoost, scaleStyle, scaleTargetFor, type ProductClass } from "./classes";
 import { esc, sendAlertOnce } from "./telegram";
 import { shopName } from "./config";
 import { automationBlocked, editsLimit, isPeakDay, loadSettings, SALE_TIER_VI, saleTier, type ShopSettings } from "./settings";
@@ -317,8 +317,10 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
       const exhausted = exp >= 0.95 * c.campaign_budget;
       // Ngôi sao (Chủ lực) tăng sớm hơn và mạnh hơn; nhóm khác theo nhịp thường (hoặc nhịp ngày cao điểm).
       const style = scaleStyle(c.econ?.class, p);
-      const ratio = Math.min(scaleRatio, style.ratio);
-      const stepPct = Math.max(scaleStepPct, style.stepPct);
+      // Nhóm Chủ lực / Thường dưới mục tiêu cơ cấu: tăng sớm và mạnh như Chủ lực.
+      const boost = mixBoost(c.econ?.class, portfolio.share, p);
+      const ratio = Math.min(scaleRatio, style.ratio, boost ? p.scale_core_spend_ratio : 1);
+      const stepPct = Math.max(scaleStepPct, style.stepPct, boost ? p.scale_core_step_pct : 0);
       const nearFull = exp >= ratio * c.campaign_budget;
       // Đầu ngày Shopee ghi nhận đơn chậm: còn tiêu ít thì xét ROAS 3 ngày + ROAS gộp (3 ngày + hôm nay) ≥ hòa vốn.
       const last3 = days.filter((d) => d.date >= addDays(today, -3));
@@ -362,7 +364,7 @@ export async function evaluateIntraday(shopId: number): Promise<{ proposals: num
           action: "change_budget",
           before: { budget: c.campaign_budget },
           after: { budget: wanted, ...(fast ? { fast: true } : {}) },
-          reason: `${why[0].toUpperCase()}${why.slice(1)}; ${roasWhy}${tierNote}`,
+          reason: `${why[0].toUpperCase()}${why.slice(1)}; ${roasWhy}${tierNote}${boost ? `; ${boost}` : ""}`,
           source: "rule:scale_up",
         });
         continue;

@@ -30,6 +30,8 @@ const PARAM_LABELS: Record<keyof typeof DEFAULT_RULE_PARAMS, string> = {
   profit_new_pct: "Nhóm Mới: lãi mong muốn (%, 0 = hòa vốn để học)",
   clear_profit_pct: "Nhóm Xả kho: lãi mong muốn (%; âm = chấp nhận lỗ để đẩy hàng)",
   system_profit_floor_pct: "Sàn lãi toàn hệ thống (%): gần sàn thì dừng tăng nhóm lãi mỏng",
+  mix_core_pct: "Cơ cấu mục tiêu: Chủ lực % tổng chi (ưu tiên tăng khi thấp hơn)",
+  mix_regular_pct: "Cơ cấu mục tiêu: Thường % tổng chi (ưu tiên tăng khi thấp hơn)",
   clear_max_spend_share_pct: "Xả kho: tối đa % tổng chi quảng cáo trong ngày",
   new_max_spend_share_pct: "Mới: tối đa % tổng chi quảng cáo trong ngày",
   new_days: "Tự phân nhóm Mới: sản phẩm tạo chưa tới (ngày)",
