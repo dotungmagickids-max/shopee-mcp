@@ -32,9 +32,14 @@ create table if not exists public.fb_proposals (
   account_name text,
   campaign_name text,
   reason text,
-  status text not null default 'proposed' check (status in ('proposed', 'approved', 'rejected', 'expired')),
+  status text not null default 'proposed' check (status in ('proposed', 'executed', 'failed', 'rejected', 'expired')),
   decided_at timestamptz,
   message_id bigint,
+  target_level text,                          -- ad | adset | campaign: nơi đã sửa trên Meta
+  target_id text,
+  before jsonb,
+  after jsonb,
+  error text,
   unique (ad_id, kind, ngay)
 );
 

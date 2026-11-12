@@ -85,6 +85,68 @@ export async function listAccounts(): Promise<MetaAccount[]> {
     .filter((a) => !EXCLUDED_ACCOUNTS.has(a.id) && (only.length === 0 || only.includes(a.id)));
 }
 
+async function post(id: string, params: Record<string, string>): Promise<any> {
+  const body = new URLSearchParams({ ...params, access_token: token() });
+  const res = await fetch(`${GRAPH}/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  }).catch(() => null);
+  if (!res) throw new MetaError("Meta API: không kết nối được");
+  const j: any = await res.json().catch(() => null);
+  if (!res.ok || j?.error || j?.success === false) {
+    const e = j?.error;
+    throw new MetaError(`Meta API ${res.status}: ${String(e?.message ?? "lỗi").slice(0, 200)}${e?.code ? ` (mã ${e.code})` : ""}`);
+  }
+  return j;
+}
+
+export type AdState = {
+  ad_id: string;
+  effective_status: string;
+  adset: { id: string; daily_budget: number | null; lifetime_budget: number | null };
+  campaign: { id: string; daily_budget: number | null; lifetime_budget: number | null };
+};
+
+const numOrNull = (v: unknown) => (v == null || v === "" || Number(v) === 0 ? null : Number(v));
+
+export async function adState(adId: string): Promise<AdState> {
+  const r = await get(adId, {
+    fields: "effective_status,adset{id,daily_budget,lifetime_budget},campaign{id,daily_budget,lifetime_budget}",
+  });
+  return {
+    ad_id: adId,
+    effective_status: String(r.effective_status ?? ""),
+    adset: { id: String(r.adset?.id ?? ""), daily_budget: numOrNull(r.adset?.daily_budget), lifetime_budget: numOrNull(r.adset?.lifetime_budget) },
+    campaign: {
+      id: String(r.campaign?.id ?? ""),
+      daily_budget: numOrNull(r.campaign?.daily_budget),
+      lifetime_budget: numOrNull(r.campaign?.lifetime_budget),
+    },
+  };
+}
+
+/** Ngân sách ngày nằm ở nhóm quảng cáo (ABO) hay chiến dịch (CBO). Ngân sách trọn đời thì không tự tăng. */
+export function budgetTarget(s: AdState): { level: "adset" | "campaign"; id: string; daily: number } | null {
+  if (s.adset.daily_budget) return { level: "adset", id: s.adset.id, daily: s.adset.daily_budget };
+  if (s.campaign.daily_budget) return { level: "campaign", id: s.campaign.id, daily: s.campaign.daily_budget };
+  return null;
+}
+
+/** Ngân sách mới: tăng `step`, làm tròn nghìn đồng, không quá `maxIncrease` mỗi lần. */
+export function scaledBudget(daily: number, step: number, maxIncrease: number): number {
+  const inc = Math.min(daily * step, maxIncrease);
+  return Math.round((daily + inc) / 1000) * 1000;
+}
+
+export async function pauseAd(adId: string): Promise<void> {
+  await post(adId, { status: "PAUSED" });
+}
+
+export async function setDailyBudget(id: string, daily: number): Promise<void> {
+  await post(id, { daily_budget: String(Math.round(daily)) });
+}
+
 export type MetaAdRow = {
   ad_id: string;
   ad_name: string | null;

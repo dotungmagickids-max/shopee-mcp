@@ -21,6 +21,8 @@ export type FbRules = {
   targetRatio: number;
   /** Chi tối thiểu để xếp hạng tốt/kém (bỏ quảng cáo chi quá ít). */
   rankMinSpend: number;
+  /** Mỗi lần tăng ngân sách ngày không quá số tiền này. */
+  maxScaleIncrease: number;
 };
 
 export const DEFAULT_RULES: FbRules = {
@@ -31,6 +33,7 @@ export const DEFAULT_RULES: FbRules = {
   scaleStep: 0.2,
   targetRatio: 0.2,
   rankMinSpend: 200_000,
+  maxScaleIncrease: 500_000,
 };
 
 export function loadRules(env: string | undefined = process.env.FB_RULES): FbRules {

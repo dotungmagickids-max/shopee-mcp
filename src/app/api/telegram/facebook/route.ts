@@ -11,9 +11,9 @@ const HELP = [
   "Nhân viên Facebook — lệnh:",
   "/status — số quảng cáo hôm nay đến giờ",
   "/report — báo cáo hôm qua",
-  "/stop — dừng báo cáo, cảnh báo tự động",
+  "/stop — DỪNG KHẨN CẤP: không báo, không đề xuất, nút Đồng ý không làm gì",
   "/release — chạy lại",
-  "Giai đoạn 1: em chỉ báo cáo và đề xuất, chưa tự tắt/tăng quảng cáo.",
+  "Em đề xuất tắt / tăng ngân sách kèm nút; anh bấm Đồng ý thì em làm ngay trên Meta.",
 ].join("\n");
 
 /**

@@ -150,3 +150,25 @@ describe("gửi tin", () => {
     assert.equal(await fbSend("x"), null);
   });
 });
+
+describe("thao tác Meta", () => {
+  it("ngân sách: nhóm (ABO) trước, rồi chiến dịch (CBO), trọn đời thì không", async () => {
+    const { budgetTarget } = await import("../src/lib/facebook/meta");
+    const base = { ad_id: "1", effective_status: "ACTIVE" };
+    assert.deepEqual(
+      budgetTarget({ ...base, adset: { id: "s", daily_budget: 300000, lifetime_budget: null }, campaign: { id: "c", daily_budget: null, lifetime_budget: null } }),
+      { level: "adset", id: "s", daily: 300000 }
+    );
+    assert.equal(
+      budgetTarget({ ...base, adset: { id: "s", daily_budget: null, lifetime_budget: null }, campaign: { id: "c", daily_budget: 1000000, lifetime_budget: null } })?.level,
+      "campaign"
+    );
+    assert.equal(budgetTarget({ ...base, adset: { id: "s", daily_budget: null, lifetime_budget: 5e6 }, campaign: { id: "c", daily_budget: null, lifetime_budget: null } }), null);
+  });
+  it("tăng 20%, làm tròn nghìn, không quá trần mỗi lần", async () => {
+    const { scaledBudget } = await import("../src/lib/facebook/meta");
+    assert.equal(scaledBudget(300_000, 0.2, 500_000), 360_000);
+    assert.equal(scaledBudget(333_333, 0.2, 500_000), 400_000);
+    assert.equal(scaledBudget(5_000_000, 0.2, 500_000), 5_500_000);
+  });
+});

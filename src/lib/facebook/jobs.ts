@@ -2,12 +2,12 @@
  * Nhân viên Facebook — job chạy theo lịch (pg_cron → /api/jobs/fb-*):
  *   fb-report  08:00  thu số hôm qua, báo sáng, đề xuất tăng ngân sách
  *   fb-watch   mỗi giờ 9h–23h  thu số hôm nay, cảnh báo quảng cáo chi nhiều mà 0 đơn, tài khoản lỗi
- * Giai đoạn 1: chỉ báo cáo và đề xuất. Bấm Đồng ý chỉ ghi nhận, không thao tác trên Meta.
+ * Đề xuất có nút: anh bấm Đồng ý thì làm ngay trên Meta (tắt quảng cáo / tăng ngân sách ngày). Chưa tự làm khi chưa duyệt.
  */
 import { db } from "../supabase";
 import { esc, vnd } from "../autopilot/telegram";
 import { vnDate, vnHour } from "../autopilot/time";
-import { ACCOUNT_STATUS, adInsights, listAccounts, type MetaAccount } from "./meta";
+import { ACCOUNT_STATUS, adInsights, adState, budgetTarget, listAccounts, pauseAd, scaledBudget, setDailyBudget, type MetaAccount } from "./meta";
 import { ordersByAd } from "./orders";
 import {
   loadRules,
@@ -187,21 +187,84 @@ export async function fbWatchJob() {
   return { day, ads: rows.length, errors, alerts, proposed };
 }
 
-/** Bấm nút. Giai đoạn 1: chỉ ghi quyết định. */
+/** Đề xuất quá hạn này thì không làm nữa (số đã cũ). */
+const PROPOSAL_TTL_HOURS = 20;
+
+const STATUS_TEXT: Record<string, string> = {
+  executed: "đã làm",
+  failed: "lỗi",
+  rejected: "bỏ qua",
+  expired: "hết hạn",
+};
+
+/**
+ * Bấm nút. Đồng ý = làm ngay trên Meta (tắt quảng cáo / tăng ngân sách ngày), có kiểm tra lại trạng thái
+ * thật trước khi làm. /stop chặn mọi thao tác.
+ */
 export async function fbDecide(id: number, approve: boolean): Promise<string> {
   const { data: p } = await db().from("fb_proposals").select("*").eq("id", id).maybeSingle();
   if (!p) return "Không tìm thấy đề xuất";
-  if (p.status !== "proposed") return `Đề xuất đã ${p.status === "approved" ? "được duyệt" : "bỏ qua"} trước đó`;
-  const status = approve ? "approved" : "rejected";
-  await db().from("fb_proposals").update({ status, decided_at: new Date().toISOString() }).eq("id", id);
-  if (p.message_id) {
-    const note = approve
-      ? "✅ Anh đã đồng ý. Giai đoạn này em chưa tự thao tác trên Meta: người chạy quảng cáo làm tay giúp."
-      : "✖️ Anh bỏ qua.";
-    const title = p.kind === "pause" ? "⏸ Đề xuất TẮT quảng cáo" : "📈 Đề xuất TĂNG ngân sách";
-    await fbEdit(p.message_id, `${title}\n<b>${esc(p.ad_name ?? p.ad_id)}</b>\nTài khoản ${esc(p.account_name)} — ${esc(p.reason)}\n\n${note}`);
+  if (p.status !== "proposed") return `Đề xuất này đã ${STATUS_TEXT[p.status] ?? p.status}`;
+  const title = p.kind === "pause" ? "⏸ Đề xuất TẮT quảng cáo" : "📈 Đề xuất TĂNG ngân sách";
+  const head = `${title}\n<b>${esc(p.ad_name ?? p.ad_id)}</b>\nTài khoản ${esc(p.account_name)} — ${esc(p.reason)}\n\n`;
+  const finish = async (fields: Record<string, unknown>, note: string, answer: string) => {
+    await db()
+      .from("fb_proposals")
+      .update({ ...fields, decided_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("status", "proposed");
+    if (p.message_id) await fbEdit(p.message_id, head + note);
+    return answer;
+  };
+
+  if (!approve) return finish({ status: "rejected" }, "✖️ Anh bỏ qua.", "Đã bỏ qua");
+  if (Date.now() - Date.parse(p.created_at) > PROPOSAL_TTL_HOURS * 3600_000)
+    return finish({ status: "expired" }, "⌛ Đề xuất đã cũ, em không làm. Lần quét sau sẽ đề xuất lại nếu vẫn cần.", "Đề xuất đã hết hạn");
+  if (await isStopped()) return "Đang dừng khẩn cấp (/release để chạy lại)";
+
+  try {
+    const state = await adState(p.ad_id);
+    if (p.kind === "pause") {
+      if (state.effective_status !== "ACTIVE")
+        return finish(
+          { status: "executed", target_level: "ad", target_id: p.ad_id, before: { status: state.effective_status } },
+          `ℹ️ Quảng cáo đang ở trạng thái ${esc(state.effective_status)}, không cần tắt.`,
+          "Quảng cáo không còn chạy"
+        );
+      await pauseAd(p.ad_id);
+      return finish(
+        { status: "executed", target_level: "ad", target_id: p.ad_id, before: { status: "ACTIVE" }, after: { status: "PAUSED" } },
+        "✅ Đã TẮT quảng cáo trên Meta.",
+        "Đã tắt quảng cáo"
+      );
+    }
+    const target = budgetTarget(state);
+    if (!target)
+      return finish({ status: "failed", error: "Không có ngân sách ngày" }, "⚠️ Quảng cáo dùng ngân sách trọn đời, em không tự tăng. Anh chỉnh tay giúp.", "Không tăng được");
+    // Hai quảng cáo cùng nhóm/chiến dịch: chỉ tăng một lần mỗi ngày.
+    const { data: done } = await db()
+      .from("fb_proposals")
+      .select("id")
+      .eq("status", "executed")
+      .eq("kind", "scale")
+      .eq("target_id", target.id)
+      .gte("decided_at", new Date(Date.now() - 20 * 3600_000).toISOString())
+      .limit(1);
+    if (done?.length)
+      return finish({ status: "rejected", error: "Đã tăng hôm nay" }, "ℹ️ Ngân sách này vừa được tăng hôm nay (qua quảng cáo khác cùng nhóm), em không tăng thêm.", "Đã tăng trước đó");
+    const rules = loadRules();
+    const next = scaledBudget(target.daily, rules.scaleStep, rules.maxScaleIncrease);
+    await setDailyBudget(target.id, next);
+    const where = target.level === "adset" ? "nhóm quảng cáo" : "chiến dịch";
+    return finish(
+      { status: "executed", target_level: target.level, target_id: target.id, before: { daily_budget: target.daily }, after: { daily_budget: next } },
+      `✅ Đã tăng ngân sách ngày của ${where}: ${vnd(target.daily)} → <b>${vnd(next)}</b>.`,
+      "Đã tăng ngân sách"
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return finish({ status: "failed", error: msg.slice(0, 500) }, `⚠️ Lỗi khi làm trên Meta: <code>${esc(msg.slice(0, 300))}</code>`, "Lỗi, xem tin nhắn");
   }
-  return approve ? "Đã ghi nhận đồng ý" : "Đã bỏ qua";
 }
 
 /** /status: số hôm nay đến giờ (đọc trực tiếp, không ghi đề xuất). */
