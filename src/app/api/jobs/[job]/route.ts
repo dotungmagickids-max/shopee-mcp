@@ -1,4 +1,5 @@
 import { checkJobSecret } from "@/lib/autopilot/config";
+import { careJob, careWeeklyJob } from "@/lib/autopilot/care";
 import { backfillJob, capsJob, collectJob, dailyJob, launchJob, lifecycleJob, morningReportJob, refreshJob, resetJob } from "@/lib/autopilot/jobs";
 
 export const runtime = "nodejs";
@@ -16,6 +17,8 @@ const PARTS = ["ads", "orders", "escrow", "costs", "roas"] as const;
  *   POST /api/jobs/report                               08:00
  *   POST /api/jobs/lifecycle                            thứ Hai 06:40 (vòng đời sản phẩm, trang /admin/lifecycle)
  *   POST /api/jobs/launch                              thứ Hai 07:10 (đề xuất lên QC mã chưa chạy + đánh giá hàng Mới)
+ *   POST /api/jobs/care                                 mỗi giờ 8h–22h (đơn trễ, đánh giá; 20h cảm ơn hàng loạt; 9h sức khỏe shop)
+ *   POST /api/jobs/care-weekly                          thứ Hai 08:15 (báo cáo tuần chăm shop)
  *   POST /api/jobs/backfill?date=YYYY-MM-DD             chạy tay để nạp bù lịch sử
  * Header bắt buộc: Authorization: Bearer <JOB_SECRET>
  */
@@ -33,6 +36,8 @@ export async function POST(request: Request, ctx: { params: Promise<{ job: strin
     else if (job === "caps") result = await capsJob();
     else if (job === "refresh") result = await refreshJob();
     else if (job === "launch") result = await launchJob();
+    else if (job === "care") result = await careJob();
+    else if (job === "care-weekly") result = await careWeeklyJob();
     else if (job === "lifecycle") result = await lifecycleJob();
     else if (job === "backfill" && /^\d{4}-\d{2}-\d{2}$/.test(sp.get("date") ?? "")) result = await backfillJob(sp.get("date")!);
     else return Response.json({ error: "unknown job" }, { status: 404 });

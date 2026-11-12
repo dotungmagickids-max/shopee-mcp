@@ -1,4 +1,5 @@
 import { decide } from "@/lib/autopilot/actions";
+import { decideTask, replyCommand } from "@/lib/autopilot/care";
 import { safeEqual, shopName, shops } from "@/lib/autopilot/config";
 import { todayOverview } from "@/lib/autopilot/dashboard";
 import { morningReportJob } from "@/lib/autopilot/jobs";
@@ -19,6 +20,7 @@ const HELP = [
   "/pause_all — tạm dừng mọi chiến dịch (có nút xác nhận)",
   "/resume_all — bật lại chiến dịch tool đã dừng (có nút xác nhận)",
   "/mode — xem chế độ; /mode suggest | off | auto",
+  "/traloi <mã đánh giá> <nội dung> — tự viết câu trả lời đánh giá",
   "/stop — DỪNG KHẨN CẤP mọi tự động",
   "/release — gỡ dừng khẩn cấp",
   "",
@@ -45,6 +47,12 @@ export async function POST(request: Request) {
       if (await handleMemoryCallback(cb)) return Response.json({ ok: true });
     } catch (err) {
       await answerCallback(cb.id, `Lỗi: ${err instanceof Error ? err.message : String(err)}`);
+      return Response.json({ ok: true });
+    }
+    const t = /^c([ar]):(\d+)$/.exec(String(cb.data ?? ""));
+    if (t) {
+      const text = await decideTask(Number(t[2]), t[1] === "a").catch((e) => `Lỗi: ${e instanceof Error ? e.message : String(e)}`);
+      await answerCallback(cb.id, text);
       return Response.json({ ok: true });
     }
     const m = /^([ar]):(\d+)$/.exec(String(cb.data ?? ""));
@@ -86,6 +94,7 @@ export async function POST(request: Request) {
         if (!g) await sendTelegram(`${esc(s.name)}: không có chiến dịch nào do tool tạm dừng.`);
       }
     } else if (command === "/mode") await mode(arg?.toLowerCase());
+    else if (command === "/traloi") await sendTelegram(await replyCommand(String(msg.text).trim().replace(/^\S+\s*/, "")));
     // Nhóm Phòng họp có nhiều nhân viên: lệnh lạ không gọi đích danh bot này thì bỏ qua, tránh mọi bot cùng trả lời.
     else if (!String(msg.chat?.id).startsWith("-") || command === "/help" || cmd.includes("@")) await sendTelegram(HELP);
   } catch (err) {

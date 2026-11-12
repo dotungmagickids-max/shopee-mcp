@@ -3,6 +3,7 @@ import type { ShopConf } from "./config";
 import { CLASS_VI, mixTargets, type ProductClass } from "./classes";
 import { INVALID_STATUSES, dayReport, ordersBetween } from "./report";
 import { isPeakDay, loadSettings, SALE_TIER_VI, saleTier } from "./settings";
+import { healthMorning } from "./care";
 import { callShopee, chunk } from "./shopee-call";
 import { esc, vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix } from "./time";
@@ -218,6 +219,11 @@ export async function shopMorning(shop: ShopConf): Promise<string[]> {
     todo.push(`Xử lý ${returnsOpen} yêu cầu trả hàng (quá hạn Shopee tự chấp nhận)`);
   }
   if (cancelRate >= 15 && total >= 20) todo.push(`Tỉ lệ hủy hôm qua ${Math.round(cancelRate)}%: xem lý do hủy`);
+  const health = await safe(() => healthMorning(shopId));
+  if (health) {
+    lines.push(...health.lines);
+    todo.push(...health.todo);
+  }
 
   // ---------- MARKETING ----------
   const fee = 1 + s.params.ad_fee_pct / 100;
