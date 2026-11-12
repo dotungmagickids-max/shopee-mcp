@@ -6,6 +6,7 @@ import { isPeakDay, loadSettings, SALE_TIER_VI, saleTier } from "./settings";
 import { healthMorning } from "./care";
 import { clearanceLines, clearancePace, monthPace, paceLines } from "./goals";
 import { stepsLines } from "./steps";
+import { priceTestLines } from "./price-tests";
 import { callShopee, chunk } from "./shopee-call";
 import { esc, vnd } from "./telegram";
 import { addDays, vnDate, vnDayStartUnix } from "./time";
@@ -278,6 +279,7 @@ export async function shopMorning(shop: ShopConf): Promise<string[]> {
   // Thử bậc lãi: hằng ngày báo kết luận đêm qua; thứ Hai tổng kết 7 ngày.
   const monday = new Date(`${today}T00:00:00Z`).getUTCDay() === 1;
   lines.push(...(await safe(() => stepsLines(shopId, monday ? 7 : 1))) ?? []);
+  lines.push(...(await safe(() => priceTestLines(shopId, monday ? 7 : 1))) ?? []);
   const pending = await safe(async () => {
     const { count } = await db()
       .from("autopilot_actions")

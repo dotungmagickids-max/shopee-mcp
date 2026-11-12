@@ -306,11 +306,18 @@ export async function runProfitSteps(shopId: number) {
       if (!lastChange.has(id) || lastChange.get(id)! < d) lastChange.set(id, d);
     }
     const profitLow = pace?.profitPct != null && pace.profitPct < pace.goalPct;
+    // Mỗi mã một thay đổi một lúc: chiến dịch có sản phẩm đang thử giá thì chưa thử bậc.
+    const { data: priceRows } = await db().from("price_tests").select("item_id").eq("shop_id", shopId).eq("status", "running");
+    const pricing = new Set((priceRows ?? []).map((r: any) => Number(r.item_id)));
     const cands: { c: (typeof camps)[number]; base: Avg; dir: Dir; from: number; to: number }[] = [];
     for (const c of camps) {
       const e = c.econ;
       if (!e?.margin || !stepsClass(e.class) || e.source !== "item") continue;
       if (steps.some((x) => x.campaign_id === c.campaign_id && x.status === "running")) continue;
+      if (c.item_ids.some((id) => pricing.has(id))) {
+        skip("sản phẩm đang thử giá");
+        continue;
+      }
       if (!e.target || !c.roas_target || Math.abs(c.roas_target / e.target - 1) > 0.1) {
         skip("ROAS mục tiêu Shopee chưa về đúng mức");
         continue;
