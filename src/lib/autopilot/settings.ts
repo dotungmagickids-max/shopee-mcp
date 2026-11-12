@@ -36,6 +36,8 @@ export const DEFAULT_RULE_PARAMS = {
   clear_profit_pct: -5, // Xả kho: lãi mong muốn (âm = chấp nhận lỗ tối đa N% để đẩy hàng)
   // Sàn lãi toàn hệ thống (hôm nay + hôm qua, đơn từ quảng cáo): gần sàn thì dừng tăng nhóm lãi mỏng trước
   system_profit_floor_pct: 12,
+  mix_core_pct: 40, // Chủ lực: mục tiêu % tổng chi (ưu tiên, không phải trần)
+  mix_regular_pct: 30, // Thường: mục tiêu % tổng chi (ưu tiên, không phải trần)
   clear_max_spend_share_pct: 20, // Xả kho: tối đa % tổng chi quảng cáo hôm nay
   new_max_spend_share_pct: 10, // Mới: tối đa % tổng chi quảng cáo hôm nay
   // Ngưỡng tự phân nhóm
