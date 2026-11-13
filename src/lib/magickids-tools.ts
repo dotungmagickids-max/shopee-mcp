@@ -208,14 +208,18 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
         title: z.string().min(5).max(300),
         detail: z.string().max(3000).optional(),
         due: date.optional(),
-        priority: z.number().int().min(1).max(3).default(2).describe("1 = gấp, 2 = thường, 3 = khi rảnh"),
-        department: z.enum(["facebook", "shopee", "van_hanh", "cskh", "content", "tai_chinh", "rd", "ceo", "he_thong"]).optional(),
+        priority: z.coerce.number().int().min(1).max(3).default(2).describe("1 = gấp, 2 = thường, 3 = khi rảnh"),
+        department: z
+          .enum(["facebook", "shopee", "van_hanh", "cskh", "content", "tai_chinh", "rd", "ceo", "he_thong"])
+          .optional()
+          .describe("Your department; the task is posted in that department's Telegram group"),
+        from: z.string().min(2).max(50).optional().describe("Your own name as giver, e.g. CSKH, Content, Kiều Trinh"),
       },
       annotations: add,
     },
-    async ({ assignee, title, detail, due, priority, department }) =>
+    async ({ assignee, title, detail, due, priority, department, from }) =>
       call("mk_task_create", {
-        p_agent: agent,
+        p_agent: from?.trim() || agent,
         p_assignee: assignee,
         p_title: title,
         p_detail: detail ?? null,
@@ -234,7 +238,7 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
         assignee: z.string().max(50).optional(),
         created_by: z.string().max(100).optional(),
         status: taskStatus.optional(),
-        limit: z.number().int().min(1).max(200).default(50),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
       },
       annotations: ro,
     },

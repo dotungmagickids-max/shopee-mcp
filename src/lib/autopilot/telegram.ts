@@ -89,8 +89,8 @@ export async function sendTelegram(
 }
 
 /** Sửa nội dung tin (bỏ nút bấm). Tin có ảnh (sửa chữ bị Telegram từ chối) thì sửa chú thích. */
-export async function editTelegram(messageId: number, text: string): Promise<void> {
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+export async function editTelegram(messageId: number, text: string, chat?: string | number): Promise<void> {
+  const chatId = chat ?? process.env.TELEGRAM_CHAT_ID;
   if (!chatId) return;
   const r = await tg("editMessageText", {
     chat_id: chatId,

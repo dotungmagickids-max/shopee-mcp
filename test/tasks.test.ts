@@ -1,7 +1,7 @@
 /** Bảng việc chung: tên người làm, quyền bấm nút, nội dung tin. */
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { canUpdate, mention, morningDigest, staffMap, staffNameOf, taskButtons, taskText } from "../src/lib/tasks";
+import { canUpdate, digestByGroup, groupFor, idReply, mention, morningDigest, staffMap, staffNameOf, taskButtons, taskText } from "../src/lib/tasks";
 
 const STAFF = "Hiền=111, Vân=222,Hường=333, bad=x";
 
@@ -63,5 +63,42 @@ describe("tin việc", () => {
     assert.match(d, /#1 Đơn trễ · hạn 10\/11 ⏰ trễ hạn/);
     assert.match(d, /#2 Đối soát ⏳/);
     assert.equal(morningDigest([], STAFF), "");
+  });
+});
+
+describe("nhóm theo bộ phận", () => {
+  const GROUPS = "cskh=-100111, content=-100222, Hường=-100222, bad=123";
+  it("bộ phận trước, rồi tên người; không khớp thì Phòng họp", () => {
+    assert.equal(groupFor({ department: "cskh", assignee: "Hiền" }, GROUPS), "-100111");
+    assert.equal(groupFor({ department: null, assignee: "Hường" }, GROUPS), "-100222");
+    assert.equal(groupFor({ department: "shopee", assignee: "Hiền" }, GROUPS), null);
+    assert.equal(groupFor({ department: "x", assignee: "bad" }, GROUPS), null);
+  });
+  it("danh sách sáng chia theo nhóm, việc không nhóm bỏ ra", () => {
+    const by = digestByGroup(
+      [
+        { id: 1, department: "cskh", assignee: "Hiền" },
+        { id: 2, assignee: "Hường" },
+        { id: 3, department: "shopee", assignee: "Hiền" },
+      ],
+      GROUPS
+    );
+    assert.deepEqual([...by.keys()].sort(), ["-100111", "-100222"]);
+    assert.equal(by.get("-100111")!.length, 1);
+  });
+  it("trong nhóm bộ phận: anh và đúng người được bấm; nhóm khác thì không", () => {
+    process.env.TELEGRAM_CHAT_ID = "-100500";
+    process.env.TELEGRAM_OWNER_IDS = "1";
+    process.env.TASKS_GROUPS = GROUPS;
+    const task = { assignee: "Hiền", department: "cskh", telegram_chat_id: -100111 };
+    assert.deepEqual(canUpdate(task, -100111, 1, STAFF), { ok: true, who: "Anh Tùng" });
+    assert.deepEqual(canUpdate(task, -100111, 111, STAFF), { ok: true, who: "Hiền" });
+    assert.equal(canUpdate(task, -100222, 111, STAFF).ok, false);
+    assert.equal(canUpdate(task, -100111, 333, STAFF).ok, false);
+    delete process.env.TASKS_GROUPS;
+  });
+  it("/id trong nhóm hiện cả mã nhóm", () => {
+    assert.match(idReply({ from: { id: 5, first_name: "Vân" }, chat: { id: -100111 } }), /-100111/);
+    assert.doesNotMatch(idReply({ from: { id: 5, first_name: "Vân" }, chat: { id: 5 } }), /Nhóm này/);
   });
 });
