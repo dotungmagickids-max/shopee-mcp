@@ -97,7 +97,17 @@ async function fakeSupabase(url: URL, init: RequestInit): Promise<Response> {
 
 function fakeShopee(url: URL, init: RequestInit): Response {
   const path = url.pathname.replace("/api/v2", "");
-  const body = init.body ? JSON.parse(String(init.body)) : undefined;
+  const body =
+    init.body instanceof FormData
+      ? Object.fromEntries(
+          [...new Set(init.body.keys())].map((k) => {
+            const vals = (init.body as FormData).getAll(k).map((v) => (typeof v === "string" ? v : `file:${v.size}`));
+            return [k, vals.length === 1 ? vals[0] : vals];
+          })
+        )
+      : init.body
+        ? JSON.parse(String(init.body))
+        : undefined;
   shopeeCalls.push({ path, method: init.method ?? "GET", query: url.searchParams, body });
   if (path === "/auth/token/get") {
     return json({
@@ -115,7 +125,23 @@ function fakeShopee(url: URL, init: RequestInit): Response {
   if (path === "/shop/get_shop_info") {
     return json({ shop_name: `Shop ${url.searchParams.get("shop_id")}`, region: "VN", status: "NORMAL", error: "", request_id: "r" });
   }
+  if (path === "/media_space/init_video_upload") {
+    return json({ error: "", message: "", request_id: "r", response: { video_upload_id: "vu-1" } });
+  }
+  if (path === "/media_space/get_video_upload_result") {
+    return json({ error: "", message: "", request_id: "r", response: { status: "SUCCEEDED" } });
+  }
   return json({ error: "", message: "", request_id: "r", response: { ok: true } });
+}
+
+/** Public files the upload tools download (JPEG magic bytes + padding, or a 9MB "video"). */
+const JPEG = Buffer.concat([Buffer.from("ffd8ffe0", "hex"), Buffer.alloc(100)]);
+const VIDEO = Buffer.alloc(9 * 1024 * 1024, 1);
+function fakeFiles(url: URL): Response {
+  if (url.pathname === "/a.jpg") return new Response(JPEG);
+  if (url.pathname === "/clip.mp4") return new Response(VIDEO);
+  if (url.pathname === "/note.txt") return new Response("hello");
+  return new Response("nf", { status: 404 });
 }
 
 // Must be installed before the SDK is imported: it captures globalThis.fetch at load time.
@@ -123,6 +149,7 @@ globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}
   const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
   if (url.hostname === "supabase.test") return fakeSupabase(url, init);
   if (url.hostname === "partner.shopeemobile.com") return fakeShopee(url, init);
+  if (url.hostname === "files.test") return fakeFiles(url);
   throw new Error(`Unexpected fetch to ${url}`);
 }) as typeof fetch;
 
@@ -167,7 +194,15 @@ describe("/api/mcp", () => {
   it("hides write tools from read-only keys", async () => {
     const read = (await rpc(READ_KEY, "tools/list")).body.result.tools.map((t: any) => t.name);
     const rw = (await rpc(RW_KEY, "tools/list")).body.result.tools.map((t: any) => t.name);
-    for (const name of ["call_write_endpoint", "update_stock", "update_price", "cancel_order", "set_order_note"]) {
+    for (const name of [
+      "call_write_endpoint",
+      "update_stock",
+      "update_price",
+      "cancel_order",
+      "set_order_note",
+      "upload_image",
+      "upload_video",
+    ]) {
       assert.ok(!read.includes(name), `${name} should be hidden`);
       assert.ok(rw.includes(name), `${name} should be visible`);
     }
@@ -274,6 +309,55 @@ describe("/api/mcp", () => {
       ],
     });
     assert.equal(audit.at(-1)?.access, "write");
+  });
+
+  it("uploads images as multipart files and audits the call", async () => {
+    const result = await callTool(RW_KEY, "upload_image", {
+      image_urls: ["https://files.test/a.jpg"],
+      images_base64: [`data:image/jpeg;base64,${JPEG.toString("base64")}`],
+      ratio: "3:4",
+    });
+    assert.ok(!result.isError, result.content[0].text);
+    const call = shopeeCalls.at(-1)!;
+    assert.equal(call.path, "/media_space/upload_image");
+    assert.deepEqual(call.body, { image: [`file:${JPEG.length}`, `file:${JPEG.length}`], scene: "normal", ratio: "3:4" });
+    assert.deepEqual([audit.at(-1)?.endpoint, audit.at(-1)?.access], ["media_space.upload_image", "write"]);
+  });
+
+  it("rejects non-image files, http URLs and empty input before calling Shopee", async () => {
+    for (const args of [
+      { image_urls: ["https://files.test/note.txt"] },
+      { image_urls: ["http://files.test/a.jpg"] },
+      {},
+    ]) {
+      const result = await callTool(RW_KEY, "upload_image", args);
+      assert.ok(result.isError, JSON.stringify(args));
+    }
+    assert.equal(shopeeCalls.length, 0);
+  });
+
+  it("uploads a video in 4MB parts, completes and reads the result", async () => {
+    const result = await callTool(RW_KEY, "upload_video", { video_url: "https://files.test/clip.mp4" });
+    assert.ok(!result.isError, result.content[0].text);
+    const paths = shopeeCalls.map((c) => c.path);
+    assert.deepEqual(paths, [
+      "/media_space/init_video_upload",
+      "/media_space/upload_video_part",
+      "/media_space/upload_video_part",
+      "/media_space/upload_video_part",
+      "/media_space/complete_video_upload",
+      "/media_space/get_video_upload_result",
+    ]);
+    const md5 = (b: Buffer) => createHash("md5").update(b).digest("hex");
+    assert.deepEqual(shopeeCalls[0].body, { file_md5: md5(VIDEO), file_size: VIDEO.length });
+    const parts = shopeeCalls.slice(1, 4).map((c) => c.body as Row);
+    assert.deepEqual(parts.map((p) => p.part_seq), ["0", "1", "2"]);
+    assert.deepEqual(parts.map((p) => p.part_content), [`file:${4 << 20}`, `file:${4 << 20}`, `file:${1 << 20}`]);
+    assert.equal(parts[2].content_md5, md5(VIDEO.subarray(8 << 20)));
+    const done = shopeeCalls[4].body as Row;
+    assert.deepEqual(done.part_seq_list, [0, 1, 2]);
+    const out = JSON.parse(result.content[0].text);
+    assert.deepEqual([out.video_upload_id, out.status], ["vu-1", "SUCCEEDED"]);
   });
 
   it("describes and searches endpoints from the catalog", async () => {

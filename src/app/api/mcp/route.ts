@@ -6,7 +6,7 @@ import { contextFromAccessToken, isAccessToken } from "@/lib/oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function unauthorized(request: Request): Response {
   // resource_metadata lets OAuth clients (claude.ai connectors) discover how to sign in.
