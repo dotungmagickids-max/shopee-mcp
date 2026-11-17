@@ -1,4 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import type { ShopeeRegion } from "@congminh1254/shopee-sdk/schemas/region";
+import { SHOPEE_BASE_URLS } from "@congminh1254/shopee-sdk/schemas/region";
+import { partnerCredentials } from "./env";
 
 /**
  * Binary uploads to Shopee media space (images and videos for items).
@@ -133,4 +136,66 @@ export async function uploadVideo(
   } while (Date.now() < deadline);
 
   return { video_upload_id: videoUploadId, status, result };
+}
+
+/**
+ * media_space endpoints are Public APIs in Shopee's spec: signed with
+ * partner_id + path + timestamp only (no shop token). The SDK's manager signs
+ * them as shop calls, so they are sent here directly.
+ */
+export function publicMediaSpace(region: ShopeeRegion): MediaSpaceApi {
+  const creds = partnerCredentials(region);
+  if (!creds) throw new Error(`No Shopee partner credentials configured for region ${region}`);
+  const base = SHOPEE_BASE_URLS[region];
+
+  async function call(apiPath: string, method: "GET" | "POST", fields: Record<string, unknown>): Promise<unknown> {
+    const url = new URL(`${base}/media_space/${apiPath}`);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const sign = createHmac("sha256", creds!.partnerKey)
+      .update(`${creds!.partnerId}${url.pathname}${timestamp}`)
+      .digest("hex");
+    url.searchParams.set("partner_id", String(creds!.partnerId));
+    url.searchParams.set("timestamp", String(timestamp));
+    url.searchParams.set("sign", sign);
+
+    let body: BodyInit | undefined;
+    const headers: Record<string, string> = {};
+    if (method === "GET") {
+      for (const [k, v] of Object.entries(fields)) url.searchParams.set(k, String(v));
+    } else if (Object.values(fields).some((v) => Buffer.isBuffer(v) || (Array.isArray(v) && v.some(Buffer.isBuffer)))) {
+      const form = new FormData();
+      for (const [k, v] of Object.entries(fields)) {
+        for (const item of Array.isArray(v) ? v : [v]) {
+          if (Buffer.isBuffer(item)) {
+            const isPng = item.toString("hex", 0, 4) === "89504e47";
+            const isJpg = item.toString("hex", 0, 3) === "ffd8ff";
+            const type = isPng ? "image/png" : isJpg ? "image/jpeg" : "application/octet-stream";
+            const ext = isPng ? "png" : isJpg ? "jpg" : "bin";
+            form.append(k, new Blob([new Uint8Array(item)], { type }), `${k}.${ext}`);
+          } else if (item !== undefined) {
+            form.append(k, typeof item === "object" ? JSON.stringify(item) : String(item));
+          }
+        }
+      }
+      body = form;
+    } else {
+      body = JSON.stringify(fields);
+      headers["Content-Type"] = "application/json";
+    }
+
+    const res = await fetch(url, { method, body, headers });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    if (!res.ok || data.error) {
+      throw new Error(`Shopee media_space.${apiPath} failed (HTTP ${res.status}): ${JSON.stringify(data)}`);
+    }
+    return data;
+  }
+
+  return {
+    uploadImage: (p) => call("upload_image", "POST", p),
+    initVideoUpload: (p) => call("init_video_upload", "POST", p),
+    uploadVideoPart: (p) => call("upload_video_part", "POST", p),
+    completeVideoUpload: (p) => call("complete_video_upload", "POST", p),
+    getVideoUploadResult: (p) => call("get_video_upload_result", "GET", p),
+  };
 }

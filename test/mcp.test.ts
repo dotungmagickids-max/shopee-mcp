@@ -322,6 +322,15 @@ describe("/api/mcp", () => {
     assert.equal(call.path, "/media_space/upload_image");
     assert.deepEqual(call.body, { image: [`file:${JPEG.length}`, `file:${JPEG.length}`], scene: "normal", ratio: "3:4" });
     assert.deepEqual([audit.at(-1)?.endpoint, audit.at(-1)?.access], ["media_space.upload_image", "write"]);
+    // Public API: partner signature only, no shop token.
+    assert.equal(call.query.get("access_token"), null);
+    assert.equal(call.query.get("shop_id"), null);
+    const { createHmac } = await import("node:crypto");
+    const ts = call.query.get("timestamp")!;
+    assert.equal(
+      call.query.get("sign"),
+      createHmac("sha256", "partner-key").update(`1000/api/v2/media_space/upload_image${ts}`).digest("hex")
+    );
   });
 
   it("rejects non-image files, http URLs and empty input before calling Shopee", async () => {
