@@ -5,6 +5,16 @@ import type { ApiKeyContext } from "./api-keys";
 import { catalog } from "./catalog.generated";
 import type { CatalogEntry, CatalogParam } from "./catalog-types";
 import { registerMagickidsTools } from "./magickids-tools";
+import {
+  assertImage,
+  decodeBase64,
+  downloadFile,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
+  type MediaSpaceApi,
+  uploadImages,
+  uploadVideo,
+} from "./media-upload";
 import { shopSdk } from "./shopee";
 import { db } from "./supabase";
 
@@ -156,13 +166,25 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
       throw new ToolError(`The installed SDK has no method for "${endpointId}".`);
     }
 
+    return audited(endpointId, shopId, entry.access, async () =>
+      text(normalizeResult(await (method as (p: unknown) => Promise<unknown>).call(manager, params)))
+    );
+  }
+
+  /** Runs one Shopee operation and writes its audit_log row. */
+  async function audited(
+    endpointId: string,
+    shopId: number,
+    access: "read" | "write",
+    run: () => Promise<CallToolResult>
+  ): Promise<CallToolResult> {
     const started = Date.now();
     let ok = false;
     let errorMessage: string | null = null;
     try {
-      const result = await (method as (p: unknown) => Promise<unknown>).call(manager, params);
+      const result = await run();
       ok = true;
-      return text(normalizeResult(result));
+      return result;
     } catch (err) {
       errorMessage = isShopeeApiError(err) ? JSON.stringify(err.data) : String(err);
       throw err;
@@ -173,7 +195,7 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
           api_key_id: ctx.id,
           shop_id: shopId,
           endpoint: endpointId,
-          access: entry.access,
+          access,
           ok,
           error: errorMessage?.slice(0, 1000) ?? null,
           duration_ms: Date.now() - started,
@@ -613,6 +635,77 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
         annotations: rw,
       },
       safe(async ({ shop_id, ...params }) => callEndpoint("order.cancel_order", shop_id, params))
+    );
+
+    // Media space: files can't travel through call_write_endpoint (JSON), so these tools
+    // download them server-side from public https URLs (or take small base64 payloads).
+    const mediaOf = (shopId: number) =>
+      (shopSdk(ctx.region, shopId) as unknown as { mediaSpace: MediaSpaceApi }).mediaSpace;
+
+    server.registerTool(
+      "upload_image",
+      {
+        title: "Upload images",
+        description:
+          "Upload 1–9 JPG/PNG images (max 10MB each) to Shopee media space and get image_id values " +
+          "for product.add_item / product.update_item (image.image_id_list). Give public https URLs " +
+          "(e.g. Pancake/Shopee CDN links) or base64. Uploading alone changes nothing visible in the shop.",
+        inputSchema: {
+          shop_id: shopIdArg,
+          image_urls: z.array(z.string()).max(9).optional().describe("Public https image URLs"),
+          images_base64: z
+            .array(z.string())
+            .max(9)
+            .optional()
+            .describe("Base64 image data (optionally data:image/...;base64, prefix); keep small"),
+          scene: z
+            .enum(["normal", "desc"])
+            .default("normal")
+            .describe("normal = item image (made square); desc = description image (not processed)"),
+          ratio: z.enum(["1:1", "3:4"]).optional().describe("Only for scene normal"),
+        },
+        annotations: { ...rw, destructiveHint: false },
+      },
+      safe(async ({ shop_id, image_urls, images_base64, scene, ratio }) => {
+        const shopId = resolveShop(shop_id);
+        const urls = image_urls ?? [];
+        const b64 = images_base64 ?? [];
+        if (urls.length + b64.length < 1 || urls.length + b64.length > 9) {
+          throw new ToolError("Give 1 to 9 images in total (image_urls + images_base64).");
+        }
+        const images = [
+          ...(await Promise.all(urls.map((u) => downloadFile(u, MAX_IMAGE_BYTES)))),
+          ...b64.map((d) => decodeBase64(d, MAX_IMAGE_BYTES)),
+        ];
+        images.forEach((img, i) => assertImage(img, `Image ${i + 1}`));
+        return audited("media_space.upload_image", shopId, "write", async () =>
+          text(normalizeResult(await uploadImages(mediaOf(shopId), images, { scene, ratio })))
+        );
+      })
+    );
+
+    server.registerTool(
+      "upload_video",
+      {
+        title: "Upload video",
+        description:
+          "Upload one item video (MP4, 10–60s, max 30MB) to Shopee media space from a public https URL: " +
+          "init, 4MB parts, complete, then waits up to ~15s for transcoding. Returns video_upload_id for " +
+          "product.add_item / update_item (video_upload_id). If status is still TRANSCODING, check later " +
+          "with call_read_endpoint media_space.get_video_upload_result.",
+        inputSchema: {
+          shop_id: shopIdArg,
+          video_url: z.string().describe("Public https URL of the video file"),
+        },
+        annotations: { ...rw, destructiveHint: false },
+      },
+      safe(async ({ shop_id, video_url }) => {
+        const shopId = resolveShop(shop_id);
+        const video = await downloadFile(video_url, MAX_VIDEO_BYTES);
+        return audited("media_space.upload_video", shopId, "write", async () =>
+          text(await uploadVideo(mediaOf(shopId), video))
+        );
+      })
     );
   }
 
