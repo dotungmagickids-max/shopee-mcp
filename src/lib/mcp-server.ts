@@ -11,7 +11,7 @@ import {
   downloadFile,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES,
-  type MediaSpaceApi,
+  publicMediaSpace,
   uploadImages,
   uploadVideo,
 } from "./media-upload";
@@ -639,8 +639,8 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
 
     // Media space: files can't travel through call_write_endpoint (JSON), so these tools
     // download them server-side from public https URLs (or take small base64 payloads).
-    const mediaOf = (shopId: number) =>
-      (shopSdk(ctx.region, shopId) as unknown as { mediaSpace: MediaSpaceApi }).mediaSpace;
+    // media_space is a Public API (partner signature only); shopId is still checked and audited.
+    const mediaOf = (_shopId: number) => publicMediaSpace(ctx.region);
 
     server.registerTool(
       "upload_image",
