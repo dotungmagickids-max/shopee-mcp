@@ -1,4 +1,4 @@
-import { checkKhoKey, lookupOrder, productCodes } from "@/lib/kho";
+import { checkKhoKey, lookupOrder, ordersToPack, productCodes } from "@/lib/kho";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +20,7 @@ export function OPTIONS() {
 /**
  * Tra đơn cho bàn đóng hàng (chỉ đọc Pancake POS). Header bắt buộc: x-mk-key: <KHO_API_KEY>
  *   GET /api/kho/don?ma=<mã đơn | mã vận đơn | mã PKE>  → { found, order, items[] }
+ *   GET /api/kho/don?xuat=1                              → { at, orders[], errors[] } đơn cần đóng: Shopee (API), TikTok + Facebook (Pancake)
  *   GET /api/kho/don?danhmuc=1                           → { codes[] } mọi mã vạch + mã phân loại
  */
 export async function GET(request: Request) {
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
   try {
     if (sp.get("danhmuc")) return json({ codes: await productCodes() });
+    if (sp.get("xuat")) return json(await ordersToPack());
     const ma = (sp.get("ma") ?? "").replace(/\s+/g, "").toUpperCase();
     if (!/^[A-Z0-9_-]{4,40}$/.test(ma)) return json({ error: "Mã không hợp lệ" }, 400);
     return json(await lookupOrder(ma));

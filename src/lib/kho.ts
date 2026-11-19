@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
-import { normSku } from "./autopilot/pancake";
+import { shops } from "./autopilot/config";
+import { normSku, productCode } from "./autopilot/pancake";
+import { callShopee, chunk } from "./autopilot/shopee-call";
 
 /**
  * Tra đơn cho bàn đóng hàng (công cụ quay video đóng hàng của kho). Chỉ đọc Pancake POS.
@@ -104,10 +106,13 @@ function pancake(): { key: string; shopId: string } {
   return { key, shopId: process.env.PANCAKE_SHOP_ID?.trim() || "608127" };
 }
 
-async function getJson(path: string, params: Record<string, string | number>): Promise<any> {
+async function getJson(path: string, params: Record<string, string | number | Array<string | number>>): Promise<any> {
   const { key, shopId } = pancake();
   const qs = new URLSearchParams({ api_key: key });
-  for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) for (const x of v) qs.append(k, String(x));
+    else qs.set(k, String(v));
+  }
   const res = await fetch(`${BASE}/shops/${shopId}/${path}?${qs}`, { headers: { Accept: "application/json" } });
   // Không đưa URL (có api_key) vào thông báo lỗi.
   if (!res.ok) throw new Error(`Pancake POS HTTP ${res.status}`);
@@ -136,4 +141,241 @@ export async function productCodes(): Promise<string[]> {
     for (const b of await Promise.all(batch)) add(b);
   }
   return [...codes];
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Đơn cần đóng (đơn xuất) cho kho. Chỉ đọc.
+ *   Shopee: lấy thẳng từ Shopee API, mọi đơn READY_TO_SHIP (anh Tùng chốt 20/11/2026: lấy hết đơn chờ;
+ *           Pancake đúng với Facebook nhưng không đúng với Shopee).
+ *   TikTok, Facebook: lấy từ Pancake. Facebook lọc theo luật: đơn Mới / Đã xác nhận, không vướng ghi chú
+ *           giao sau / chưa chốt / đợi chốt, đủ tồn thực.
+ * Không trả tên, SĐT, địa chỉ khách.
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface XuatItem {
+  sku: string;
+  product: string;
+  name: string;
+  detail: string;
+  quantity: number;
+  image: string;
+}
+export interface XuatOrder {
+  id: string;
+  channel: "Shopee" | "TikTok" | "Facebook";
+  shop: string;
+  carrier: string;
+  group: string;
+  urgent: boolean;
+  shipBy: number | null;
+  created: number | null;
+  eligible: boolean;
+  reason: string;
+  items: XuatItem[];
+}
+
+export function carrierGroup(name: string | null | undefined): string {
+  const raw = String(name ?? "").trim();
+  const s = raw.toLowerCase();
+  if (/instant|hỏa tốc|hoả tốc|hoa toc|siêu tốc|ahamove|grab|be ?delivery|trong ngày|4 giờ|2 giờ/.test(s)) return "Hỏa tốc";
+  if (/spx|shopee xpress|shopee express/.test(s)) return "SPX";
+  if (/ghn|giao hàng nhanh/.test(s)) return "GHN";
+  if (/viettel|vtp/.test(s)) return "Viettel Post";
+  if (/j&t|j ?t express/.test(s)) return "J&T";
+  if (/ghtk|tiết kiệm/.test(s)) return "GHTK";
+  return raw || "Chưa rõ";
+}
+
+function toMs(v: unknown): number | null {
+  if (v == null || v === "" || v === 0) return null;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === "number") return v < 1e12 ? v * 1000 : v;
+  const s = String(v);
+  if (/^\d+$/.test(s)) return Number(s) < 1e12 ? Number(s) * 1000 : Number(s);
+  // Pancake trả giờ UTC không có "Z".
+  const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : `${s}Z`);
+  return Number.isFinite(t) ? t : null;
+}
+
+/** Cuối ngày hôm nay theo giờ Việt Nam (UTC+7), tính bằng ms. */
+export function endOfTodayVN(now: number): number {
+  const off = 7 * 3600_000;
+  return Math.floor((now + off) / 86400_000) * 86400_000 + 86400_000 - off - 1;
+}
+
+export function shapeShopeeXuat(o: any, shopName: string, now: number): XuatOrder {
+  const carrier = String(o?.shipping_carrier || o?.checkout_shipping_carrier || o?.package_list?.[0]?.shipping_carrier || "");
+  const shipBy = toMs(o?.ship_by_date);
+  const items: XuatItem[] = (o?.item_list ?? []).map((it: any) => {
+    const sku = normSku(it?.model_sku) || normSku(it?.item_sku);
+    return {
+      sku,
+      product: productCode(it?.item_sku) || productCode(sku) || normSku(it?.item_sku) || sku,
+      name: String(it?.item_name ?? ""),
+      detail: String(it?.model_name ?? ""),
+      quantity: Math.max(1, Number(it?.model_quantity_purchased) || 1),
+      image: String(it?.image_info?.image_url ?? ""),
+    };
+  });
+  return {
+    id: String(o?.order_sn ?? ""),
+    channel: "Shopee",
+    shop: shopName,
+    carrier,
+    group: carrierGroup(carrier),
+    urgent: shipBy != null && shipBy <= endOfTodayVN(now),
+    shipBy,
+    created: toMs(o?.create_time),
+    eligible: true,
+    reason: "",
+    items,
+  };
+}
+
+const NOTE_BLOCK = /(giao|ship|gửi|gui|đi)\s*sau|khách\s*hẹn|hẹn\s*(ngày|giao|ship|gửi)|chưa\s*chốt|đợi\s*chốt|chờ\s*chốt|đợi\s*khách|chờ\s*khách|giữ\s*đơn|chưa\s*(gửi|đi|ship)|không\s*(gửi|đi|ship)/i;
+const TAG_BLOCK = /nợ|chờ hàng|giao sau|chưa chốt|đợi chốt|chờ chốt|hẹn/i;
+
+/** Ghi chú / thẻ khiến đơn chưa đi được. Trả lý do, hoặc "" nếu không vướng. */
+export function blockReason(o: any): string {
+  const notes = [o?.note, o?.note_print, ...(o?.items ?? []).map((i: any) => i?.note)].map((x) => String(x ?? "")).filter(Boolean);
+  for (const n of notes) {
+    const m = NOTE_BLOCK.exec(n);
+    if (m) return `Ghi chú: "${n.replace(/\s+/g, " ").slice(0, 80)}"`;
+  }
+  for (const t of o?.tags ?? []) {
+    const name = String(typeof t === "string" ? t : (t?.name ?? ""));
+    if (name && TAG_BLOCK.test(name)) return `Thẻ: ${name}`;
+  }
+  return "";
+}
+
+/**
+ * Đơn Pancake → đơn xuất. Trả null nếu không thuộc diện cần đóng ở đây
+ * (đơn Shopee lấy từ Shopee API; Facebook chỉ lấy Mới / Đã xác nhận; TikTok lấy thêm "Đang đóng hàng").
+ * stock: tồn thực theo mã phân loại, null = không kiểm được tồn.
+ */
+export function shapePancakeXuat(o: any, stock: Map<string, number> | null): XuatOrder | null {
+  const src = String(o?.order_sources_name ?? "");
+  const status = Number(o?.status);
+  if (/shopee/i.test(src)) return null;
+  const tiktok = /tik\s*tok/i.test(src);
+  if (tiktok ? ![0, 1, 8].includes(status) : ![0, 1].includes(status)) return null;
+  const items: XuatItem[] = [];
+  for (const it of o?.items ?? []) {
+    const parts: any[] = Array.isArray(it?.components) ? it.components : [];
+    const q = Number(it?.quantity) || 1;
+    const list = parts.length && parts.every((c) => c?.variation_info) ? parts.map((c) => [c.variation_info, (Number(c?.quantity) || 1) * q]) : [[it?.variation_info, q]];
+    for (const [info, qty] of list as Array<[any, number]>) {
+      const k = toItem(info, qty);
+      const sku = normSku(k.display_id);
+      items.push({ sku, product: normSku(info?.product_display_id) || productCode(sku) || sku, name: k.name, detail: k.detail, quantity: k.quantity, image: k.image });
+    }
+  }
+  const carrier = String(o?.partner?.partner_name ?? "");
+  let reason = tiktok ? "" : blockReason(o);
+  if (!reason && !tiktok && stock) {
+    const need = new Map<string, number>();
+    for (const it of items) need.set(it.sku, (need.get(it.sku) ?? 0) + it.quantity);
+    const short: string[] = [];
+    for (const [sku, n] of need) {
+      const have = stock.get(sku);
+      if (have != null && have < n) short.push(`${sku} (cần ${n}, tồn thực ${have})`);
+    }
+    if (short.length) reason = `Thiếu hàng: ${short.join(", ")}. Kiểm lại dấu "?" trên Pancake`;
+  }
+  return {
+    id: String(o?.id ?? ""),
+    channel: tiktok ? "TikTok" : "Facebook",
+    shop: tiktok ? "TikTok" : src || "Pancake",
+    carrier,
+    group: tiktok ? "TikTok" : carrierGroup(carrier || "Viettel Post"),
+    urgent: false,
+    shipBy: null,
+    created: toMs(o?.inserted_at),
+    eligible: !reason,
+    reason,
+    items,
+  };
+}
+
+async function shopeeWaiting(now: number, errors: string[]): Promise<XuatOrder[]> {
+  const sec = Math.floor(now / 1000);
+  const per = await Promise.all(
+    shops().map(async (shop) => {
+      const out: XuatOrder[] = [];
+      try {
+        const sns = new Set<string>();
+        // Shopee chỉ cho mỗi lần hỏi 15 ngày: hỏi 2 khoảng để không sót đơn đặt trước lâu ngày.
+        for (const [from, to] of [[sec - 15 * 86400, sec], [sec - 30 * 86400, sec - 15 * 86400]]) {
+          let cursor = "";
+          for (let page = 0; page < 20; page++) {
+            const res = await callShopee(shop.shopId, "order.get_order_list", { time_range_field: "create_time", time_from: from, time_to: to, page_size: 100, cursor, order_status: "READY_TO_SHIP" });
+            for (const o of res.response?.order_list ?? []) sns.add(String(o.order_sn));
+            if (!res.response?.more) break;
+            cursor = String(res.response?.next_cursor ?? "");
+            if (!cursor) break;
+          }
+        }
+        for (const part of chunk([...sns], 50)) {
+          const res = await callShopee(shop.shopId, "order.get_order_detail", { order_sn_list: part.join(","), response_optional_fields: "ship_by_date,item_list,shipping_carrier,checkout_shipping_carrier,package_list,note" });
+          for (const o of res.response?.order_list ?? []) if (!o.order_status || o.order_status === "READY_TO_SHIP") out.push(shapeShopeeXuat(o, shop.name, now));
+        }
+      } catch (err) {
+        errors.push(`Shopee ${shop.name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return out;
+    })
+  );
+  return per.flat();
+}
+
+async function actualStock(skus: string[]): Promise<Map<string, number>> {
+  const stock = new Map<string, number>();
+  for (const batch of chunk(skus, 8)) {
+    await Promise.all(
+      batch.map(async (sku) => {
+        const body = await getJson("products/variations", { search: sku, page_size: 20, page_number: 1 });
+        const v = (body?.data ?? []).find((x: any) => normSku(x?.display_id) === sku);
+        if (!v) return;
+        const wh: any[] = v.variations_warehouses ?? [];
+        // Tồn thực (actual), không dùng remain_quantity vì đã trừ đơn chờ hàng khác nên báo thiếu nhầm.
+        stock.set(sku, wh.length ? wh.reduce((s, w) => s + Number(w.actual_remain_quantity ?? 0), 0) : Number(v.remain_quantity ?? 0));
+      })
+    );
+  }
+  return stock;
+}
+
+async function pancakeWaiting(errors: string[]): Promise<XuatOrder[]> {
+  try {
+    const raw: any[] = [];
+    for (let page = 1; page <= 8; page++) {
+      const body = await getJson("orders", { page_size: 100, page_number: page, "filter_status[]": [0, 1, 8] });
+      raw.push(...(body?.data ?? []));
+      const total = Number(body?.total_pages ?? 0);
+      if (!body?.data?.length || (total && page >= total)) break;
+      if (page === 8) errors.push("Pancake: quá 800 đơn, danh sách có thể thiếu");
+    }
+    const cand = raw.filter((o) => shapePancakeXuat(o, null));
+    const fbSkus = new Set<string>();
+    for (const o of cand) if (!/tik\s*tok/i.test(String(o?.order_sources_name ?? ""))) for (const it of shapePancakeXuat(o, null)!.items) if (it.sku) fbSkus.add(it.sku);
+    let stock: Map<string, number> | null = null;
+    try {
+      stock = await actualStock([...fbSkus]);
+    } catch (err) {
+      errors.push(`Pancake tồn kho: ${err instanceof Error ? err.message : String(err)} (chưa kiểm được thiếu hàng)`);
+    }
+    return cand.map((o) => shapePancakeXuat(o, stock)!);
+  } catch (err) {
+    errors.push(`Pancake: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[]; errors: string[] }> {
+  const now = Date.now();
+  const errors: string[] = [];
+  const [a, b] = await Promise.all([shopeeWaiting(now, errors), pancakeWaiting(errors)]);
+  const orders = [...a, ...b].sort((x, y) => (x.created ?? 0) - (y.created ?? 0));
+  return { at: now, orders, errors };
 }
