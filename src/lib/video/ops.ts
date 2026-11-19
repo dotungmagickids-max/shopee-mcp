@@ -122,7 +122,9 @@ export async function pollUpload(
   const deadline = Date.now() + waitMs;
   for (;;) {
     const r = resp(await publicCall("/media/get_video_upload_result", "GET", { video_upload_id: id }));
-    const status = String(r.status ?? "UNKNOWN");
+    const raw = String(r.status ?? "UNKNOWN");
+    // Live API trả "SUCCEED", sandbox/tài liệu ghi "SUCCEEDED": coi như nhau.
+    const status = raw === "SUCCEED" ? "SUCCEEDED" : raw;
     if (["SUCCEEDED", "FAILED", "CANCELLED"].includes(status) || Date.now() >= deadline) {
       return { video_upload_id: id, status, video_info: r.video_info, reason: r.reason };
     }
