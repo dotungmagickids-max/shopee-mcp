@@ -193,6 +193,13 @@ describe("Shopee Video", () => {
     assert.deepEqual(calls.at(-1)?.body, { video_upload_id_list: ["vu-9"] });
   });
 
+  it("treats Live status SUCCEED as ready", async () => {
+    uploadStatus = "SUCCEED";
+    const r = await ops.publishShopeeVideo({ video_upload_id: "vu-9", created_by: "test" });
+    assert.notEqual(r.step, "transcoding");
+    assert.ok(calls.some((c) => c.path === "/video/edit_video_info"));
+  });
+
   it("stops at transcoding and does not edit or post", async () => {
     uploadStatus = "TRANSCODING";
     const r = await ops.publishShopeeVideo({ video_upload_id: "vu-9", post: true, created_by: "test" });
