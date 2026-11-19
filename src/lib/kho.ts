@@ -203,11 +203,40 @@ export function endOfTodayVN(now: number): number {
   return Math.floor((now + off) / 86400_000) * 86400_000 + 86400_000 - off - 1;
 }
 
+/** Bỏ dấu, viết hoa, chỉ giữ chữ và số: "Xanh than,180" → "XANHTHAN180". */
+export function plain(v: string | null | undefined): string {
+  return String(v ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[đĐ]/g, "D")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * Một số sản phẩm trên Shopee không khai mã phân loại (model_sku trống), chỉ có mã sản phẩm.
+ * Khi đó ghép mã sản phẩm + màu + size theo cách đặt mã của Pancake: ADT26001 + "Đỏ,150" → ADT26001DO150.
+ */
+export function guessSku(itemSku: string | null | undefined, modelName: string | null | undefined): string {
+  const base = normSku(itemSku);
+  return base ? base + plain(modelName) : "";
+}
+
+// Tên màu trên Shopee khác tên trong mã Pancake (đã thấy 20/11/2026: Shopee "Xanh dương" = Pancake XANHBIEN).
+const COLOR_ALIASES: string[][] = [["XANHDUONG", "XANHBIEN"]];
+
+/** Các cách viết khác của một mã phân loại theo bảng màu tương đương. */
+export function altSkus(sku: string): string[] {
+  const out: string[] = [];
+  for (const group of COLOR_ALIASES) for (const a of group) if (sku.includes(a)) for (const b of group) if (b !== a) out.push(sku.replace(a, b));
+  return out;
+}
+
 export function shapeShopeeXuat(o: any, shopName: string, now: number): XuatOrder {
   const carrier = String(o?.shipping_carrier || o?.checkout_shipping_carrier || o?.package_list?.[0]?.shipping_carrier || "");
   const shipBy = toMs(o?.ship_by_date);
   const items: XuatItem[] = (o?.item_list ?? []).map((it: any) => {
-    const sku = normSku(it?.model_sku) || normSku(it?.item_sku);
+    const sku = normSku(it?.model_sku) || guessSku(it?.item_sku, it?.model_name);
     return {
       sku,
       product: productCode(it?.item_sku) || productCode(sku) || normSku(it?.item_sku) || sku,
@@ -387,7 +416,7 @@ export function applyShopeeStock(orders: XuatOrder[], stock: Map<string, number>
   }
 }
 
-export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[]; errors: string[] }> {
+export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[]; errors: string[]; unknownSkus: string[] }> {
   const now = Date.now();
   const errors: string[] = [];
   const [shopee, cand] = await Promise.all([shopeeWaiting(now, errors), pancakeCandidates(errors)]);
@@ -400,7 +429,26 @@ export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[];
   } catch (err) {
     errors.push(`Pancake tồn kho: ${err instanceof Error ? err.message : String(err)} (chưa kiểm được đơn nào thiếu hàng)`);
   }
-  if (stock) applyShopeeStock(shopee, stock);
+  const unknown = new Set<string>();
+  if (stock) {
+    // Mã Shopee chưa thấy trên Pancake: thử cách viết màu tương đương rồi đổi mã của món đó sang mã Pancake.
+    const missing = [...new Set(shopee.flatMap((o) => o.items.map((it) => it.sku)).filter((k) => k && !stock!.has(k)))];
+    const alts = new Map(missing.map((k) => [k, altSkus(k)] as const));
+    try {
+      const more = await actualStock([...new Set([...alts.values()].flat())]);
+      for (const [k, v] of more) stock.set(k, v);
+    } catch {
+      /* không thử được mã tương đương thì coi như chưa kiểm được */
+    }
+    for (const o of shopee)
+      for (const it of o.items) {
+        if (!it.sku || stock.has(it.sku)) continue;
+        const hit = (alts.get(it.sku) ?? []).find((k) => stock!.has(k));
+        if (hit) it.sku = hit;
+        else unknown.add(it.sku);
+      }
+    applyShopeeStock(shopee, stock);
+  }
   const orders = [...shopee, ...cand.map((o) => shapePancakeXuat(o, stock)!)].sort((x, y) => (x.created ?? 0) - (y.created ?? 0));
-  return { at: now, orders, errors };
+  return { at: now, orders, errors, unknownSkus: [...unknown].sort() };
 }
