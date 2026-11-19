@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { blockReason, carrierGroup, checkKhoKey, endOfTodayVN, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
+import { applyShopeeStock, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -119,5 +119,21 @@ describe("đơn cần đóng", () => {
     assert.equal(shapePancakeXuat(fb({ status: 8 }), null), null);
     const tt = shapePancakeXuat(fb({ order_sources_name: "Tiktok", status: 8, id: "587263114848929710", note: "giao sau" }), null)!;
     assert.deepEqual([tt.channel, tt.group, tt.eligible], ["TikTok", "TikTok", true]);
+  });
+});
+
+describe("Shopee chỉ chuẩn bị đơn có hàng", () => {
+  const mk = (id: string, shipBy: number, sku: string, quantity: number) => ({ id, channel: "Shopee" as const, shop: "Magickids", carrier: "SPX Express", group: "SPX", urgent: false, shipBy, created: 1, eligible: true, reason: "", items: [{ sku, product: "QD26036", name: "", detail: "", quantity, image: "" }] });
+  it("chia tồn cho đơn hạn sớm trước, đơn sau thiếu thì tách ra; mã không có tồn thì không chặn", () => {
+    const late = mk("B", 200, "QD26036DEN150", 2);
+    const early = mk("A", 100, "QD26036DEN150", 2);
+    const pre = mk("C", 50, "QD26099DEN150", 1); // hàng đặt trước, tồn 0
+    const unknown = mk("D", 300, "KHONGCOTRENPANCAKE", 1);
+    applyShopeeStock([late, early, pre, unknown], new Map([["QD26036DEN150", 3], ["QD26099DEN150", 0]]));
+    assert.equal(early.eligible, true);
+    assert.equal(late.eligible, false);
+    assert.match(late.reason, /cần 2, còn 1/);
+    assert.equal(pre.eligible, false);
+    assert.equal(unknown.eligible, true);
   });
 });

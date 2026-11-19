@@ -346,7 +346,8 @@ async function actualStock(skus: string[]): Promise<Map<string, number>> {
   return stock;
 }
 
-async function pancakeWaiting(errors: string[]): Promise<XuatOrder[]> {
+/** Đơn Pancake thô thuộc diện cần đóng (TikTok, Facebook). */
+async function pancakeCandidates(errors: string[]): Promise<any[]> {
   try {
     const raw: any[] = [];
     for (let page = 1; page <= 8; page++) {
@@ -356,26 +357,50 @@ async function pancakeWaiting(errors: string[]): Promise<XuatOrder[]> {
       if (!body?.data?.length || (total && page >= total)) break;
       if (page === 8) errors.push("Pancake: quá 800 đơn, danh sách có thể thiếu");
     }
-    const cand = raw.filter((o) => shapePancakeXuat(o, null));
-    const fbSkus = new Set<string>();
-    for (const o of cand) if (!/tik\s*tok/i.test(String(o?.order_sources_name ?? ""))) for (const it of shapePancakeXuat(o, null)!.items) if (it.sku) fbSkus.add(it.sku);
-    let stock: Map<string, number> | null = null;
-    try {
-      stock = await actualStock([...fbSkus]);
-    } catch (err) {
-      errors.push(`Pancake tồn kho: ${err instanceof Error ? err.message : String(err)} (chưa kiểm được thiếu hàng)`);
-    }
-    return cand.map((o) => shapePancakeXuat(o, stock)!);
+    return raw.filter((o) => shapePancakeXuat(o, null));
   } catch (err) {
     errors.push(`Pancake: ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
 }
 
+/**
+ * Shopee chỉ chuẩn bị đơn có hàng (anh Tùng dặn 20/11/2026: có sản phẩm đặt trước, chưa có hàng).
+ * Chia tồn thực cho đơn có hạn giao sớm trước; đơn không đủ hàng thì đánh dấu chưa đi được.
+ * Mã không tìm thấy tồn trên Pancake thì không chặn (không kiểm được).
+ */
+export function applyShopeeStock(orders: XuatOrder[], stock: Map<string, number>): void {
+  const left = new Map(stock);
+  const sorted = [...orders].sort((a, b) => (a.shipBy ?? Infinity) - (b.shipBy ?? Infinity) || (a.created ?? 0) - (b.created ?? 0));
+  for (const o of sorted) {
+    const need = new Map<string, number>();
+    for (const it of o.items) need.set(it.sku, (need.get(it.sku) ?? 0) + it.quantity);
+    const short: string[] = [];
+    for (const [sku, n] of need) {
+      const have = left.get(sku);
+      if (have != null && have < n) short.push(`${sku} (cần ${n}, còn ${Math.max(0, have)})`);
+    }
+    if (short.length) {
+      o.eligible = false;
+      o.reason = `Chưa có hàng (đặt trước hoặc thiếu): ${short.join(", ")}`;
+    } else for (const [sku, n] of need) if (left.has(sku)) left.set(sku, left.get(sku)! - n);
+  }
+}
+
 export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[]; errors: string[] }> {
   const now = Date.now();
   const errors: string[] = [];
-  const [a, b] = await Promise.all([shopeeWaiting(now, errors), pancakeWaiting(errors)]);
-  const orders = [...a, ...b].sort((x, y) => (x.created ?? 0) - (y.created ?? 0));
+  const [shopee, cand] = await Promise.all([shopeeWaiting(now, errors), pancakeCandidates(errors)]);
+  const skus = new Set<string>();
+  for (const o of shopee) for (const it of o.items) if (it.sku) skus.add(it.sku);
+  for (const o of cand) if (!/tik\s*tok/i.test(String(o?.order_sources_name ?? ""))) for (const it of shapePancakeXuat(o, null)!.items) if (it.sku) skus.add(it.sku);
+  let stock: Map<string, number> | null = null;
+  try {
+    stock = await actualStock([...skus]);
+  } catch (err) {
+    errors.push(`Pancake tồn kho: ${err instanceof Error ? err.message : String(err)} (chưa kiểm được đơn nào thiếu hàng)`);
+  }
+  if (stock) applyShopeeStock(shopee, stock);
+  const orders = [...shopee, ...cand.map((o) => shapePancakeXuat(o, stock)!)].sort((x, y) => (x.created ?? 0) - (y.created ?? 0));
   return { at: now, orders, errors };
 }
