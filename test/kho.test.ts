@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, guessSku, labelGroups, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
+import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -189,5 +189,24 @@ describe("tem vận đơn và chuẩn bị hàng Shopee", () => {
     assert.match(arrangeBody("SN1", { info_needed: { dropoff: ["branch_id"] } }, "dropoff") as string, /branch_id/);
     assert.match(arrangeBody("SN1", { info_needed: { pickup: ["address_id", "pickup_time_id"] }, pickup: { address_list: [] } }, "pickup") as string, /khung giờ/);
     assert.match(arrangeBody("SN1", { info_needed: { non_integrated: [] } }, "pickup") as string, /không có hình thức/);
+  });
+});
+
+describe("đơn đổi hàng đi Viettel Post", () => {
+  it("nhận các cách sale ghi đơn đổi, kể cả gõ sai dấu", () => {
+    for (const note of ["đơn đổi cầm 1 quần về", "Đơn đổi cầm 2 sp về", "đơn đổi , cầm 1 quần về", "đơn đổi cầm 1 bộ vè", "Đơn đổi 1 bộ về", "báo kho chek kỹ màu - đơn đổi cầm 1 áo về", "ship cầm hàng cũ về giúp shop", "thu hồi 1 áo"])
+      assert.equal(exchangeKind({ note }).kind, "doi", note);
+    assert.equal(exchangeKind({ note: "", note_print: "đơn đổi càm 2 áo về" }).kind, "doi");
+  });
+  it("đơn thường không bị nhận nhầm; nhắc đổi mà không rõ thì xếp nghi ngờ", () => {
+    for (const note of ["", "gọi trước khi giao", "giao giờ hành chính", "khách đi vắng buổi sáng", "hàng dễ vỡ, nhẹ tay", "khách về quê 25/11 mới nhận"]) assert.equal(exchangeKind({ note }).kind, "", note);
+    assert.equal(exchangeKind({ note: "khách muốn đổi nếu không vừa" }).kind, "nghi");
+  });
+  it("đơn Facebook mang nhãn đơn đổi, đơn TikTok thì không", () => {
+    const o = { id: 1, status: 1, order_sources_name: "Facebook", note: "đơn đổi cầm 1 quần về", partner: {}, items: [] };
+    const r = shapePancakeXuat(o, null)!;
+    assert.deepEqual([r.exchange, r.exchangeNote, r.eligible], ["doi", "đơn đổi cầm 1 quần về", true]);
+    assert.equal(shapePancakeXuat({ ...o, note: "" }, null)!.exchange, undefined);
+    assert.equal(shapePancakeXuat({ ...o, order_sources_name: "Tiktok" }, null)!.exchange, undefined);
   });
 });

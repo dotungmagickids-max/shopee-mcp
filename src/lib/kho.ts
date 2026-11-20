@@ -173,6 +173,10 @@ export interface XuatOrder {
   eligible: boolean;
   reason: string;
   items: XuatItem[];
+  /** Đơn Pancake đi Viettel Post: "doi" = đơn đổi, khi đẩy phải chọn dịch vụ GGDH; "nghi" = ghi chú có nhắc đổi/trả nhưng chưa rõ. */
+  exchange?: "doi" | "nghi";
+  /** Ghi chú làm căn cứ cho exchange. */
+  exchangeNote?: string;
   /** Shopee: đã bấm "chuẩn bị hàng" (đã có mã vận đơn, lấy được tem), đang chờ hãng tới lấy. */
   arranged?: boolean;
 }
@@ -283,6 +287,24 @@ export function blockReason(o: any): string {
 }
 
 /**
+ * Đơn đổi hàng (anh Tùng dạy 20/11/2026): khi đẩy sang Viettel Post phải chọn dịch vụ mở rộng "GGDH - Đổi hàng"
+ * để bưu tá cầm hàng cũ về. Sale ghi chú theo mẫu "đơn đổi cầm 1 quần về".
+ * Đo trên 400 đơn Viettel Post 10–19/11/2026: 37 đơn có GGDH, luật này nhận đúng cả 37, không nhận nhầm đơn nào.
+ */
+const DOI_SURE = /(cam|mang|lay|thu|nhan|dem|gui)\s+(lai\s+)?((\d+\s+)?(hang|do|bo|ao|quan|vay|sp|san pham|cai|chiec|don)\s+)?(\w+\s+){0,3}ve\b|thu hoi|don doi|doi hang|hang doi|doi (size|mau|mau ma|sang|lay|tra|sp|san pham|\d)/;
+const DOI_MAYBE = /\bdoi\b|\btra hang\b|\bhoan\b/;
+
+export function exchangeKind(o: any): { kind: "doi" | "nghi" | ""; note: string } {
+  const notes = [o?.note, o?.note_print].map((x) => String(x ?? "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  const flat = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
+  for (const re of [DOI_SURE, DOI_MAYBE]) {
+    const hit = notes.find((n) => re.test(flat(n)));
+    if (hit) return { kind: re === DOI_SURE ? "doi" : "nghi", note: hit.slice(0, 100) };
+  }
+  return { kind: "", note: "" };
+}
+
+/**
  * Đơn Pancake → đơn xuất. Trả null nếu không thuộc diện cần đóng ở đây
  * (đơn Shopee lấy từ Shopee API; Facebook chỉ lấy Mới / Đã xác nhận; TikTok lấy thêm "Đang đóng hàng").
  * stock: tồn thực theo mã phân loại, null = không kiểm được tồn.
@@ -305,6 +327,7 @@ export function shapePancakeXuat(o: any, stock: Map<string, number> | null): Xua
     }
   }
   const carrier = String(o?.partner?.partner_name ?? "");
+  const ex = tiktok ? { kind: "" as const, note: "" } : exchangeKind(o);
   let reason = tiktok ? "" : blockReason(o);
   if (!reason && !tiktok && stock) {
     const need = new Map<string, number>();
@@ -328,6 +351,7 @@ export function shapePancakeXuat(o: any, stock: Map<string, number> | null): Xua
     eligible: !reason,
     reason,
     items,
+    ...(ex.kind ? { exchange: ex.kind, exchangeNote: ex.note } : {}),
   };
 }
 
