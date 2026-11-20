@@ -1,4 +1,5 @@
 import { checkKhoKey, lookupOrder, ordersToPack, productCodes, returnsExpected, shopeeArrange, shopeeLabels } from "@/lib/kho";
+import { dayGet, dayWrite, markSet, marksGet, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,9 @@ export function OPTIONS() {
  *   GET /api/kho/don?ma=<mã đơn | mã vận đơn | mã PKE>  → { found, order, items[] }
  *   GET /api/kho/don?xuat=1                              → { at, orders[], errors[] } đơn cần đóng: Shopee (API), TikTok + Facebook (Pancake)
  *   GET /api/kho/don?hoan=1                              → { at, returns[], errors[], stale } kiện hoàn đang chờ về kho
+ *   GET /api/kho/don?ngay=YYYY-MM-DD                     → { codes[], notes{}, resetAt, updatedAt } danh sách đơn cần đóng / soát đơn của ngày (lưu trên Supabase)
+ *   GET /api/kho/don?video=<số ngày>                     → { rows[] } sổ video (không có nội dung video)
+ *   GET /api/kho/don?hoanmarks=1                         → { marks{} } tình trạng kiện hoàn
  *   GET /api/kho/don?danhmuc=1                           → { codes[] } mọi mã vạch + mã phân loại
  */
 export async function GET(request: Request) {
@@ -33,6 +37,10 @@ export async function GET(request: Request) {
     if (sp.get("danhmuc")) return json({ codes: await productCodes() });
     if (sp.get("xuat")) return json(await ordersToPack());
     if (sp.get("hoan")) return json(await returnsExpected());
+    const ngay = sp.get("ngay");
+    if (ngay != null) return validDay(ngay) ? json(await dayGet(ngay)) : json({ error: "ngay phải có dạng YYYY-MM-DD" }, 400);
+    if (sp.get("video")) return json(await videoList(Number(sp.get("video")) || 30));
+    if (sp.get("hoanmarks")) return json(await marksGet());
     const ma = (sp.get("ma") ?? "").replace(/\s+/g, "").toUpperCase();
     if (!/^[A-Z0-9_-]{4,40}$/.test(ma)) return json({ error: "Mã không hợp lệ" }, 400);
     return json(await lookupOrder(ma));
@@ -42,7 +50,12 @@ export async function GET(request: Request) {
 }
 
 /**
- * Tem vận đơn Shopee. Header bắt buộc: x-mk-key. Thân JSON: { action, shop, orders: string[] (tối đa 50) }
+ * Header bắt buộc: x-mk-key. Thân JSON.
+ * Dữ liệu vận hành của kho (Supabase):
+ *   action "ngay"     { ngay, add?: mã[], set?: mã[] (thay toàn bộ), notes?: { mã: { lyDo, xuLy } }, clearNotes?, nguon? } → danh sách ngày sau khi sửa
+ *   action "video"    { may, rows: [{ fileName, code, orderId, sysId, mode, startedAt, durationSec, size, check, source, type, del? }] } → { saved, skipped }
+ *   action "hoanmark" { khoa, du_lieu: { state?, note? } } → { ok }
+ * Tem vận đơn Shopee: { action, shop, orders: string[] (tối đa 50) }
  *   action "tem"     → { files: [{ type, carrier, orders[], pdf (base64) }], failed: [{ id, reason }] }. Không đổi trạng thái đơn.
  *   action "chuanbi" → { done[], failed[] }. Bấm "chuẩn bị hàng" trên Shopee (lệnh ghi thật); chỉ chạy khi máy chủ đặt KHO_CHUAN_BI=1.
  *                      Thêm cach: "pickup" (mặc định, hãng tới lấy) | "dropoff" (tự mang ra bưu cục).
@@ -56,6 +69,21 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return json({ error: "Thân yêu cầu không phải JSON" }, 400);
+  }
+  // Dữ liệu vận hành của kho trên Supabase (không đụng Shopee / Pancake).
+  try {
+    if (body?.action === "ngay") {
+      if (!validDay(body?.ngay)) return json({ error: "ngay phải có dạng YYYY-MM-DD" }, 400);
+      return json(await dayWrite(body.ngay, body));
+    }
+    if (body?.action === "video") return json(await videoUpsert(body?.rows, body?.may));
+    if (body?.action === "hoanmark") {
+      if (!validKey(body?.khoa)) return json({ error: "khoa không hợp lệ" }, 400);
+      await markSet(body.khoa, body?.du_lieu);
+      return json({ ok: true });
+    }
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : String(err) }, 502);
   }
   const shop = String(body?.shop ?? "");
   const orders = [...new Set((Array.isArray(body?.orders) ? body.orders : []).map((x: unknown) => String(x).trim().toUpperCase()))] as string[];
