@@ -1,7 +1,7 @@
 /** Dữ liệu vận hành của kho trên Supabase: lọc mã, ghi chú, dòng sổ video. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cleanCodes, cleanNote, validDay, validKey, videoRow } from "../src/lib/kho-store";
+import { cleanCodes, cleanNote, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
 
 describe("kho-store", () => {
   it("lọc mã đơn: viết hoa, bỏ khoảng trắng, bỏ trùng và thứ không phải mã", () => {
@@ -21,6 +21,13 @@ describe("kho-store", () => {
     assert.deepEqual(cleanNote({ lyDo: "hết hàng", xuLy: "chờ 22/11", khac: "x", state: "thieu" }), { lyDo: "hết hàng", xuLy: "chờ 22/11", state: "thieu" });
     assert.equal(cleanNote({ note: "a".repeat(900) }).note.length, 500);
     assert.deepEqual(cleanNote(null), {});
+  });
+  it("dòng báo cáo hoàn Viettel: chỉ giữ mã, trạng thái, lý do", () => {
+    assert.deepEqual(cleanVtpRows([{ ma: " pke1575319886 ", status: " Đang chuyển hoàn ", reason: "Chuyển phân công", ten: "x", sdt: "0900000000" }, { ma: "PKE1575319886", status: "Đã trả" }, { ma: "tên khách" }, null, { ma: "PKE1574103822", trang_thai: "Đã trả", ly_do: "Không có nhu cầu nhận hàng" }]), [
+      { ma: "PKE1575319886", status: "Đang chuyển hoàn", reason: "Chuyển phân công" },
+      { ma: "PKE1574103822", status: "Đã trả", reason: "Không có nhu cầu nhận hàng" },
+    ]);
+    assert.deepEqual(cleanVtpRows("PKE1"), []);
   });
   it("dòng sổ video: nhận dòng đủ thông tin, bỏ dòng thiếu", () => {
     const now = new Date("2026-11-20T08:00:00Z");

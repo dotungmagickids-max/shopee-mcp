@@ -1,4 +1,4 @@
-import { checkKhoKey, lookupOrder, ordersToPack, productCodes, returnsExpected, shopeeArrange, shopeeLabels } from "@/lib/kho";
+import { checkKhoKey, lookupOrder, ordersToPack, productCodes, returnsExpected, shopeeArrange, shopeeLabels, vtpMailPush } from "@/lib/kho";
 import { dayGet, dayWrite, markSet, marksGet, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
 
 export const runtime = "nodejs";
@@ -55,6 +55,8 @@ export async function GET(request: Request) {
  *   action "ngay"     { ngay, add?: mã[], set?: mã[] (thay toàn bộ), notes?: { mã: { lyDo, xuLy } }, clearNotes?, nguon? } → danh sách ngày sau khi sửa
  *   action "video"    { may, rows: [{ fileName, code, orderId, sysId, mode, startedAt, durationSec, size, check, source, type, del? }] } → { saved, skipped }
  *   action "hoanmark" { khoa, du_lieu: { state?, note? } } → { ok }
+ *   action "hoanvtp"  { ngay (ngày báo cáo), rows: [{ ma, status, reason }] } → { saved, matched, notFound[] }
+ *                     đơn khâu hoàn theo mail báo cáo vận hành Viettel Post; không gửi tên, SĐT, địa chỉ khách
  * Tem vận đơn Shopee: { action, shop, orders: string[] (tối đa 50) }
  *   action "tem"     → { files: [{ type, carrier, orders[], pdf (base64) }], failed: [{ id, reason }] }. Không đổi trạng thái đơn.
  *   action "chuanbi" → { done[], failed[] }. Bấm "chuẩn bị hàng" trên Shopee (lệnh ghi thật); chỉ chạy khi máy chủ đặt KHO_CHUAN_BI=1.
@@ -77,6 +79,11 @@ export async function POST(request: Request) {
       return json(await dayWrite(body.ngay, body));
     }
     if (body?.action === "video") return json(await videoUpsert(body?.rows, body?.may));
+    if (body?.action === "hoanvtp") {
+      if (!validDay(body?.ngay)) return json({ error: "ngay phải có dạng YYYY-MM-DD" }, 400);
+      if (!Array.isArray(body?.rows)) return json({ error: "thiếu rows" }, 400);
+      return json(await vtpMailPush(body.ngay, body.rows));
+    }
     if (body?.action === "hoanmark") {
       if (!validKey(body?.khoa)) return json({ error: "khoa không hợp lệ" }, 400);
       await markSet(body.khoa, body?.du_lieu);

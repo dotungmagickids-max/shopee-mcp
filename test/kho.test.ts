@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, vtpWaitingPickup } from "../src/lib/kho";
+import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, reportAgeDays, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, shapeVtpMail, vtpMailDoc, vtpWaitingPickup } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -236,6 +236,27 @@ describe("kiện hoàn đang chờ về", () => {
     assert.equal(shapePancakeReturn({ ...o, status: 15 })!.kind, "hoan-mot-phan");
     assert.equal(shapePancakeReturn({ ...o, order_sources_name: "Shopee" }), null);
     assert.equal(shapePancakeReturn({ ...o, status: 2 }), null);
+  });
+  it("đơn hoàn Viettel theo báo cáo mail: ghép sản phẩm từ Pancake, giữ ngày thấy đầu tiên", () => {
+    const o = { id: 500156, status: 4, order_sources_name: "Facebook", partner: { extend_code: "PKE540445091971802", order_number_vtp: "PKE1577718696" }, items: [{ quantity: 2, variation_info: { name: "QD26002", display_id: "QD26002DEN160", fields: [{ value: "ĐEN" }, { value: "160" }] } }] };
+    const row = { ma: "PKE1577718696", status: "Đang chuyển hoàn", reason: "Không có nhu cầu nhận hàng" };
+    const d = vtpMailDoc(row, "2026-11-19", undefined, [{ id: 1, partner: {} }, o], 1000);
+    assert.deepEqual([d.id, d.channel, d.kind, d.first, d.ngay], ["500156", "Facebook", "giao-that-bai", 1000, "2026-11-19"]);
+    const r = shapeVtpMail(row.ma, d);
+    assert.deepEqual([r.key, r.shop, r.status, r.reason, r.since], ["P:500156", "Viettel Post", "Đang chuyển hoàn", "Không có nhu cầu nhận hàng", 1000]);
+    assert.deepEqual(r.codes, ["PKE1577718696", "500156", "PKE540445091971802"]);
+    assert.deepEqual(r.items, [{ sku: "QD26002DEN160", name: "QD26002", detail: "ĐEN · 160", quantity: 2 }]);
+    // Hôm sau đổi trạng thái: giữ ngày đầu và sản phẩm, không cần tra lại Pancake.
+    const d2 = vtpMailDoc({ ...row, status: "Đã trả", reason: "" }, "2026-11-20", d, null, 9000);
+    assert.deepEqual([d2.status, d2.reason, d2.first, d2.ngay, d2.items?.length], ["Đã trả", "Không có nhu cầu nhận hàng", 1000, "2026-11-20", 1]);
+    // Không tìm thấy đơn trên Pancake: vẫn có trong danh sách theo mã Viettel.
+    const r3 = shapeVtpMail("PKE1", vtpMailDoc({ ma: "PKE1", status: "", reason: "" }, "2026-11-20", undefined, [], 5));
+    assert.deepEqual([r3.key, r3.id, r3.status, r3.items.length], ["VTP:PKE1", "PKE1", "Đang hoàn", 0]);
+    assert.equal(vtpMailDoc(row, "2026-11-19", undefined, [{ ...o, status: 15 }], 1).kind, "hoan-mot-phan");
+  });
+  it("tuổi của báo cáo mail tính theo ngày Việt Nam", () => {
+    assert.equal(reportAgeDays("2026-11-19", Date.parse("2026-11-20T00:30:00Z")), 1);
+    assert.equal(reportAgeDays("2026-11-19", Date.parse("2026-11-21T18:00:00Z")), 3);
   });
 });
 
