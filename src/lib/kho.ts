@@ -656,3 +656,155 @@ export async function shopeeArrange(shopName: string, sns: string[], cach: "pick
   });
   return { done, failed };
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Kiện hoàn đang chờ về kho (chỉ đọc). Kho quay video lúc mở kiện; phần mềm so danh sách này với video
+ * hàng hoàn để biết kiện nào CHƯA VỀ.
+ *   Shopee  : yêu cầu trả hàng hoàn tiền mà khách phải gửi hàng lại (needs_logistics), 45 ngày gần nhất.
+ *   Pancake : đơn Viettel Post đang hoàn (4) hoặc hoàn một phần (15), 60 ngày gần nhất.
+ * Chưa có: đơn Shopee giao không thành công đang quay về (Shopee API không có trạng thái riêng để liệt kê).
+ * Không trả tên, SĐT, địa chỉ khách.
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface HoanRow {
+  key: string;
+  channel: string;
+  shop: string;
+  kind: "tra-hang" | "giao-that-bai" | "hoan-mot-phan";
+  id: string;
+  codes: string[];
+  status: string;
+  reason: string;
+  refund: number | null;
+  items: Array<{ sku: string; name: string; detail: string; quantity: number }>;
+  since: number | null;
+  due: number | null;
+}
+
+const RETURN_STATUS_VI: Record<string, string> = {
+  REQUESTED: "Khách vừa yêu cầu",
+  ACCEPTED: "Đã chấp nhận, hàng đang về",
+  PROCESSING: "Đang xử lý",
+  JUDGING: "Shopee đang xét",
+  SELLER_DISPUTE: "Shop đang khiếu nại",
+  REFUND_PAID: "Đã hoàn tiền",
+  COMPLETED: "Hoàn tất",
+};
+const RETURN_REASON_VI: Record<string, string> = {
+  NOT_RECEIPT: "Không nhận được hàng",
+  WRONG_ITEM: "Giao sai hàng",
+  ITEM_DAMAGED: "Hàng hư hỏng",
+  DIFFERENT_DESCRIPTION: "Khác mô tả",
+  MUTUAL_AGREE: "Hai bên thỏa thuận",
+  CHANGE_MIND: "Đổi ý",
+  ITEM_MISSING: "Thiếu hàng",
+  EXPECTATION_FAILED: "Không như mong đợi",
+  WRONG_SIZE: "Sai size",
+  ITEM_WRONGDAMAGED: "Sai hoặc hỏng hàng",
+  USED_PRODUCT: "Hàng đã qua sử dụng",
+};
+
+/** Yêu cầu trả hàng Shopee → kiện hoàn. null nếu không có kiện nào về kho (chỉ hoàn tiền, hoặc đã hủy/đóng). */
+export function shapeShopeeReturn(r: any, shopName: string): HoanRow | null {
+  const status = String(r?.status ?? "");
+  if (!r?.return_sn || r?.needs_logistics === false || status === "CANCELLED" || status === "CLOSED") return null;
+  const reason = String(r?.reassessed_request_reason || r?.reason || "");
+  return {
+    key: `S:${r.return_sn}`,
+    channel: "Shopee",
+    shop: shopName,
+    kind: "tra-hang",
+    id: String(r?.order_sn ?? ""),
+    codes: [...new Set([r?.tracking_number, r?.order_sn, r?.return_sn].map((x) => normSku(x == null ? "" : String(x))).filter(Boolean))],
+    status: RETURN_STATUS_VI[status] ?? status,
+    reason: RETURN_REASON_VI[reason] ?? reason,
+    refund: r?.refund_amount == null ? null : Number(r.refund_amount),
+    items: (r?.item ?? []).map((i: any) => ({ sku: normSku(i?.variation_sku || i?.item_sku), name: String(i?.name ?? ""), detail: "", quantity: Math.max(1, Number(i?.amount) || 1) })),
+    since: toMs(r?.create_time),
+    due: toMs(r?.return_seller_due_date) ?? toMs(r?.due_date),
+  };
+}
+
+/** Đơn Pancake đi Viettel Post đang hoàn về. null nếu là đơn Shopee (lấy từ Shopee) hoặc không ở trạng thái hoàn. */
+export function shapePancakeReturn(o: any): HoanRow | null {
+  const status = Number(o?.status);
+  const src = String(o?.order_sources_name ?? "");
+  if (![4, 15].includes(status) || /shopee/i.test(src)) return null;
+  const ups: any[] = Array.isArray(o?.partner?.extend_update) ? o.partner.extend_update : [];
+  const lastUp = ups.reduce((best: any, u: any) => (!best || String(u?.updated_at ?? "") > String(best?.updated_at ?? "") ? u : best), null);
+  const items: HoanRow["items"] = [];
+  for (const it of o?.items ?? []) {
+    const k = toItem(it?.variation_info, Number(it?.quantity) || 1);
+    items.push({ sku: normSku(k.display_id), name: k.name, detail: k.detail, quantity: k.quantity });
+  }
+  return {
+    key: `P:${o?.id}`,
+    channel: /tik\s*tok/i.test(src) ? "TikTok" : src || "Pancake",
+    shop: "Viettel Post",
+    kind: status === 15 ? "hoan-mot-phan" : "giao-that-bai",
+    id: String(o?.id ?? ""),
+    codes: orderCodes(o),
+    status: String(lastUp?.status ?? (status === 15 ? "Hoàn một phần" : "Đang hoàn")),
+    reason: status === 15 ? "Hoàn một phần (thường là đơn đổi, hàng cũ về)" : "Giao không thành công",
+    refund: null,
+    items,
+    since: toMs(o?.partner?.first_undeliverable_at) ?? toMs(o?.partner?.updated_at) ?? toMs(o?.inserted_at),
+    due: null,
+  };
+}
+
+async function shopeeReturns(now: number, errors: string[]): Promise<HoanRow[]> {
+  const sec = Math.floor(now / 1000);
+  const per = await Promise.all(
+    shops().map(async (shop) => {
+      const out = new Map<string, HoanRow>();
+      try {
+        for (const [from, to] of [[sec - 15 * 86400, sec], [sec - 30 * 86400, sec - 15 * 86400 - 1], [sec - 45 * 86400, sec - 30 * 86400 - 1]]) {
+          for (let page = 0; page < 20; page++) {
+            const res = await callShopee(shop.shopId, "returns.get_return_list", { page_no: page, page_size: 100, create_time_from: from, create_time_to: to });
+            const list: any[] = res.response?.return ?? [];
+            for (const r of list) {
+              const row = shapeShopeeReturn(r, shop.name);
+              if (row) out.set(row.key, row);
+            }
+            if (!res.response?.more || !list.length) break;
+          }
+        }
+      } catch (err) {
+        errors.push(`Shopee ${shop.name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return [...out.values()];
+    })
+  );
+  return per.flat();
+}
+
+async function pancakeReturns(now: number, errors: string[]): Promise<{ rows: HoanRow[]; stale: number }> {
+  const rows: HoanRow[] = [];
+  let stale = 0;
+  try {
+    for (let page = 1; page <= 5; page++) {
+      // Tìm "PKE" để chỉ lấy đơn Viettel Post (Pancake còn hàng nghìn đơn Shopee treo ở trạng thái đang hoàn).
+      const body = await getJson("orders", { search: "PKE", page_size: 100, page_number: page, "filter_status[]": [4, 15] });
+      for (const o of body?.data ?? []) {
+        const row = shapePancakeReturn(o);
+        if (!row) continue;
+        if ((toMs(o?.inserted_at) ?? 0) < now - 60 * 86400_000) stale++;
+        else rows.push(row);
+      }
+      const total = Number(body?.total_pages ?? 0);
+      if (!body?.data?.length || (total && page >= total)) break;
+    }
+  } catch (err) {
+    errors.push(`Pancake: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return { rows, stale };
+}
+
+export async function returnsExpected(): Promise<{ at: number; returns: HoanRow[]; errors: string[]; stale: number }> {
+  const now = Date.now();
+  const errors: string[] = [];
+  const [a, b] = await Promise.all([shopeeReturns(now, errors), pancakeReturns(now, errors)]);
+  const returns = [...a, ...b.rows].sort((x, y) => (x.since ?? 0) - (y.since ?? 0));
+  return { at: now, returns, errors, stale: b.stale };
+}
