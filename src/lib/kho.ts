@@ -296,7 +296,8 @@ const DOI_MAYBE = /\bdoi\b|\btra hang\b|\bhoan\b/;
 
 export function exchangeKind(o: any): { kind: "doi" | "nghi" | ""; note: string } {
   const notes = [o?.note, o?.note_print].map((x) => String(x ?? "").replace(/\s+/g, " ").trim()).filter(Boolean);
-  const flat = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
+  // "đợi" (chờ) bỏ dấu trùng với "đổi": đổi chữ "đợi" thành "cho" trước khi bỏ dấu.
+  const flat = (s: string) => s.normalize("NFC").toLowerCase().replace(/đợi/g, "cho").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
   for (const re of [DOI_SURE, DOI_MAYBE]) {
     const hit = notes.find((n) => re.test(flat(n)));
     if (hit) return { kind: re === DOI_SURE ? "doi" : "nghi", note: hit.slice(0, 100) };
