@@ -912,6 +912,16 @@ export async function vtpMailPush(ngay: string, rowsIn: unknown): Promise<{ save
   return { saved: rows.length, matched: rows.length - notFound.length, notFound };
 }
 
+/**
+ * Danh sách hoàn Viettel = đơn khâu hoàn theo báo cáo mail + đơn "hoàn một phần" trên Pancake
+ * (đơn đổi: giao hàng mới thành công, hàng cũ quay về kho; báo cáo mail không có loại này).
+ * Đơn "đang hoàn" của Pancake thì bỏ, vì mail mới là nguồn đúng cho loại đó. Đơn có ở cả hai thì giữ dòng của mail.
+ */
+export function mergeVtpReturns(mail: HoanRow[], pancake: HoanRow[]): HoanRow[] {
+  const seen = new Set(mail.flatMap((r) => [r.key, ...r.codes]));
+  return [...mail, ...pancake.filter((r) => r.kind === "hoan-mot-phan" && !seen.has(r.key) && !r.codes.some((c) => seen.has(c)))];
+}
+
 /** Số ngày từ ngày báo cáo (YYYY-MM-DD, giờ Việt Nam) đến bây giờ. */
 export function reportAgeDays(ngay: string, now: number): number {
   return Math.floor((now + 7 * 3600_000 - Date.parse(`${ngay}T00:00:00Z`)) / 86400_000);
@@ -928,8 +938,8 @@ export async function returnsExpected(): Promise<{ at: number; returns: HoanRow[
   }
   // Viettel: lấy theo báo cáo mail của Viettel Post. Chưa có báo cáo nào thì tạm lấy từ Pancake và báo rõ.
   if (mail?.last) {
-    const a = await shopeeReturns(now, errors);
-    const b = Object.entries(mail.docs).map(([ma, d]) => shapeVtpMail(ma, d));
+    const [a, p] = await Promise.all([shopeeReturns(now, errors), pancakeReturns(now, errors)]);
+    const b = mergeVtpReturns(Object.entries(mail.docs).map(([ma, d]) => shapeVtpMail(ma, d)), p.rows);
     const age = reportAgeDays(mail.last.ngay, now);
     if (age > 2) errors.push(`Danh sách hoàn Viettel đang theo báo cáo mail ngày ${mail.last.ngay} (đã ${age} ngày chưa có báo cáo mới)`);
     return { at: now, returns: [...a, ...b].sort((x, y) => (x.since ?? 0) - (y.since ?? 0)), errors, stale: 0, vtp: { from: "mail", ngay: mail.last.ngay } };

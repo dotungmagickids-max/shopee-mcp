@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, reportAgeDays, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, shapeVtpMail, vtpMailDoc, vtpWaitingPickup } from "../src/lib/kho";
+import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, mergeVtpReturns, shapeOrder, reportAgeDays, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, shapeVtpMail, vtpMailDoc, vtpWaitingPickup } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -253,6 +253,13 @@ describe("kiện hoàn đang chờ về", () => {
     const r3 = shapeVtpMail("PKE1", vtpMailDoc({ ma: "PKE1", status: "", reason: "" }, "2026-11-20", undefined, [], 5));
     assert.deepEqual([r3.key, r3.id, r3.status, r3.items.length], ["VTP:PKE1", "PKE1", "Đang hoàn", 0]);
     assert.equal(vtpMailDoc(row, "2026-11-19", undefined, [{ ...o, status: 15 }], 1).kind, "hoan-mot-phan");
+  });
+  it("hoàn Viettel: mail + đơn hoàn một phần của Pancake, không lấy đơn đang hoàn của Pancake, không trùng", () => {
+    const row = (key: string, kind: string, codes: string[]) => ({ key, kind, codes }) as any;
+    const mail = [row("P:1", "giao-that-bai", ["PKE1", "1"]), row("VTP:PKE9", "giao-that-bai", ["PKE9"])];
+    const out = mergeVtpReturns(mail, [row("P:1", "hoan-mot-phan", ["1", "PKE1"]), row("P:2", "hoan-mot-phan", ["2", "PKE2"]), row("P:3", "giao-that-bai", ["3", "PKE3"]), row("P:4", "hoan-mot-phan", ["4", "PKE9"])]);
+    assert.deepEqual(out.map((r) => r.key), ["P:1", "VTP:PKE9", "P:2"]);
+    assert.equal(out[0].kind, "giao-that-bai");
   });
   it("tuổi của báo cáo mail tính theo ngày Việt Nam", () => {
     assert.equal(reportAgeDays("2026-11-19", Date.parse("2026-11-20T00:30:00Z")), 1);
