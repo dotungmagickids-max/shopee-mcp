@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat } from "../src/lib/kho";
+import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, vtpWaitingPickup } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -115,7 +115,7 @@ describe("đơn cần đóng", () => {
   });
   it("bỏ đơn Shopee trên Pancake, đơn Facebook đã gửi; nhận đơn TikTok đang đóng", () => {
     assert.equal(shapePancakeXuat(fb({ order_sources_name: "Shopee" }), null), null);
-    assert.equal(shapePancakeXuat(fb({ status: 2 }), null), null);
+    assert.equal(shapePancakeXuat(fb({ status: 2, partner: { partner_name: "VTP", picked_up_at: "2026-11-20T03:00:00" } }), null), null);
     assert.equal(shapePancakeXuat(fb({ status: 8 }), null), null);
     const tt = shapePancakeXuat(fb({ order_sources_name: "Tiktok", status: 8, id: "587263114848929710", note: "giao sau" }), null)!;
     assert.deepEqual([tt.channel, tt.group, tt.eligible], ["TikTok", "TikTok", true]);
@@ -236,5 +236,25 @@ describe("kiện hoàn đang chờ về", () => {
     assert.equal(shapePancakeReturn({ ...o, status: 15 })!.kind, "hoan-mot-phan");
     assert.equal(shapePancakeReturn({ ...o, order_sources_name: "Shopee" }), null);
     assert.equal(shapePancakeReturn({ ...o, status: 2 }), null);
+  });
+});
+
+describe("đơn Viettel Post đã gửi hàng, chờ bưu tá lấy", () => {
+  const o = { id: 500742, status: 2, order_sources_name: "Facebook", inserted_at: "2026-11-19T15:32:40", note: "khách hẹn giao sau 25/11", partner: { partner_name: "VTP", partner_status: "request_received", picked_up_at: null, service_partner: { ORDER_SERVICE: "VSL7", ORDER_SERVICE_ADD: null } }, items: [{ quantity: 1, variation_info: { name: "QD26002", display_id: "QD26002DEN160", fields: [{ value: "ĐEN" }, { value: "160" }] } }] };
+  it("vào danh sách cần đóng, đánh dấu đã chuẩn bị, không còn xét ghi chú hay tồn", () => {
+    const r = shapePancakeXuat(o, new Map([["QD26002DEN160", 0]]))!;
+    assert.deepEqual([r.id, r.channel, r.group, r.arranged, r.eligible, r.reason], ["500742", "Facebook", "Viettel Post", true, true, ""]);
+    assert.equal(r.exchange, undefined);
+  });
+  it("bưu tá đã nhận hoặc không phải Viettel Post thì bỏ", () => {
+    assert.equal(shapePancakeXuat({ ...o, partner: { ...o.partner, picked_up_at: "2026-11-20T03:00:00" } }, null), null);
+    assert.equal(shapePancakeXuat({ ...o, partner: { ...o.partner, partner_status: "on_the_way" } }, null), null);
+    assert.equal(shapePancakeXuat({ ...o, partner: { ...o.partner, partner_name: "GHTK" } }, null), null);
+    assert.equal(vtpWaitingPickup({ partner: { partner_name: "VTP", partner_status: "picking_up" } }), true);
+    assert.equal(vtpWaitingPickup({}), false);
+  });
+  it("đơn đã chọn GGDH là đơn đổi chắc chắn", () => {
+    const r = shapePancakeXuat({ ...o, note: "", partner: { ...o.partner, service_partner: { ORDER_SERVICE_ADD: "GGDH" } } }, null)!;
+    assert.deepEqual([r.exchange, r.arranged], ["doi", true]);
   });
 });

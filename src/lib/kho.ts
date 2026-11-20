@@ -177,7 +177,10 @@ export interface XuatOrder {
   exchange?: "doi" | "nghi";
   /** Ghi chú làm căn cứ cho exchange. */
   exchangeNote?: string;
-  /** Shopee: đã bấm "chuẩn bị hàng" (đã có mã vận đơn, lấy được tem), đang chờ hãng tới lấy. */
+  /**
+   * Đã chuẩn bị xong, chờ hãng tới lấy: kho đóng các đơn này.
+   * Shopee: đã bấm "chuẩn bị hàng". Viettel Post: Pancake "Đã gửi hàng" nhưng bưu tá chưa nhận.
+   */
   arranged?: boolean;
 }
 
@@ -305,6 +308,13 @@ export function exchangeKind(o: any): { kind: "doi" | "nghi" | ""; note: string 
   return { kind: "", note: "" };
 }
 
+/** Đơn đã đẩy sang Viettel Post nhưng bưu tá chưa nhận hàng (chưa có giờ nhận, trạng thái còn ở các bước chờ lấy). */
+export function vtpWaitingPickup(o: any): boolean {
+  const p = o?.partner;
+  if (!p || !/vtp|viettel/i.test(String(p.partner_name ?? "")) || p.picked_up_at) return false;
+  return ["", "waiting", "request_received", "processing_picked_up", "picking_up", "delay_pickup"].includes(String(p.partner_status ?? ""));
+}
+
 /**
  * Đơn Pancake → đơn xuất. Trả null nếu không thuộc diện cần đóng ở đây
  * (đơn Shopee lấy từ Shopee API; Facebook chỉ lấy Mới / Đã xác nhận; TikTok lấy thêm "Đang đóng hàng").
@@ -315,7 +325,9 @@ export function shapePancakeXuat(o: any, stock: Map<string, number> | null): Xua
   const status = Number(o?.status);
   if (/shopee/i.test(src)) return null;
   const tiktok = /tik\s*tok/i.test(src);
-  if (tiktok ? ![0, 1, 8].includes(status) : ![0, 1].includes(status)) return null;
+  // Anh Tùng dạy 20/11/2026: đơn Viettel Post ở "Đã gửi hàng" mà chưa chuyển cho hãng là đơn kho phải đóng.
+  const pushed = status === 2 && vtpWaitingPickup(o);
+  if (!pushed && (tiktok ? ![0, 1, 8].includes(status) : ![0, 1].includes(status))) return null;
   const items: XuatItem[] = [];
   for (const it of o?.items ?? []) {
     const parts: any[] = Array.isArray(it?.components) ? it.components : [];
@@ -328,9 +340,11 @@ export function shapePancakeXuat(o: any, stock: Map<string, number> | null): Xua
     }
   }
   const carrier = String(o?.partner?.partner_name ?? "");
-  const ex = tiktok ? { kind: "" as const, note: "" } : exchangeKind(o);
-  let reason = tiktok ? "" : blockReason(o);
-  if (!reason && !tiktok && stock) {
+  let ex = tiktok ? { kind: "" as "" | "doi" | "nghi", note: "" } : exchangeKind(o);
+  // Đơn đã đẩy: dịch vụ đổi hàng chị Hiền đã chọn (GGDH) là câu trả lời chắc chắn, hơn mọi suy đoán từ ghi chú.
+  if (pushed && /GGDH/i.test(String(o?.partner?.service_partner?.ORDER_SERVICE_ADD ?? ""))) ex = { kind: "doi", note: ex.note || "Đã chọn dịch vụ GGDH - Đổi hàng" };
+  let reason = tiktok || pushed ? "" : blockReason(o);
+  if (!reason && !tiktok && !pushed && stock) {
     const need = new Map<string, number>();
     for (const it of items) need.set(it.sku, (need.get(it.sku) ?? 0) + it.quantity);
     const short: string[] = [];
@@ -345,7 +359,7 @@ export function shapePancakeXuat(o: any, stock: Map<string, number> | null): Xua
     channel: tiktok ? "TikTok" : "Facebook",
     shop: tiktok ? "TikTok" : src || "Pancake",
     carrier,
-    group: tiktok ? "TikTok" : carrierGroup(carrier || "Viettel Post"),
+    group: tiktok && !pushed ? "TikTok" : carrierGroup(carrier || "Viettel Post"),
     urgent: false,
     shipBy: null,
     created: toMs(o?.inserted_at),
@@ -353,6 +367,7 @@ export function shapePancakeXuat(o: any, stock: Map<string, number> | null): Xua
     reason,
     items,
     ...(ex.kind ? { exchange: ex.kind, exchangeNote: ex.note } : {}),
+    ...(pushed ? { arranged: true } : {}),
   };
 }
 
@@ -421,6 +436,13 @@ async function pancakeCandidates(errors: string[]): Promise<any[]> {
       if (!body?.data?.length || (total && page >= total)) break;
       if (page === 8) errors.push("Pancake: quá 800 đơn, danh sách có thể thiếu");
     }
+    // Đơn "Đã gửi hàng" đi Viettel Post (tìm "PKE" để khỏi kéo cả nghìn đơn sàn); chỉ giữ đơn bưu tá chưa nhận.
+    for (let page = 1; page <= 4; page++) {
+      const body = await getJson("orders", { search: "PKE", page_size: 100, page_number: page, "filter_status[]": [2] });
+      raw.push(...(body?.data ?? []));
+      const total = Number(body?.total_pages ?? 0);
+      if (!body?.data?.length || (total && page >= total)) break;
+    }
     return raw.filter((o) => shapePancakeXuat(o, null));
   } catch (err) {
     errors.push(`Pancake: ${err instanceof Error ? err.message : String(err)}`);
@@ -458,7 +480,7 @@ export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[];
   const [shopee, cand] = await Promise.all([shopeeWaiting(now, errors), pancakeCandidates(errors)]);
   const skus = new Set<string>();
   for (const o of shopee) for (const it of o.items) if (it.sku) skus.add(it.sku);
-  for (const o of cand) if (!/tik\s*tok/i.test(String(o?.order_sources_name ?? ""))) for (const it of shapePancakeXuat(o, null)!.items) if (it.sku) skus.add(it.sku);
+  for (const o of cand) if (!/tik\s*tok/i.test(String(o?.order_sources_name ?? "")) && Number(o?.status) !== 2) for (const it of shapePancakeXuat(o, null)!.items) if (it.sku) skus.add(it.sku);
   let stock: Map<string, number> | null = null;
   try {
     stock = await actualStock([...skus]);
