@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   // Clients may append the resource path (e.g. /.well-known/oauth-protected-resource/api/mcp).
   async rewrites() {
     return [
+      { source: "/kho", destination: "/kho/index.html" },
       { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/metadata" },
       { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/metadata" },
       { source: "/.well-known/openid-configuration", destination: "/api/oauth/metadata" },
