@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyShopeeStock, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
+import { altSkus, applyShopeeStock, blockReason, guessSku, carrierGroup, checkKhoKey, endOfTodayVN, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -136,4 +136,15 @@ describe("Shopee chỉ chuẩn bị đơn có hàng", () => {
     assert.equal(pre.eligible, false);
     assert.equal(unknown.eligible, true);
   });
+});
+
+describe("đơn Shopee không có mã phân loại", () => {
+  it("ghép mã sản phẩm + màu + size", () => {
+    assert.equal(guessSku("ADT26001", "Đỏ,150"), "ADT26001DO150");
+    assert.equal(guessSku("ADT26001 ", "Xanh than,140"), "ADT26001XANHTHAN140");
+    assert.equal(guessSku("", "Đỏ,150"), "");
+    const r = shapeShopeeXuat({ order_sn: "X", item_list: [{ item_sku: "ADT26001", model_sku: "", model_name: "Trắng,130", model_quantity_purchased: 1 }] }, "Magickids", Date.now());
+    assert.deepEqual([r.items[0].sku, r.items[0].product], ["ADT26001TRANG130", "ADT26001"]);
+  });
+  it("màu Shopee Xanh dương = mã Pancake XANHBIEN", () => assert.deepEqual(altSkus("ADT26001XANHDUONG150"), ["ADT26001XANHBIEN150"]));
 });
