@@ -146,7 +146,8 @@ export async function productCodes(): Promise<string[]> {
 /* ------------------------------------------------------------------------------------------------
  * Đơn cần đóng (đơn xuất) cho kho. Chỉ đọc.
  *   Shopee: lấy thẳng từ Shopee API, mọi đơn READY_TO_SHIP (anh Tùng chốt 20/11/2026: lấy hết đơn chờ;
- *           Pancake đúng với Facebook nhưng không đúng với Shopee).
+ *           Pancake đúng với Facebook nhưng không đúng với Shopee) và đơn PROCESSED (đã chuẩn bị hàng,
+ *           chờ hãng lấy: kho vẫn phải đóng và in tem).
  *   TikTok, Facebook: lấy từ Pancake. Facebook lọc theo luật: đơn Mới / Đã xác nhận, không vướng ghi chú
  *           giao sau / chưa chốt / đợi chốt, đủ tồn thực.
  * Không trả tên, SĐT, địa chỉ khách.
@@ -172,6 +173,8 @@ export interface XuatOrder {
   eligible: boolean;
   reason: string;
   items: XuatItem[];
+  /** Shopee: đã bấm "chuẩn bị hàng" (đã có mã vận đơn, lấy được tem), đang chờ hãng tới lấy. */
+  arranged?: boolean;
 }
 
 export function carrierGroup(name: string | null | undefined): string {
@@ -258,6 +261,7 @@ export function shapeShopeeXuat(o: any, shopName: string, now: number): XuatOrde
     eligible: true,
     reason: "",
     items,
+    arranged: o?.order_status === "PROCESSED",
   };
 }
 
@@ -327,6 +331,8 @@ export function shapePancakeXuat(o: any, stock: Map<string, number> | null): Xua
   };
 }
 
+const WAITING = ["READY_TO_SHIP", "PROCESSED"];
+
 async function shopeeWaiting(now: number, errors: string[]): Promise<XuatOrder[]> {
   const sec = Math.floor(now / 1000);
   const per = await Promise.all(
@@ -335,19 +341,23 @@ async function shopeeWaiting(now: number, errors: string[]): Promise<XuatOrder[]
       try {
         const sns = new Set<string>();
         // Shopee chỉ cho mỗi lần hỏi 15 ngày: hỏi 2 khoảng để không sót đơn đặt trước lâu ngày.
-        for (const [from, to] of [[sec - 15 * 86400, sec], [sec - 30 * 86400, sec - 15 * 86400]]) {
-          let cursor = "";
-          for (let page = 0; page < 20; page++) {
-            const res = await callShopee(shop.shopId, "order.get_order_list", { time_range_field: "create_time", time_from: from, time_to: to, page_size: 100, cursor, order_status: "READY_TO_SHIP" });
-            for (const o of res.response?.order_list ?? []) sns.add(String(o.order_sn));
-            if (!res.response?.more) break;
-            cursor = String(res.response?.next_cursor ?? "");
-            if (!cursor) break;
-          }
-        }
+        const asks: Array<[number, number, string]> = [];
+        for (const status of WAITING) for (const [from, to] of [[sec - 15 * 86400, sec], [sec - 30 * 86400, sec - 15 * 86400]]) asks.push([from, to, status]);
+        await Promise.all(
+          asks.map(async ([from, to, status]) => {
+            let cursor = "";
+            for (let page = 0; page < 20; page++) {
+              const res = await callShopee(shop.shopId, "order.get_order_list", { time_range_field: "create_time", time_from: from, time_to: to, page_size: 100, cursor, order_status: status });
+              for (const o of res.response?.order_list ?? []) sns.add(String(o.order_sn));
+              if (!res.response?.more) break;
+              cursor = String(res.response?.next_cursor ?? "");
+              if (!cursor) break;
+            }
+          })
+        );
         for (const part of chunk([...sns], 50)) {
           const res = await callShopee(shop.shopId, "order.get_order_detail", { order_sn_list: part.join(","), response_optional_fields: "ship_by_date,item_list,shipping_carrier,checkout_shipping_carrier,package_list,note" });
-          for (const o of res.response?.order_list ?? []) if (!o.order_status || o.order_status === "READY_TO_SHIP") out.push(shapeShopeeXuat(o, shop.name, now));
+          for (const o of res.response?.order_list ?? []) if (!o.order_status || WAITING.includes(o.order_status)) out.push(shapeShopeeXuat(o, shop.name, now));
         }
       } catch (err) {
         errors.push(`Shopee ${shop.name}: ${err instanceof Error ? err.message : String(err)}`);
@@ -397,10 +407,11 @@ async function pancakeCandidates(errors: string[]): Promise<any[]> {
  * Shopee chỉ chuẩn bị đơn có hàng (anh Tùng dặn 20/11/2026: có sản phẩm đặt trước, chưa có hàng).
  * Chia tồn thực cho đơn có hạn giao sớm trước; đơn không đủ hàng thì đánh dấu chưa đi được.
  * Mã không tìm thấy tồn trên Pancake thì không chặn (không kiểm được).
+ * Đơn đã chuẩn bị hàng thì đã hứa với Shopee: được chia tồn trước và không bị chặn.
  */
 export function applyShopeeStock(orders: XuatOrder[], stock: Map<string, number>): void {
   const left = new Map(stock);
-  const sorted = [...orders].sort((a, b) => (a.shipBy ?? Infinity) - (b.shipBy ?? Infinity) || (a.created ?? 0) - (b.created ?? 0));
+  const sorted = [...orders].sort((a, b) => Number(!!b.arranged) - Number(!!a.arranged) || (a.shipBy ?? Infinity) - (b.shipBy ?? Infinity) || (a.created ?? 0) - (b.created ?? 0));
   for (const o of sorted) {
     const need = new Map<string, number>();
     for (const it of o.items) need.set(it.sku, (need.get(it.sku) ?? 0) + it.quantity);
@@ -409,14 +420,14 @@ export function applyShopeeStock(orders: XuatOrder[], stock: Map<string, number>
       const have = left.get(sku);
       if (have != null && have < n) short.push(`${sku} (cần ${n}, còn ${Math.max(0, have)})`);
     }
-    if (short.length) {
+    if (short.length && !o.arranged) {
       o.eligible = false;
       o.reason = `Chưa có hàng (đặt trước hoặc thiếu): ${short.join(", ")}`;
     } else for (const [sku, n] of need) if (left.has(sku)) left.set(sku, left.get(sku)! - n);
   }
 }
 
-export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[]; errors: string[]; unknownSkus: string[] }> {
+export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[]; errors: string[]; unknownSkus: string[]; canArrange: boolean }> {
   const now = Date.now();
   const errors: string[] = [];
   const [shopee, cand] = await Promise.all([shopeeWaiting(now, errors), pancakeCandidates(errors)]);
@@ -450,5 +461,173 @@ export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[];
     applyShopeeStock(shopee, stock);
   }
   const orders = [...shopee, ...cand.map((o) => shapePancakeXuat(o, stock)!)].sort((x, y) => (x.created ?? 0) - (y.created ?? 0));
-  return { at: now, orders, errors, unknownSkus: [...unknown].sort() };
+  return { at: now, orders, errors, unknownSkus: [...unknown].sort(), canArrange: arrangeAllowed() };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Tem vận đơn Shopee cho kho in ngay trong phần mềm.
+ *   shopeeLabels : lấy file PDF tem của các đơn ĐÃ chuẩn bị hàng. Không đổi trạng thái đơn
+ *                  (create_shipping_document chỉ yêu cầu Shopee dựng file).
+ *   shopeeArrange: bấm "chuẩn bị hàng" (ship_order) thay người. LỆNH GHI THẬT lên Shopee, chỉ chạy khi
+ *                  máy chủ đặt KHO_CHUAN_BI=1 (anh Tùng: hệ thống ổn định mới cho chuẩn bị hàng).
+ * ---------------------------------------------------------------------------------------------- */
+
+export const arrangeAllowed = (): boolean => process.env.KHO_CHUAN_BI?.trim() === "1";
+
+export interface Failed {
+  id: string;
+  reason: string;
+}
+
+const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 200);
+
+function findShop(name: string) {
+  const shop = shops().find((s) => s.name === name || String(s.shopId) === name);
+  if (!shop) throw new Error(`Không có shop "${name}"`);
+  return shop;
+}
+
+/** Chạy fn cho từng phần tử, tối đa n việc cùng lúc. */
+async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<void>): Promise<void> {
+  for (const part of chunk(items, n)) await Promise.all(part.map(fn));
+}
+
+/** Gom đơn theo (loại tem, hãng vận chuyển): Shopee chỉ cho tải chung một file khi cùng hãng. */
+export function labelGroups(rows: Array<{ id: string; type: string; carrier: string }>): Array<{ type: string; carrier: string; orders: string[] }> {
+  const m = new Map<string, { type: string; carrier: string; orders: string[] }>();
+  for (const r of rows) {
+    const k = `${r.type}|${r.carrier}`;
+    const g = m.get(k) ?? { type: r.type, carrier: r.carrier, orders: [] };
+    g.orders.push(r.id);
+    m.set(k, g);
+  }
+  return [...m.values()];
+}
+
+export async function shopeeLabels(shopName: string, sns: string[]): Promise<{ files: Array<{ type: string; carrier: string; orders: string[]; pdf: string }>; failed: Failed[] }> {
+  const shop = findShop(shopName);
+  const failed: Failed[] = [];
+  const fail = (id: string, reason: string) => void failed.push({ id, reason });
+
+  // 1. Mã vận đơn: chưa có nghĩa là đơn chưa chuẩn bị hàng.
+  const tracking = new Map<string, string>();
+  await pool(sns, 8, async (sn) => {
+    try {
+      const res = await callShopee(shop.shopId, "logistics.get_tracking_number", { order_sn: sn });
+      const no = String(res.response?.tracking_number ?? "");
+      if (no) tracking.set(sn, no);
+      else fail(sn, "Chưa có mã vận đơn (đơn chưa chuẩn bị hàng, hoặc Shopee chưa cấp xong: thử lại sau ít phút)");
+    } catch (err) {
+      fail(sn, errText(err));
+    }
+  });
+  let live = sns.filter((sn) => tracking.has(sn));
+  if (!live.length) return { files: [], failed };
+
+  // 2. Hãng vận chuyển và loại tem Shopee gợi ý cho từng đơn.
+  const carrier = new Map<string, string>();
+  const type = new Map<string, string>();
+  try {
+    const [detail, param] = await Promise.all([
+      callShopee(shop.shopId, "order.get_order_detail", { order_sn_list: live.join(","), response_optional_fields: "shipping_carrier,checkout_shipping_carrier,package_list" }),
+      callShopee(shop.shopId, "logistics.get_shipping_document_parameter", { order_list: live.map((sn) => ({ order_sn: sn })) }),
+    ]);
+    for (const o of detail.response?.order_list ?? []) carrier.set(String(o.order_sn), String(o.shipping_carrier || o.checkout_shipping_carrier || o.package_list?.[0]?.shipping_carrier || ""));
+    for (const r of param.response?.result_list ?? []) {
+      const t = String(r.suggest_shipping_document_type || r.selectable_shipping_document_type?.[0] || "");
+      if (t) type.set(String(r.order_sn), t);
+      else fail(String(r.order_sn), `Shopee chưa cho in tem: ${String(r.fail_message || r.fail_error || "không rõ lý do")}`);
+    }
+  } catch (err) {
+    for (const sn of live) fail(sn, errText(err));
+    return { files: [], failed };
+  }
+  for (const sn of live) if (!type.has(sn) && !failed.some((f) => f.id === sn)) fail(sn, "Shopee không trả loại tem cho đơn này");
+  live = live.filter((sn) => type.has(sn));
+  if (!live.length) return { files: [], failed };
+
+  // 3. Yêu cầu Shopee dựng file tem, chờ sẵn sàng.
+  const drop = (rows: any[], prefix: string) => {
+    for (const r of rows ?? []) {
+      if (!r?.fail_error && !r?.fail_message) continue;
+      const sn = String(r.order_sn);
+      if (live.includes(sn)) fail(sn, `${prefix}: ${String(r.fail_message || r.fail_error)}`);
+      live = live.filter((x) => x !== sn);
+    }
+  };
+  try {
+    const made = await callShopee(shop.shopId, "logistics.create_shipping_document", { order_list: live.map((sn) => ({ order_sn: sn, tracking_number: tracking.get(sn), shipping_document_type: type.get(sn) })) }, { allowWrite: true });
+    drop(made.response?.result_list, "Chưa dựng được tem");
+  } catch (err) {
+    for (const sn of live) fail(sn, errText(err));
+    return { files: [], failed };
+  }
+  let ready: string[] = [];
+  for (let attempt = 0; attempt < 10 && live.length; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const res = await callShopee(shop.shopId, "logistics.get_shipping_document_result", { order_list: live.map((sn) => ({ order_sn: sn, shipping_document_type: type.get(sn) })) });
+      const rows: any[] = res.response?.result_list ?? [];
+      drop(rows.filter((r) => r.status === "FAILED"), "Shopee dựng tem lỗi");
+      ready = rows.filter((r) => r.status === "READY").map((r) => String(r.order_sn));
+      if (ready.length >= live.length) break;
+    } catch (err) {
+      if (attempt === 9) for (const sn of live) fail(sn, errText(err));
+    }
+  }
+  for (const sn of live) if (!ready.includes(sn) && !failed.some((f) => f.id === sn)) fail(sn, "Shopee chưa dựng xong tem: bấm in lại sau ít phút");
+  live = live.filter((sn) => ready.includes(sn));
+
+  // 4. Tải file: mỗi (loại tem, hãng) một file PDF.
+  const files: Array<{ type: string; carrier: string; orders: string[]; pdf: string }> = [];
+  for (const g of labelGroups(live.map((sn) => ({ id: sn, type: type.get(sn)!, carrier: carrier.get(sn) ?? "" })))) {
+    try {
+      const buf: unknown = await callShopee(shop.shopId, "logistics.download_shipping_document", { shipping_document_type: g.type, order_list: g.orders.map((sn) => ({ order_sn: sn })) });
+      if (!Buffer.isBuffer(buf) || buf.subarray(0, 4).toString("latin1") !== "%PDF") throw new Error("Shopee không trả file PDF");
+      files.push({ ...g, pdf: buf.toString("base64") });
+    } catch (err) {
+      for (const sn of g.orders) fail(sn, `Chưa tải được tem: ${errText(err)}`);
+    }
+  }
+  return { files, failed };
+}
+
+/**
+ * Chọn tham số ship_order từ get_shipping_parameter. Trả thân lệnh, hoặc chuỗi lý do không làm được.
+ * cach: "pickup" = hãng tới kho lấy (chọn địa chỉ lấy hàng mặc định và khung giờ sớm nhất), "dropoff" = kho tự mang ra bưu cục.
+ */
+export function arrangeBody(sn: string, param: any, cach: "pickup" | "dropoff"): Record<string, unknown> | string {
+  const need = param?.info_needed ?? {};
+  if (cach === "dropoff") {
+    if (!Array.isArray(need.dropoff)) return "Đơn này không cho tự mang ra bưu cục";
+    if (need.dropoff.length) return `Tự mang ra bưu cục cần thêm thông tin (${need.dropoff.join(", ")}): chuẩn bị trên Shopee`;
+    return { order_sn: sn, dropoff: {} };
+  }
+  if (!Array.isArray(need.pickup)) return "Đơn này không có hình thức hãng tới lấy";
+  const extra = need.pickup.filter((k: string) => k !== "address_id" && k !== "pickup_time_id");
+  if (extra.length) return `Hãng tới lấy cần thêm thông tin (${extra.join(", ")}): chuẩn bị trên Shopee`;
+  const list: any[] = (param?.pickup?.address_list ?? []).filter((a: any) => (a?.time_slot_list ?? []).length);
+  const addr = list.find((a) => (a.address_flag ?? []).includes("pickup_address")) ?? list[0];
+  if (!addr) return "Shopee không trả khung giờ lấy hàng nào";
+  const slot = [...addr.time_slot_list].sort((a: any, b: any) => Number(a.date ?? 0) - Number(b.date ?? 0))[0];
+  return { order_sn: sn, pickup: { address_id: addr.address_id, pickup_time_id: String(slot.pickup_time_id) } };
+}
+
+export async function shopeeArrange(shopName: string, sns: string[], cach: "pickup" | "dropoff"): Promise<{ done: string[]; failed: Failed[] }> {
+  if (!arrangeAllowed()) throw new Error("Máy chủ chưa bật chuẩn bị hàng tự động (KHO_CHUAN_BI). Chọn chế độ chỉ in tem, hoặc báo anh Tùng bật.");
+  const shop = findShop(shopName);
+  const done: string[] = [];
+  const failed: Failed[] = [];
+  await pool(sns, 4, async (sn) => {
+    try {
+      const res = await callShopee(shop.shopId, "logistics.get_shipping_parameter", { order_sn: sn });
+      const body = arrangeBody(sn, res.response, cach);
+      if (typeof body === "string") return void failed.push({ id: sn, reason: body });
+      await callShopee(shop.shopId, "logistics.ship_order", body, { allowWrite: true });
+      done.push(sn);
+    } catch (err) {
+      failed.push({ id: sn, reason: errText(err) });
+    }
+  });
+  return { done, failed };
 }
