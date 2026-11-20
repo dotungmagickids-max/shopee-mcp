@@ -201,6 +201,8 @@ describe("đơn đổi hàng đi Viettel Post", () => {
   it("đơn thường không bị nhận nhầm; nhắc đổi mà không rõ thì xếp nghi ngờ", () => {
     for (const note of ["", "gọi trước khi giao", "giao giờ hành chính", "khách đi vắng buổi sáng", "hàng dễ vỡ, nhẹ tay", "khách về quê 25/11 mới nhận"]) assert.equal(exchangeKind({ note }).kind, "", note);
     assert.equal(exchangeKind({ note: "khách muốn đổi nếu không vừa" }).kind, "nghi");
+    // "đợi" không phải "đổi" (lỗi thấy trên đơn thật 20/11/2026)
+    for (const note of ["đợi chốt", "Đợi hàng về rồi gửi", "đơn đợi khách chuyển khoản", "ĐỢI CHỐT "]) assert.equal(exchangeKind({ note }).kind, "", note);
   });
   it("đơn Facebook mang nhãn đơn đổi, đơn TikTok thì không", () => {
     const o = { id: 1, status: 1, order_sources_name: "Facebook", note: "đơn đổi cầm 1 quần về", partner: {}, items: [] };
