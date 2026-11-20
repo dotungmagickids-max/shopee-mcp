@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyShopeeStock, blockReason, guessSku, carrierGroup, checkKhoKey, endOfTodayVN, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
+import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, guessSku, labelGroups, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -147,4 +147,47 @@ describe("đơn Shopee không có mã phân loại", () => {
     assert.deepEqual([r.items[0].sku, r.items[0].product], ["ADT26001TRANG130", "ADT26001"]);
   });
   it("màu Shopee Xanh dương = mã Pancake XANHBIEN", () => assert.deepEqual(altSkus("ADT26001XANHDUONG150"), ["ADT26001XANHBIEN150"]));
+});
+
+describe("tem vận đơn và chuẩn bị hàng Shopee", () => {
+  const mk = (id: string, shipBy: number, arranged: boolean) => ({ id, channel: "Shopee" as const, shop: "Magickids", carrier: "SPX Express", group: "SPX", urgent: false, shipBy, created: 1, eligible: true, reason: "", arranged, items: [{ sku: "QD26036DEN150", product: "QD26036", name: "", detail: "", quantity: 1, image: "" }] });
+  it("đơn đã chuẩn bị hàng được chia tồn trước và không bị chặn", () => {
+    const early = mk("A", 100, false);
+    const arranged = mk("B", 900, true);
+    const arranged2 = mk("C", 950, true);
+    applyShopeeStock([early, arranged, arranged2], new Map([["QD26036DEN150", 1]]));
+    assert.equal(arranged.eligible, true);
+    assert.equal(arranged2.eligible, true);
+    assert.equal(early.eligible, false);
+    assert.equal(shapeShopeeXuat({ order_sn: "X", order_status: "PROCESSED", item_list: [] }, "Magickids", 0).arranged, true);
+    assert.equal(shapeShopeeXuat({ order_sn: "X", order_status: "READY_TO_SHIP", item_list: [] }, "Magickids", 0).arranged, false);
+  });
+  it("gom tem theo loại tem và hãng", () => {
+    assert.deepEqual(
+      labelGroups([
+        { id: "A", type: "THERMAL_AIR_WAYBILL", carrier: "SPX Express" },
+        { id: "B", type: "THERMAL_AIR_WAYBILL", carrier: "Giao Hàng Nhanh" },
+        { id: "C", type: "THERMAL_AIR_WAYBILL", carrier: "SPX Express" },
+      ]).map((g) => [g.carrier, g.orders]),
+      [["SPX Express", ["A", "C"]], ["Giao Hàng Nhanh", ["B"]]]
+    );
+  });
+  it("chọn địa chỉ lấy hàng mặc định và khung giờ sớm nhất; thiếu thông tin thì không tự làm", () => {
+    const param = {
+      info_needed: { pickup: ["address_id", "pickup_time_id"] },
+      pickup: {
+        address_list: [
+          { address_id: 1, address_flag: ["return_address"], time_slot_list: [{ date: 5, pickup_time_id: "x" }] },
+          { address_id: 2, address_flag: ["default_address", "pickup_address"], time_slot_list: [{ date: 300, pickup_time_id: "late" }, { date: 200, pickup_time_id: "soon" }] },
+          { address_id: 3, address_flag: ["pickup_address"], time_slot_list: [] },
+        ],
+      },
+    };
+    assert.deepEqual(arrangeBody("SN1", param, "pickup"), { order_sn: "SN1", pickup: { address_id: 2, pickup_time_id: "soon" } });
+    assert.equal(typeof arrangeBody("SN1", param, "dropoff"), "string");
+    assert.deepEqual(arrangeBody("SN1", { info_needed: { dropoff: [] } }, "dropoff"), { order_sn: "SN1", dropoff: {} });
+    assert.match(arrangeBody("SN1", { info_needed: { dropoff: ["branch_id"] } }, "dropoff") as string, /branch_id/);
+    assert.match(arrangeBody("SN1", { info_needed: { pickup: ["address_id", "pickup_time_id"] }, pickup: { address_list: [] } }, "pickup") as string, /khung giờ/);
+    assert.match(arrangeBody("SN1", { info_needed: { non_integrated: [] } }, "pickup") as string, /không có hình thức/);
+  });
 });
