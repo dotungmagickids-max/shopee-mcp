@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeXuat, shapeShopeeXuat } from "../src/lib/kho";
+import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -210,5 +210,29 @@ describe("đơn đổi hàng đi Viettel Post", () => {
     assert.deepEqual([r.exchange, r.exchangeNote, r.eligible], ["doi", "đơn đổi cầm 1 quần về", true]);
     assert.equal(shapePancakeXuat({ ...o, note: "" }, null)!.exchange, undefined);
     assert.equal(shapePancakeXuat({ ...o, order_sources_name: "Tiktok" }, null)!.exchange, undefined);
+  });
+});
+
+describe("kiện hoàn đang chờ về", () => {
+  const ret = { return_sn: "2611190ABC", order_sn: "261110XYZ12345", status: "ACCEPTED", needs_logistics: true, tracking_number: "spxvn061234567890", reason: "DIFFERENT_DESCRIPTION", refund_amount: 149000, create_time: 1795000000, return_seller_due_date: 1795500000, item: [{ name: "Áo ADT25002", variation_sku: "ADT25002TRANG150", amount: 2 }] };
+  it("yêu cầu trả hàng Shopee: lấy đủ ba mã để khớp video, bỏ yêu cầu chỉ hoàn tiền hoặc đã hủy", () => {
+    const r = shapeShopeeReturn(ret, "Magickids")!;
+    assert.deepEqual([r.key, r.kind, r.id, r.status, r.reason, r.refund], ["S:2611190ABC", "tra-hang", "261110XYZ12345", "Đã chấp nhận, hàng đang về", "Khác mô tả", 149000]);
+    assert.deepEqual(r.codes, ["SPXVN061234567890", "261110XYZ12345", "2611190ABC"]);
+    assert.deepEqual(r.items, [{ sku: "ADT25002TRANG150", name: "Áo ADT25002", detail: "", quantity: 2 }]);
+    assert.equal(r.since, 1795000000000);
+    assert.equal(shapeShopeeReturn({ ...ret, needs_logistics: false }, "Magickids"), null);
+    assert.equal(shapeShopeeReturn({ ...ret, status: "CANCELLED" }, "Magickids"), null);
+    assert.deepEqual(shapeShopeeReturn({ ...ret, tracking_number: "" }, "Magickids")!.codes, ["261110XYZ12345", "2611190ABC"]);
+  });
+  it("đơn Viettel Post đang hoàn trên Pancake; bỏ đơn Shopee và đơn không ở trạng thái hoàn", () => {
+    const o = { id: 500156, status: 4, order_sources_name: "Facebook", inserted_at: "2026-11-16T07:14:16", partner: { extend_code: "PKE540445091971802", order_number_vtp: "PKE1577718696", first_undeliverable_at: "2026-11-18T07:42:14", extend_update: [{ status: "Giao cho Bưu tá đi nhận", updated_at: "2026-11-17T01:00:00" }, { status: "Đang chuyển hoàn", updated_at: "2026-11-19T01:00:00" }] }, items: [{ quantity: 1, variation_info: { name: "QD26002", display_id: "QD26002DEN160", fields: [{ value: "ĐEN" }, { value: "160" }] } }] };
+    const r = shapePancakeReturn(o)!;
+    assert.deepEqual([r.key, r.kind, r.channel, r.status], ["P:500156", "giao-that-bai", "Facebook", "Đang chuyển hoàn"]);
+    assert.deepEqual(r.codes, ["500156", "PKE540445091971802", "PKE1577718696"]);
+    assert.deepEqual(r.items, [{ sku: "QD26002DEN160", name: "QD26002", detail: "ĐEN · 160", quantity: 1 }]);
+    assert.equal(shapePancakeReturn({ ...o, status: 15 })!.kind, "hoan-mot-phan");
+    assert.equal(shapePancakeReturn({ ...o, order_sources_name: "Shopee" }), null);
+    assert.equal(shapePancakeReturn({ ...o, status: 2 }), null);
   });
 });
