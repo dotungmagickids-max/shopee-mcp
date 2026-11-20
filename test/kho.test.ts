@@ -217,10 +217,12 @@ describe("kiện hoàn đang chờ về", () => {
   const ret = { return_sn: "2611190ABC", order_sn: "261110XYZ12345", status: "ACCEPTED", needs_logistics: true, tracking_number: "spxvn061234567890", reason: "DIFFERENT_DESCRIPTION", refund_amount: 149000, create_time: 1795000000, return_seller_due_date: 1795500000, item: [{ name: "Áo ADT25002", variation_sku: "ADT25002TRANG150", amount: 2 }] };
   it("yêu cầu trả hàng Shopee: lấy đủ ba mã để khớp video, bỏ yêu cầu chỉ hoàn tiền hoặc đã hủy", () => {
     const r = shapeShopeeReturn(ret, "Magickids")!;
-    assert.deepEqual([r.key, r.kind, r.id, r.status, r.reason, r.refund], ["S:2611190ABC", "tra-hang", "261110XYZ12345", "Đã chấp nhận, hàng đang về", "Khác mô tả", 149000]);
+    assert.deepEqual([r.key, r.kind, r.id, r.status, r.reason, r.refund], ["S:2611190ABC", "tra-hang", "261110XYZ12345", "Đã chấp nhận trả hàng", "Khác mô tả", 149000]);
     assert.deepEqual(r.codes, ["SPXVN061234567890", "261110XYZ12345", "2611190ABC"]);
     assert.deepEqual(r.items, [{ sku: "ADT25002TRANG150", name: "Áo ADT25002", detail: "", quantity: 2 }]);
     assert.equal(r.since, 1795000000000);
+    assert.equal(shapeShopeeReturn({ ...ret, reassessed_request_reason: "NONE" }, "Magickids")!.reason, "Khác mô tả");
+    assert.equal(shapeShopeeReturn({ ...ret, reassessed_request_reason: "WRONG_SIZE" }, "Magickids")!.reason, "Sai size");
     assert.equal(shapeShopeeReturn({ ...ret, needs_logistics: false }, "Magickids"), null);
     assert.equal(shapeShopeeReturn({ ...ret, status: "CANCELLED" }, "Magickids"), null);
     assert.deepEqual(shapeShopeeReturn({ ...ret, tracking_number: "" }, "Magickids")!.codes, ["261110XYZ12345", "2611190ABC"]);

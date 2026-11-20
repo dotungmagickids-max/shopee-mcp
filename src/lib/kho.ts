@@ -683,7 +683,7 @@ export interface HoanRow {
 
 const RETURN_STATUS_VI: Record<string, string> = {
   REQUESTED: "Khách vừa yêu cầu",
-  ACCEPTED: "Đã chấp nhận, hàng đang về",
+  ACCEPTED: "Đã chấp nhận trả hàng",
   PROCESSING: "Đang xử lý",
   JUDGING: "Shopee đang xét",
   SELLER_DISPUTE: "Shop đang khiếu nại",
@@ -708,7 +708,9 @@ const RETURN_REASON_VI: Record<string, string> = {
 export function shapeShopeeReturn(r: any, shopName: string): HoanRow | null {
   const status = String(r?.status ?? "");
   if (!r?.return_sn || r?.needs_logistics === false || status === "CANCELLED" || status === "CLOSED") return null;
-  const reason = String(r?.reassessed_request_reason || r?.reason || "");
+  // Shopee để reassessed_request_reason = "NONE" khi không xét lại: lúc đó dùng lý do khách chọn.
+  const again = String(r?.reassessed_request_reason ?? "");
+  const reason = again && again !== "NONE" ? again : String(r?.reason ?? "");
   return {
     key: `S:${r.return_sn}`,
     channel: "Shopee",
