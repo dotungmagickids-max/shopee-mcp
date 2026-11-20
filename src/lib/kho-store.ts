@@ -168,3 +168,49 @@ export async function videoList(days: number): Promise<{ rows: VideoRow[] }> {
   const rows = await allRows<VideoRow>(() => db().from("kho_video").select("*").eq("da_xoa", false).gte("bat_dau", since).order("bat_dau", { ascending: false }).order("file"));
   return { rows };
 }
+
+/* Danh sách đơn Viettel Post đang hoàn, lấy từ mail "Báo cáo vận hành" hằng ngày của Viettel Post. */
+
+export interface VtpMailDoc {
+  status: string;
+  reason: string;
+  ngay: string;
+  first: number;
+  id?: string;
+  channel?: string;
+  kind?: string;
+  codes?: string[];
+  items?: Array<{ sku: string; name: string; detail: string; quantity: number }>;
+}
+
+/** Dòng từ báo cáo mail → { mã, trạng thái, lý do }. Bỏ dòng không phải mã, bỏ trùng (giữ dòng đầu). */
+export function cleanVtpRows(v: unknown, max = 300): Array<{ ma: string; status: string; reason: string }> {
+  if (!Array.isArray(v)) return [];
+  const out = new Map<string, { ma: string; status: string; reason: string }>();
+  for (const x of v) {
+    const ma = normSku(x?.ma == null ? "" : String(x.ma));
+    if (!CODE.test(ma) || out.has(ma)) continue;
+    out.set(ma, { ma, status: String(x?.status ?? x?.trang_thai ?? "").trim().slice(0, 80), reason: String(x?.reason ?? x?.ly_do ?? "").trim().slice(0, 200) });
+    if (out.size >= max) break;
+  }
+  return [...out.values()];
+}
+
+/** Các đơn hoàn Viettel đã lưu (45 ngày kể từ lần cuối có trong báo cáo) và ngày báo cáo mới nhất đã nhận. */
+export async function vtpMailGet(): Promise<{ docs: Record<string, VtpMailDoc>; last: { ngay: string; at: number; n: number } | null }> {
+  const since = new Date(Date.now() - 45 * 86400_000).toISOString();
+  const [rows, meta] = await Promise.all([
+    allRows<{ khoa: string; du_lieu: VtpMailDoc }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", "hoan-vtp").gte("cap_nhat", since).order("khoa")),
+    db().from("kho_ghi_chu").select("du_lieu").eq("pham_vi", "hoan-vtp-meta").eq("khoa", "last").maybeSingle(),
+  ]);
+  fail("kho_ghi_chu", meta.error);
+  const m = meta.data?.du_lieu as any;
+  return { docs: Object.fromEntries(rows.map((r) => [r.khoa, r.du_lieu])), last: m?.ngay ? { ngay: String(m.ngay), at: Number(m.at) || 0, n: Number(m.n) || 0 } : null };
+}
+
+export async function vtpMailSave(ngay: string, docs: Record<string, VtpMailDoc>): Promise<void> {
+  const now = new Date().toISOString();
+  const rows = Object.entries(docs).map(([khoa, du_lieu]) => ({ pham_vi: "hoan-vtp", khoa, du_lieu, cap_nhat: now }));
+  if (rows.length) fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert(rows)).error);
+  fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert({ pham_vi: "hoan-vtp-meta", khoa: "last", du_lieu: { ngay, at: Date.now(), n: rows.length }, cap_nhat: now })).error);
+}

@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { shops } from "./autopilot/config";
 import { normSku, productCode } from "./autopilot/pancake";
 import { callShopee, chunk } from "./autopilot/shopee-call";
+import { cleanVtpRows, vtpMailGet, vtpMailSave, type VtpMailDoc } from "./kho-store";
 
 /**
  * Tra đơn cho bàn đóng hàng (công cụ quay video đóng hàng của kho). Chỉ đọc Pancake POS.
@@ -850,10 +851,91 @@ async function pancakeReturns(now: number, errors: string[]): Promise<{ rows: Ho
   return { rows, stale };
 }
 
-export async function returnsExpected(): Promise<{ at: number; returns: HoanRow[]; errors: string[]; stale: number }> {
+/** Một đơn hoàn Viettel đã lưu từ báo cáo mail → kiện hoàn. */
+export function shapeVtpMail(ma: string, d: VtpMailDoc): HoanRow {
+  return {
+    key: d.id ? `P:${d.id}` : `VTP:${ma}`,
+    channel: d.channel || "Viettel Post",
+    shop: "Viettel Post",
+    kind: d.kind === "hoan-mot-phan" ? "hoan-mot-phan" : "giao-that-bai",
+    id: d.id || ma,
+    codes: [...new Set([ma, ...(d.codes ?? [])])],
+    status: d.status || "Đang hoàn",
+    reason: d.reason || "Giao không thành công",
+    refund: null,
+    items: d.items ?? [],
+    since: d.first || null,
+    due: null,
+  };
+}
+
+/** Ghép một dòng báo cáo mail với đơn Pancake (để có sản phẩm) và bản đã lưu (giữ ngày thấy đầu tiên). */
+export function vtpMailDoc(row: { ma: string; status: string; reason: string }, ngay: string, old: VtpMailDoc | undefined, orders: any[] | null, now: number): VtpMailDoc {
+  const doc: VtpMailDoc = { ...(old ?? {}), status: row.status || old?.status || "", reason: row.reason || old?.reason || "", ngay, first: old?.first || now };
+  const o = (orders ?? []).find((x) => orderCodes(x).includes(row.ma));
+  if (o) {
+    const shaped = shapeOrder([o], row.ma);
+    const src = String(o?.order_sources_name ?? "");
+    doc.id = String(o.id ?? "");
+    doc.channel = /tik\s*tok/i.test(src) ? "TikTok" : src || "Pancake";
+    doc.kind = Number(o?.status) === 15 ? "hoan-mot-phan" : "giao-that-bai";
+    doc.codes = orderCodes(o);
+    doc.items = shaped.found ? shaped.items.map((i) => ({ sku: normSku(i.display_id), name: i.name, detail: i.detail, quantity: i.quantity })) : [];
+  }
+  return doc;
+}
+
+/**
+ * Nhận danh sách đơn khâu hoàn từ mail "Báo cáo vận hành" của Viettel Post (tác vụ đọc mail buổi sáng đẩy lên).
+ * Chỉ nhận mã, trạng thái, lý do: không nhận tên, SĐT, địa chỉ khách. Sản phẩm lấy từ Pancake theo mã (chỉ đọc).
+ */
+export async function vtpMailPush(ngay: string, rowsIn: unknown): Promise<{ saved: number; matched: number; notFound: string[] }> {
+  const rows = cleanVtpRows(rowsIn);
+  const { docs: old } = await vtpMailGet();
+  const now = Date.now();
+  const docs: Record<string, VtpMailDoc> = {};
+  const notFound: string[] = [];
+  await pool(rows, 4, async (row) => {
+    let orders: any[] | null = null;
+    // Đơn đã có sản phẩm từ lần trước thì không tra lại Pancake.
+    if (!old[row.ma]?.id) {
+      try {
+        orders = (await getJson("orders", { search: row.ma, page_size: 10, page_number: 1 }))?.data ?? [];
+      } catch {
+        orders = null;
+      }
+    }
+    docs[row.ma] = vtpMailDoc(row, ngay, old[row.ma], orders, now);
+    if (!docs[row.ma].id) notFound.push(row.ma);
+  });
+  await vtpMailSave(ngay, docs);
+  return { saved: rows.length, matched: rows.length - notFound.length, notFound };
+}
+
+/** Số ngày từ ngày báo cáo (YYYY-MM-DD, giờ Việt Nam) đến bây giờ. */
+export function reportAgeDays(ngay: string, now: number): number {
+  return Math.floor((now + 7 * 3600_000 - Date.parse(`${ngay}T00:00:00Z`)) / 86400_000);
+}
+
+export async function returnsExpected(): Promise<{ at: number; returns: HoanRow[]; errors: string[]; stale: number; vtp: { from: "mail" | "pancake"; ngay: string | null } }> {
   const now = Date.now();
   const errors: string[] = [];
+  let mail: Awaited<ReturnType<typeof vtpMailGet>> | null = null;
+  try {
+    mail = await vtpMailGet();
+  } catch (err) {
+    errors.push(`Danh sách hoàn Viettel từ mail: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // Viettel: lấy theo báo cáo mail của Viettel Post. Chưa có báo cáo nào thì tạm lấy từ Pancake và báo rõ.
+  if (mail?.last) {
+    const a = await shopeeReturns(now, errors);
+    const b = Object.entries(mail.docs).map(([ma, d]) => shapeVtpMail(ma, d));
+    const age = reportAgeDays(mail.last.ngay, now);
+    if (age > 2) errors.push(`Danh sách hoàn Viettel đang theo báo cáo mail ngày ${mail.last.ngay} (đã ${age} ngày chưa có báo cáo mới)`);
+    return { at: now, returns: [...a, ...b].sort((x, y) => (x.since ?? 0) - (y.since ?? 0)), errors, stale: 0, vtp: { from: "mail", ngay: mail.last.ngay } };
+  }
   const [a, b] = await Promise.all([shopeeReturns(now, errors), pancakeReturns(now, errors)]);
+  errors.push("Chưa nhận được báo cáo mail Viettel Post: danh sách hoàn Viettel đang tạm lấy từ Pancake");
   const returns = [...a, ...b.rows].sort((x, y) => (x.since ?? 0) - (y.since ?? 0));
-  return { at: now, returns, errors, stale: b.stale };
+  return { at: now, returns, errors, stale: b.stale, vtp: { from: "pancake", ngay: null } };
 }
