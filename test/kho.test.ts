@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, vtpWaitingPickup } from "../src/lib/kho";
+import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, shapeOrder, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, vtpWaitingPickup } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -256,5 +256,26 @@ describe("đơn Viettel Post đã gửi hàng, chờ bưu tá lấy", () => {
   it("đơn đã chọn GGDH là đơn đổi chắc chắn", () => {
     const r = shapePancakeXuat({ ...o, note: "", partner: { ...o.partner, service_partner: { ORDER_SERVICE_ADD: "GGDH" } } }, null)!;
     assert.deepEqual([r.exchange, r.arranged], ["doi", true]);
+  });
+});
+
+describe("đơn Viettel Post đã gửi hàng chỉ vào đợt đóng khi có hàng", () => {
+  const sp = (id: string, shipBy: number, sku: string, q: number, arranged = false) => ({ id, channel: "Shopee" as const, shop: "Magickids", carrier: "SPX", group: "SPX", urgent: false, shipBy, created: 1, eligible: true, reason: "", arranged, items: [{ sku, product: "ADT26001", name: "", detail: "", quantity: q, image: "" }] });
+  const fb = (id: string, created: number, sku: string, q: number, arranged = true) => ({ id, channel: "Facebook" as const, shop: "Facebook", carrier: "VTP", group: "Viettel Post", urgent: false, shipBy: null, created, eligible: true, reason: "", ...(arranged ? { arranged: true } : {}), items: [{ sku, product: "ADT26001", name: "", detail: "", quantity: q, image: "" }] });
+  it("Shopee được chia trước, Viettel Post nhận phần còn lại theo đơn tạo trước", () => {
+    const s1 = sp("S1", 100, "ADT26001DO140", 3);
+    const f1 = fb("F1", 10, "ADT26001DO140", 2);
+    const f2 = fb("F2", 20, "ADT26001DO140", 1);
+    const f3 = fb("F3", 5, "ADT26001DO130", 1);
+    const f4 = fb("F4", 30, "MAKHONGCOTON", 1);
+    const waiting = fb("F5", 1, "ADT26001DO130", 1, false);
+    applyPushedStock([f2, f1, f3, f4, waiting], applyShopeeStock([s1], new Map([["ADT26001DO140", 5], ["ADT26001DO130", 0]])));
+    assert.equal(s1.eligible, true);
+    assert.equal(f1.eligible, true);
+    assert.equal(f2.eligible, false);
+    assert.match(f2.reason, /Đã gửi hàng nhưng chưa có hàng.*cần 1, còn 0/);
+    assert.equal(f3.eligible, false);
+    assert.equal(f4.eligible, true);
+    assert.equal(waiting.eligible, true); // đơn chưa đẩy không thuộc phần chia này
   });
 });

@@ -456,7 +456,7 @@ async function pancakeCandidates(errors: string[]): Promise<any[]> {
  * Mã không tìm thấy tồn trên Pancake thì không chặn (không kiểm được).
  * Đơn đã chuẩn bị hàng thì đã hứa với Shopee: được chia tồn trước và không bị chặn.
  */
-export function applyShopeeStock(orders: XuatOrder[], stock: Map<string, number>): void {
+export function applyShopeeStock(orders: XuatOrder[], stock: Map<string, number>): Map<string, number> {
   const left = new Map(stock);
   const sorted = [...orders].sort((a, b) => Number(!!b.arranged) - Number(!!a.arranged) || (a.shipBy ?? Infinity) - (b.shipBy ?? Infinity) || (a.created ?? 0) - (b.created ?? 0));
   for (const o of sorted) {
@@ -472,6 +472,30 @@ export function applyShopeeStock(orders: XuatOrder[], stock: Map<string, number>
       o.reason = `Chưa có hàng (đặt trước hoặc thiếu): ${short.join(", ")}`;
     } else for (const [sku, n] of need) if (left.has(sku)) left.set(sku, left.get(sku)! - n);
   }
+  return left;
+}
+
+/**
+ * Đơn Viettel Post đã gửi hàng (chờ bưu tá lấy) cũng chỉ vào đợt đóng khi có hàng (anh Tùng chốt 20/11/2026):
+ * nhiều đơn đặt trước được đẩy sớm để giữ mã rồi chờ hàng về.
+ * Dùng phần tồn còn lại sau khi đã chia cho Shopee (Shopee có hạn giao), đơn tạo trước được chia trước.
+ * Mã không tìm thấy tồn trên Pancake thì không chặn.
+ */
+export function applyPushedStock(orders: XuatOrder[], left: Map<string, number>): void {
+  const sorted = orders.filter((o) => o.arranged && o.channel !== "Shopee").sort((a, b) => (a.created ?? 0) - (b.created ?? 0));
+  for (const o of sorted) {
+    const need = new Map<string, number>();
+    for (const it of o.items) need.set(it.sku, (need.get(it.sku) ?? 0) + it.quantity);
+    const short: string[] = [];
+    for (const [sku, n] of need) {
+      const have = left.get(sku);
+      if (have != null && have < n) short.push(`${sku} (cần ${n}, còn ${Math.max(0, have)})`);
+    }
+    if (short.length) {
+      o.eligible = false;
+      o.reason = `Đã gửi hàng nhưng chưa có hàng (đặt trước hoặc thiếu): ${short.join(", ")}`;
+    } else for (const [sku, n] of need) if (left.has(sku)) left.set(sku, left.get(sku)! - n);
+  }
 }
 
 export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[]; errors: string[]; unknownSkus: string[]; canArrange: boolean }> {
@@ -480,7 +504,7 @@ export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[];
   const [shopee, cand] = await Promise.all([shopeeWaiting(now, errors), pancakeCandidates(errors)]);
   const skus = new Set<string>();
   for (const o of shopee) for (const it of o.items) if (it.sku) skus.add(it.sku);
-  for (const o of cand) if (!/tik\s*tok/i.test(String(o?.order_sources_name ?? "")) && Number(o?.status) !== 2) for (const it of shapePancakeXuat(o, null)!.items) if (it.sku) skus.add(it.sku);
+  for (const o of cand) if (!/tik\s*tok/i.test(String(o?.order_sources_name ?? "")) || Number(o?.status) === 2) for (const it of shapePancakeXuat(o, null)!.items) if (it.sku) skus.add(it.sku);
   let stock: Map<string, number> | null = null;
   try {
     stock = await actualStock([...skus]);
@@ -505,9 +529,10 @@ export async function ordersToPack(): Promise<{ at: number; orders: XuatOrder[];
         if (hit) it.sku = hit;
         else unknown.add(it.sku);
       }
-    applyShopeeStock(shopee, stock);
   }
-  const orders = [...shopee, ...cand.map((o) => shapePancakeXuat(o, stock)!)].sort((x, y) => (x.created ?? 0) - (y.created ?? 0));
+  const pancake = cand.map((o) => shapePancakeXuat(o, stock)!);
+  if (stock) applyPushedStock(pancake, applyShopeeStock(shopee, stock));
+  const orders = [...shopee, ...pancake].sort((x, y) => (x.created ?? 0) - (y.created ?? 0));
   return { at: now, orders, errors, unknownSkus: [...unknown].sort(), canArrange: arrangeAllowed() };
 }
 
