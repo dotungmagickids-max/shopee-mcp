@@ -1,7 +1,7 @@
 /** Dữ liệu vận hành của kho trên Supabase: lọc mã, ghi chú, dòng sổ video. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cacheFresh, cleanCodes, cleanNote, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
+import { cacheFresh, cleanCodes, cleanMark, cleanNote, nhapEntry, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
 
 describe("kho-store", () => {
   it("lọc mã đơn: viết hoa, bỏ khoảng trắng, bỏ trùng và thứ không phải mã", () => {
@@ -21,6 +21,20 @@ describe("kho-store", () => {
     assert.deepEqual(cleanNote({ lyDo: "hết hàng", xuLy: "chờ 22/11", khac: "x", state: "thieu" }), { lyDo: "hết hàng", xuLy: "chờ 22/11", state: "thieu" });
     assert.equal(cleanNote({ note: "a".repeat(900) }).note.length, 500);
     assert.deepEqual(cleanNote(null), {});
+  });
+
+  it("tình trạng kiện hoàn giữ sản phẩm đã quét, sản phẩm của đơn và dấu video đã xóa", () => {
+    const m = cleanMark({ state: "dung", khac: 1, items: [{ code: "1893-10", name: "Áo", ok: true, at: 5, la: 1 }, { code: "" }], need: [{ sku: "qd26036den150", name: "Quần", quantity: 2 }, { sku: "X1", quantity: 0 }], codes: ["spx1", ""], code: "spx1", gone: 9 });
+    assert.deepEqual(m, { state: "dung", items: [{ code: "1893-10", name: "Áo", ok: true, at: 5 }], need: [{ sku: "QD26036DEN150", name: "Quần", quantity: 2 }, { sku: "X1", name: "", quantity: 1 }], codes: ["SPX1"], code: "SPX1", gone: 9 });
+    assert.deepEqual(cleanMark({ note: "a" }), { note: "a" });
+    assert.deepEqual(cleanMark(null), {});
+  });
+
+  it("lượt nhập hàng hoàn: cần mã, số lượng khác 0; số âm là lượt hủy", () => {
+    assert.deepEqual(nhapEntry({ id: "may-ab12-1700000000000-x1", sku: "qd26036den150", code: "2001-05", qty: 2, kind: "nhap", note: "", at: 7, may: "may-ab12", la: 1 }), { id: "may-ab12-1700000000000-x1", sku: "QD26036DEN150", code: "2001-05", qty: 2, kind: "nhap", note: "", at: 7, may: "may-ab12" });
+    assert.equal(nhapEntry({ id: "may-ab12-1", sku: "A1", qty: -1, kind: "bo", at: 1 })?.qty, -1);
+    assert.equal(nhapEntry({ id: "may-ab12-1", sku: "A1", qty: -1, kind: "bo", at: 1 })?.kind, "bo");
+    for (const bad of [{ id: "x", sku: "A1", qty: 1 }, { id: "may-ab12-1", sku: "", qty: 1 }, { id: "may-ab12-1", sku: "A1", qty: 0 }, { id: "may-ab12-1", sku: "A1", qty: 5000 }, { id: "a b c d e f", sku: "A1", qty: 1 }, null]) assert.equal(nhapEntry(bad), null);
   });
   it("dòng báo cáo hoàn Viettel: chỉ giữ mã, trạng thái, lý do", () => {
     assert.deepEqual(cleanVtpRows([{ ma: " pke1575319886 ", status: " Đang chuyển hoàn ", reason: "Chuyển phân công", ten: "x", sdt: "0900000000" }, { ma: "PKE1575319886", status: "Đã trả" }, { ma: "tên khách" }, null, { ma: "PKE1574103822", trang_thai: "Đã trả", ly_do: "Không có nhu cầu nhận hàng" }]), [
