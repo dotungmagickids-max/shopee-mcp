@@ -127,6 +127,38 @@ dialog video{width:100%;max-height:70vh;background:#000;border-radius:8px}
 details.log{margin:0 12px 10px;font-size:13px;color:var(--mut)}
 details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
 @media (max-width:900px){main{grid-template-columns:1fr}}
+#tienBody{max-width:760px}
+.tbig{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0 14px;background:#fff}
+.tnum{font-size:40px;font-weight:800;line-height:1.1}
+.tbar{height:14px;background:#e5e7eb;border-radius:8px;overflow:hidden;margin:8px 0}
+.tbar i{display:block;height:100%;background:var(--dh)}
+.twarn{color:var(--red);font-weight:700}
+.tok{color:var(--dh);font-weight:700}
+.tsec{margin:16px 0 6px;font-size:16px}
+.tk{display:grid;grid-template-columns:96px 1fr auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.tk .tbar{margin:0}
+.tv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.tv b{font-size:18px}
+.tv.bad b{color:var(--red)}
+.tgrp{margin:12px 0 4px;font-weight:700}
+.tcard{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;background:#fff;word-break:break-word}
+.tcard .c{font-family:Consolas,monospace;font-weight:700}
+.tcard .m{color:var(--mut);font-size:14px}
+@media (max-width:700px){
+  header{padding:8px 10px;gap:8px}
+  header h1{font-size:16px}
+  header .modes,header .chips{display:none}
+  header .gear{margin-left:auto}
+  .shell{flex-direction:column}
+  #nav{width:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:6px}
+  #nav .grp,#nav button[data-v=rec]{display:none}
+  #nav button{white-space:nowrap;flex:none}
+  .view{margin:8px;padding:10px;min-height:0}
+  .banner{font-size:15px;padding:8px 12px}
+  .cards{grid-template-columns:repeat(2,1fr)}
+  #gate .box{padding:18px}
+  #gate button.primary{font-size:20px;padding:14px 20px}
+}
 </style>
 </head>
 <body data-mode="DH">
@@ -156,6 +188,7 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
 <div class="shell">
 <nav id="nav">
   <button data-v="home">Tổng quan</button>
+  <button data-v="tien">Tiến độ đóng hàng</button>
   <div class="grp">Đóng hàng</div>
   <button data-v="xuat">Đơn cần đóng</button>
   <button data-v="rec" data-m="DH" class="on">Quay mới</button>
@@ -191,6 +224,16 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
   </section>
 </main>
 <section id="vHome" class="card view" hidden></section>
+<section id="vTien" class="card view" hidden>
+  <h2>Tiến độ đóng hàng</h2>
+  <div class="filters">
+    <label>Ngày <input type="date" id="tDay"></label>
+    <button id="btnTienReload" class="primary">Tải lại</button>
+    <button id="btnTienCopy" hidden>Chép danh sách gửi CSKH</button>
+  </div>
+  <div class="hint" id="tienInfo" style="margin:8px 0"></div>
+  <div id="tienBody"></div>
+</section>
 <section id="vList" class="card view" hidden>
   <h2 id="lTitle"></h2>
   <div class="filters">
@@ -907,7 +950,7 @@ async function tx(store,mode,fn){
 const kvGet=k=>tx('kv','readonly',s=>s.get(k));
 const kvSet=(k,v)=>tx('kv','readwrite',s=>s.put(v,k));
 async function addVideo(meta){const id=await tx('videos','readwrite',s=>s.add(meta));meta.id=id;S.videos.push(meta);refresh();}
-function refresh(){renderList();chips();if(S.view==='home')renderHome();if(S.view==='list')renderBig();if(S.view==='soat'&&!document.activeElement.closest('#tbSoat'))renderSoat();if(S.view==='hoan'&&!document.activeElement.closest('#tbHoan'))renderHoan();}
+function refresh(){renderList();chips();if(S.view==='home')renderHome();if(S.view==='list')renderBig();if(S.view==='soat'&&!document.activeElement.closest('#tbSoat'))renderSoat();if(S.view==='tien')renderSoat();if(S.view==='hoan'&&!document.activeElement.closest('#tbHoan'))renderHoan();}
 
 /* ---------- sổ video: mỗi video một dòng trong thư mục lưu (so-video/NĂM-THÁNG.jsonl) để máy khác mở lên cũng thấy đủ ---------- */
 let ledgerChain=Promise.resolve();
@@ -1780,10 +1823,10 @@ function go(view,mode){
     setMode(mode||S.mode);
   }
   S.view=view;if(view==='list')S.listMode=mode||S.listMode||'DH';
-  $('vRec').hidden=view!=='rec';$('vHome').hidden=view!=='home';$('vList').hidden=view!=='list';$('vSoat').hidden=view!=='soat';$('vXuat').hidden=view!=='xuat';$('vHoan').hidden=view!=='hoan';$('vNhap').hidden=view!=='nhap';
+  $('vRec').hidden=view!=='rec';$('vHome').hidden=view!=='home';$('vList').hidden=view!=='list';$('vTien').hidden=view!=='tien';$('vSoat').hidden=view!=='soat';$('vXuat').hidden=view!=='xuat';$('vHoan').hidden=view!=='hoan';$('vNhap').hidden=view!=='nhap';
   navMark();
   if(view==='xuat')xuatOpen();
-  if(view==='soat')soatReload(true);
+  if(view==='soat'||view==='tien')soatReload(true);
   if(view==='hoan')hoanOpen();
   if(view==='nhap')nhapOpen();
   if(view==='home')renderHome();
@@ -1792,7 +1835,7 @@ function go(view,mode){
 }
 function navMark(){
   for(const b of document.querySelectorAll('#nav button'))
-    b.classList.toggle('on',b.dataset.v===S.view&&(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan'||S.view==='nhap'||b.dataset.m===(S.view==='rec'?S.mode:S.listMode)));
+    b.classList.toggle('on',b.dataset.v===S.view&&(S.view==='home'||S.view==='tien'||S.view==='soat'||S.view==='xuat'||S.view==='hoan'||S.view==='nhap'||b.dataset.m===(S.view==='rec'?S.mode:S.listMode)));
 }
 function renderHome(){
   const el=$('vHome');el.textContent='';
@@ -2282,7 +2325,7 @@ function dayDiff(b,a){
   const bs=new Set(b.codes),as=new Set(a.codes),body={},bn=b.notes||{},an=a.notes||{},notes={};
   if(b.codes.some(c=>!as.has(c)))body.set=a.codes;else{const add=a.codes.filter(c=>!bs.has(c));if(add.length)body.add=add;}
   if(Object.keys(bn).length&&!Object.keys(an).length)body.clearNotes=true;
-  else for(const k of Object.keys(an))if(JSON.stringify(bn[k]||null)!==JSON.stringify(an[k]))notes[k]={lyDo:an[k].lyDo||'',xuLy:an[k].xuLy||''};
+  else for(const k of Object.keys(an))if(JSON.stringify(bn[k]||null)!==JSON.stringify(an[k]))notes[k]={lyDo:an[k].lyDo||'',xuLy:an[k].xuLy||'',state:an[k].state||''};
   if(Object.keys(notes).length)body.notes=notes;
   return Object.keys(body).length?body:null;
 }
@@ -2308,7 +2351,7 @@ async function cloudPullDay(day){
     else{
       const ss=new Set(sv.codes),cs=new Set(cur.codes),cn=cur.notes||{};
       const up=cur.codes.filter(c=>!ss.has(c)),down=sv.codes.filter(c=>!cs.has(c)),upNotes={};
-      for(const k of Object.keys(cn))if(!sv.notes[k])upNotes[k]={lyDo:cn[k].lyDo||'',xuLy:cn[k].xuLy||''};
+      for(const k of Object.keys(cn))if(!sv.notes[k])upNotes[k]={lyDo:cn[k].lyDo||'',xuLy:cn[k].xuLy||'',state:cn[k].state||''};
       if(up.length||Object.keys(upNotes).length)await apiPost({action:'ngay',ngay:day,add:up,notes:upNotes,nguon:'may-kho'},20000);
       next={codes:cur.codes.concat(down),notes:Object.assign({},cn,sv.notes),resetAt:cur.resetAt||0};
     }
@@ -2358,7 +2401,7 @@ async function startRemote(){
     try{await remoteVideos();}catch(e){S.remote=false;throw e;}
     S.viewOnly=true;S.dirOK=false;
     $('gate').hidden=true;$('gate').style.display='none';
-    chips();go('home');
+    chips();go(S.lite||innerWidth<700?'tien':'home');
     banner('Đang XEM TỪ XA: số liệu lấy từ máy chủ, tự làm mới 2 phút một lần. Không mở được video (video nằm ở máy kho).','ok');
   }catch(e){msg.textContent='Chưa xem từ xa được: '+(e.message==='HTTP 401'?'sai mã truy cập':(e.message||e.name));}
 }
@@ -2810,7 +2853,7 @@ async function soatReload(sync){
     catch(e){SOAT.cloudErr=e.name==='AbortError'?'quá thời gian chờ':(e.message||e.name);}
   }
   if(sync){try{LECH.entries=await lechLoad();LECH.err='';}catch(e){LECH.err=e.message||e.name;}}
-  try{SOAT.data=await soatLoad(SOAT.day);}
+  try{SOAT.data=await soatLoad(SOAT.day);SOAT.at=Date.now();}
   catch(e){SOAT.data={codes:[],notes:{}};SOAT.err='Không đọc được danh sách ngày này ('+(e.message||e.name)+'). Chưa sửa gì; thử "Tải lại" sau khi Drive đồng bộ xong.';}
   renderSoat();
   soatResolve();
@@ -2835,7 +2878,7 @@ function renderSoat(){
   const extra=dh.filter(v=>dayStr(new Date(v.startedAt))===day&&!videoKeys(v).some(k=>want.has(k)));
   const seen=new Set();
   for(const v of extra){const k=norm(v.orderId||v.code);if(seen.has(k))continue;seen.add(k);rows.push({key:k,c:'',v,st:'Đóng ngoài danh sách',cls:'out'});}
-  SOAT.rows=rows;
+  SOAT.rows=rows;SOAT.vday=dh.filter(v=>dayStr(new Date(v.startedAt))===day);
   $('soatInfo').textContent=SOAT.err||(data.codes.length?'Danh sách chuẩn bị cập nhật lúc '+(data.updatedAt?vnTime(data.updatedAt):'–')+'. Bấm "Tải lại" để lấy số mới từ máy khác.'+(SOAT.cloudErr&&!S.remote?' CHƯA LẤY ĐƯỢC ĐƠN MÁY KHÁC ĐÃ ĐÓNG ('+SOAT.cloudErr+'): số "Đã đóng" có thể thiếu.':''):'Ngày này chưa có danh sách đơn chuẩn bị. Bấm "Dán danh sách đơn chuẩn bị".');
   const cards=$('soatCards');cards.textContent='';
   const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
@@ -2872,7 +2915,73 @@ function renderSoat(){
     const a=row.insertCell();
     if(r.v&&r.v.dir){const b=document.createElement('button');b.textContent='Xem';b.onclick=()=>play(r.v);a.append(b);}
   }
-  renderChua();chuaLoad();
+  renderChua();chuaLoad();renderTien();
+}
+/* ---------- Tiến độ đóng hàng: màn tổng quát, chỉ xem, làm cho vừa điện thoại. Dùng chung số với Soát đơn ---------- */
+const kenh3=(code,src)=>{let k=chuaKenh(code,src);if(!KENH_ORDER.includes(k))k=chuaKenh(code,'');return KENH_ORDER.includes(k)?k:'Khác, chưa rõ';};
+function renderTien(){
+  const el=$('tienBody');if(!el)return;
+  const day=SOAT.day;$('tDay').value=day;el.textContent='';
+  const mk=(tag,cls,txt)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(txt!=null)x.textContent=txt;return x;};
+  const bar=(a,b)=>{const o=mk('div','tbar'),i=document.createElement('i');i.style.width=(b?Math.round(a*100/b):0)+'%';o.append(i);return o;};
+  const rows=SOAT.rows||[],inList=rows.filter(r=>r.c),tot=inList.length,done=inList.filter(r=>r.v).length,miss=tot-done,ngoai=rows.length-tot;
+  const vday=SOAT.vday||[],last=vday.length?vday[vday.length-1].startedAt:0;
+  const list=SOAT.err?[]:chuaList(),open=list.filter(x=>!x.state);
+  const left=list.filter(x=>!CHUA.info.has(x.code)).length;
+  $('btnTienCopy').hidden=!open.length;
+  $('tienInfo').textContent=SOAT.err||((SOAT.at?'Số lấy lúc '+vnTime(SOAT.at).slice(11,16)+'.':'')+(S.remote?' Tự làm mới 2 phút một lần.':'')
+    +(SOAT.cloudErr&&!S.remote?' CHƯA LẤY ĐƯỢC ĐƠN MÁY KHÁC ĐÃ ĐÓNG ('+SOAT.cloudErr+'): số "đã đóng" có thể thiếu.':'')
+    +(CHUA.busy?' Đang tra sản phẩm, còn '+left+' đơn…':'')+(CHUA.err?' CHƯA TRA ĐƯỢC SẢN PHẨM ('+CHUA.err+'): bấm "Tải lại".':''));
+  if(SOAT.err)return;
+  /* 1. tiến độ chung */
+  const big=mk('div','tbig');
+  if(tot){
+    big.append(mk('div','tnum',done+' / '+tot),mk('div','hint','đơn đã đóng ('+Math.round(done*100/tot)+'%)'),bar(done,tot));
+    big.append(mk('div',miss?'twarn':'tok',miss?'Còn '+miss+' đơn chưa đóng':'Đã đóng hết đơn trong danh sách'));
+  }else{
+    big.append(mk('div','tnum',ngoai),mk('div','hint','đơn đã đóng trong ngày (đếm theo video).'));
+    big.append(mk('div','twarn','Ngày này chưa có danh sách đơn chuẩn bị, nên chưa tính được còn bao nhiêu đơn.'));
+  }
+  if(last)big.append(mk('div','hint','Đơn gần nhất đóng lúc '+vnTime(last).slice(11,16)));
+  el.append(big);
+  /* 2. theo kênh */
+  if(tot){
+    const nhom=new Map(list.map(x=>[x.r.key,x.nhom])),km=new Map();
+    for(const r of inList){const k=kenh3(r.c,r.v?r.v.source:(KENH_ORDER.includes(nhom.get(r.key))?nhom.get(r.key):''));let o=km.get(k);if(!o)km.set(k,o={tot:0,done:0});o.tot++;if(r.v)o.done++;}
+    el.append(mk('h3','tsec','Theo kênh'));
+    for(const k of [...km.keys()].sort((a,b)=>kenhRank(a)-kenhRank(b))){
+      const o=km.get(k),row=mk('div','tk');
+      row.append(mk('b','',k),bar(o.done,o.tot),mk('span',o.tot-o.done?'twarn':'tok',o.done+' / '+o.tot+(o.tot-o.done?' · còn '+(o.tot-o.done):'')));
+      el.append(row);
+    }
+  }
+  /* 3. vấn đề */
+  const lech=LECH.entries.filter(e=>dayStr(new Date(e.at))===day).length;
+  const thieu=vday.filter(v=>/^Thiếu/.test(v.check||'')).length,sai=vday.filter(v=>/sai/.test(v.check||'')).length;
+  const xong=list.filter(x=>x.state==='xong').length,huy=list.filter(x=>x.state==='huy').length,chuaLyDo=open.filter(x=>x.why==='Chưa ghi lý do').length;
+  el.append(mk('h3','tsec','Vấn đề trong ngày'));
+  const line=(label,val,bad)=>{const r=mk('div','tv'+(bad?' bad':''));r.append(mk('span','',label),mk('b','',val));el.append(r);};
+  line('Đơn chưa đóng còn phải xử lý',open.length,open.length>0);
+  if(chuaLyDo)line('Trong đó kho chưa ghi lý do',chuaLyDo,true);
+  if(xong||huy)line('Đơn chưa đóng đã xử lý xong / đơn hủy',xong+' / '+huy);
+  if(tot)line('Đóng ngoài danh sách',ngoai,ngoai>0);
+  line('Lấy hàng lệch (kho lấy mã khác đơn)',LECH.err?'?':lech,lech>0||!!LECH.err);
+  line('Đơn đóng thiếu hàng',thieu,thieu>0);
+  line('Đơn có quét sai mã',sai,sai>0);
+  /* 4. đơn chưa đóng theo lý do */
+  if(open.length){
+    el.append(mk('h3','tsec','Đơn chưa đóng theo lý do'));
+    for(const [why,xs] of chuaGroups(open)){
+      el.append(mk('div','tgrp'+(why==='Chưa ghi lý do'?' twarn':''),why+': '+xs.length+' đơn'));
+      for(const x of xs){
+        const c=mk('div','tcard');c.append(mk('div','c',x.code));
+        c.append(mk('div','m',x.nhom+(x.tt?' · '+x.tt:'')+(x.auto?' · lý do máy tự thấy, kho chưa xác nhận':'')));
+        if(x.sp)c.append(mk('div','',x.sp));
+        if(x.xuLy)c.append(mk('div','','Cần xử lý: '+x.xuLy));
+        el.append(c);
+      }
+    }
+  }
 }
 /* ---------- đơn chưa đóng: gom lý do, lập danh sách cho CSKH ---------- */
 const CHUA={info:new Map(),busy:false,err:'',kenh:''};
@@ -2974,6 +3083,7 @@ function renderChua(){
     else{btn('Xong',()=>mark(x,'xong'));btn('Đơn hủy',()=>mark(x,'huy'));}
   });
 }
+const chuaPaint=()=>{if(S.view==='soat')renderChua();else if(S.view==='tien')renderTien();};
 /* tra sản phẩm, kênh, trạng thái của các đơn chưa đóng (chỉ đọc Pancake; mỗi mã tra một lần) */
 async function chuaLoad(){
   if(CHUA.busy||!checkOn()||SOAT.err)return;
@@ -2985,9 +3095,9 @@ async function chuaLoad(){
       try{const d=await api({ma:c},10000);
         CHUA.info.set(c,d&&d.found?{state:'ok',order:d.order||{},items:d.items||[]}:{state:'notfound'});fail=0;}
       catch(e){if(++fail>=3){CHUA.err=e.name==='AbortError'?'quá thời gian chờ':(e.message||e.name);break;}}
-      if(S.view==='soat')renderChua();
+      chuaPaint();
     }
-  }finally{CHUA.busy=false;if(S.view==='soat')renderChua();}
+  }finally{CHUA.busy=false;chuaPaint();}
 }
 function chuaText(){
   const list=chuaView().filter(x=>!x.state),d=SOAT.day,L=['ĐƠN CHƯA ĐÓNG CẦN XỬ LÝ ngày '+d.slice(8)+'/'+d.slice(5,7)+(CHUA.kenh?' · '+CHUA.kenh:'')+': '+list.length+' đơn (lập lúc '+vnTime(Date.now()).slice(11,16)+')'];
@@ -3183,7 +3293,16 @@ async function wake(){try{if(navigator.wakeLock)S.wl=await navigator.wakeLock.re
 async function init(){
   const need=[['MediaStreamTrackProcessor' in window,'xử lý hình camera'],['VideoEncoder' in window,'nén video'],['showDirectoryPicker' in window||TEST,'ghi thư mục'],['OffscreenCanvas' in window,'vẽ nền']];
   const miss=need.filter(x=>!x[0]).map(x=>x[1]);
-  if(miss.length){$('gateInfo').textContent='Trình duyệt này thiếu: '+miss.join(', ')+'. Hãy mở bằng Google Chrome bản mới trên máy tính.';return;}
+  if(miss.length||new URLSearchParams(location.search).has('dt')){
+    /* điện thoại, hoặc mở với ?dt=1: không quay video được nhưng vẫn xem số liệu từ máy chủ */
+    try{S.settings=Object.assign({},DEFAULTS,await kvGet('settings')||{});}
+    catch(e){$('gateInfo').textContent='Không mở được bộ nhớ của trình duyệt: '+(e.message||e.name);return;}
+    S.lite=true;
+    $('gateInfo').textContent='Máy này chỉ xem số liệu, không quay video'+(miss.length?' (trình duyệt thiếu: '+miss.join(', ')+')':'')+'. Muốn quay thì mở bằng Google Chrome trên máy tính ở quầy.';
+    $('btnStart').hidden=true;$('btnView').hidden=true;$('gate').querySelector('.hint').hidden=true;
+    $('btnRemote').textContent='Xem tiến độ đóng hàng';$('btnRemote').className='primary';$('btnRemote').disabled=false;
+    return;
+  }
   try{
     S.settings=Object.assign({},DEFAULTS,await kvGet('settings')||{});
     S.dir=TEST?await navigator.storage.getDirectory():(await kvGet('dir')||null);
@@ -3199,7 +3318,7 @@ async function init(){
 $('btnStart').onclick=startShift;
 $('mDH').onclick=()=>go('rec','DH');$('mHH').onclick=()=>go('rec','HH');
 $('btnView').onclick=startView;$('btnRemote').onclick=startRemote;
-setInterval(()=>{if(S.remote&&!document.querySelector('dialog[open]'))remoteVideos().then(refresh).catch(()=>{});},120000);
+setInterval(()=>{if(S.remote&&!document.querySelector('dialog[open]'))remoteVideos().then(()=>S.view==='tien'?soatReload(false):refresh()).catch(()=>{});},120000);
 $('btnXuatLoad').onclick=()=>xuatLoad(false);
 setInterval(xuatTick,30000);addEventListener('beforeprint',()=>{XUAT.printing=true;});addEventListener('afterprint',()=>{XUAT.printing=false;});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')xuatTick();});
@@ -3209,6 +3328,8 @@ $('btnSoatClear').onclick=soatClear;$('btnNgoaiClear').onclick=ngoaiClear;
 $('btnHoanLoad').onclick=hoanLoad;nhapWire();$('hFrom').onchange=async()=>{S.settings=Object.assign({},S.settings,{hoanFrom:$('hFrom').value});try{await kvSet('settings',S.settings);}catch(e){}renderHoan();};$('hKenh').onchange=renderHoan;$('hOnly').onchange=renderHoan;$('btnHoanCsv').onclick=hoanCsv;
 $('btnXuatSoat').onclick=xuatToSoat;$('btnXuatPrint').onclick=()=>{if(!XUAT.sel.length){banner('Chưa có đơn nào để in.','warn');return;}window.print();};
 $('sDay').onchange=()=>soatReload(false);$('btnSoatReload').onclick=()=>soatReload(true);$('sAll').onchange=renderSoat;$('btnSoatCsv').onclick=soatCsv;$('btnChuaCopy').onclick=chuaCopy;$('btnChuaCsv').onclick=chuaCsv;$('cAll').onchange=renderChua;
+$('tDay').onchange=()=>{if($('tDay').value){$('sDay').value=$('tDay').value;soatReload(true);}};$('btnTienCopy').onclick=chuaCopy;
+$('btnTienReload').onclick=async()=>{if(S.remote){try{await remoteVideos();}catch(e){banner('Chưa lấy được số mới: '+(e.message||e.name),'err');}}soatReload(true);};
 $('btnSoatPaste').onclick=()=>{if(SOAT.err){banner(SOAT.err,'err');return;}PASTE.target='soat';PASTE.fromFile=false;const d=SOAT.day;$('pasteTitle').textContent='Dán danh sách đơn chuẩn bị ngày '+d.slice(8)+'/'+d.slice(5,7);$('pasteInfo').textContent='';$('dlgPaste').showModal();$('pasteBox').focus();};
 $('btnPasteAdd').onclick=()=>PASTE.target==='ngoai'?ngoaiPaste(false):soatPaste(false);$('btnPasteReplace').onclick=()=>PASTE.target==='ngoai'?ngoaiPaste(true):soatPaste(true);
 $('btnNgoai').onclick=()=>{if(!canStore()){banner('Chưa mở thư mục video nên chưa lưu được danh sách.','err');return;}PASTE.target='ngoai';PASTE.fromFile=false;const d=dayStr(new Date());$('pasteTitle').textContent='Nhập đơn cần đóng ngày '+d.slice(8)+'/'+d.slice(5,7);$('pasteInfo').textContent='Chọn file PDF tem chị Hiền gửi (phần mềm tự đọc mã đơn từng trang), hoặc dán mã đơn / mã vận đơn, mỗi mã một dòng.';$('dlgPaste').showModal();$('pasteBox').focus();};
@@ -3251,7 +3372,7 @@ $('scan').addEventListener('keydown',e=>{
 document.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.altKey||e.metaKey||document.querySelector('dialog[open]')||!S.started)return;
   const a=document.activeElement,edit=a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
-  if(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan')return;
+  if(S.view==='home'||S.view==='tien'||S.view==='soat'||S.view==='xuat'||S.view==='hoan')return;
   if(!edit&&(e.key.length===1||e.key==='Enter')){if(a&&a.blur)a.blur();$(S.view==='list'?'q2':S.view==='nhap'?'nScan':'scan').focus();if(e.key==='Enter')e.preventDefault();}
 },true);
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('button');if(b&&!b.closest('dialog'))b.blur();});
