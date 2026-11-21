@@ -1,5 +1,5 @@
 import { checkKhoKey, lookupOrder, ordersToPack, productCatalog, returnsExpected, shopeeArrange, shopeeLabels, vtpMailPush } from "@/lib/kho";
-import { cached, dayGet, dayWrite, markSet, marksGet, nhapAdd, nhapList, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
+import { cached, dayGet, dayWrite, lechAdd, lechList, markSet, marksGet, nhapAdd, nhapList, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +29,7 @@ export function OPTIONS() {
  *   Thêm &moi=1 vào ?danhmuc=1 hoặc ?hoan=1 để bỏ qua bản đã lưu (danh mục lưu 6 giờ, hàng hoàn 10 phút).
  *   GET /api/kho/don?danhmuc=1                           → { codes[], pairs[[mã vạch, mã phân loại]] } mọi mã vạch + mã phân loại
  *   GET /api/kho/don?nhaphoan=1                          → { entries[] } các lượt nhập hàng hoàn vào kho
+ *   GET /api/kho/don?laylech=1                           → { entries[] } các lần lấy hàng lệch khi đóng
  */
 export async function GET(request: Request) {
   const auth = checkKhoKey(request);
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
     if (sp.get("video")) return json(await videoList(Number(sp.get("video")) || 30));
     if (sp.get("hoanmarks")) return json(await marksGet());
     if (sp.get("nhaphoan")) return json(await nhapList());
+    if (sp.get("laylech")) return json(await lechList());
     const ma = (sp.get("ma") ?? "").replace(/\s+/g, "").toUpperCase();
     if (!/^[A-Z0-9_-]{4,40}$/.test(ma)) return json({ error: "Mã không hợp lệ" }, 400);
     return json(await lookupOrder(ma));
@@ -62,6 +64,8 @@ export async function GET(request: Request) {
  *   action "hoanmark" { khoa, du_lieu: { state?, note?, items?, need?, codes?, code?, gone? } } → { ok }
  *   action "nhaphoan" { rows: [{ id, sku, code, qty, kind: "nhap" | "bo", note, at, may }] } → { saved, skipped }
  *                     sổ nhập hàng hoàn của mình (chỉ thêm); không ghi gì lên Pancake
+ *   action "laylech"  { rows: [{ id, don, sku, code, thay, lyDo, at, may }] } → { saved, skipped }
+ *                     kho lấy mã `sku` thay cho mã `thay` của đơn `don`; chỉ ghi sổ mình, không sửa đơn
  *   action "hoanvtp"  { ngay (ngày báo cáo), rows: [{ ma, status, reason }] } → { saved, matched, notFound[] }
  *                     đơn khâu hoàn theo mail báo cáo vận hành Viettel Post; không gửi tên, SĐT, địa chỉ khách
  * Tem vận đơn Shopee: { action, shop, orders: string[] (tối đa 50) }
@@ -92,6 +96,7 @@ export async function POST(request: Request) {
       return json(await vtpMailPush(body.ngay, body.rows));
     }
     if (body?.action === "nhaphoan") return json(await nhapAdd(body?.rows));
+    if (body?.action === "laylech") return json(await lechAdd(body?.rows));
     if (body?.action === "hoanmark") {
       if (!validKey(body?.khoa)) return json({ error: "khoa không hợp lệ" }, 400);
       await markSet(body.khoa, body?.du_lieu);

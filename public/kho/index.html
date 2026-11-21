@@ -268,6 +268,10 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
   <div class="hint" id="soatInfo" style="margin:8px 0"></div>
   <div class="cards" id="soatCards"></div>
   <table class="t"><thead><tr><th class="num">STT</th><th>Mã đơn chuẩn bị</th><th>Mã đã đóng (kho quét)</th><th>Giờ đóng</th><th>Soát sản phẩm</th><th>Kết quả</th><th>Lý do</th><th>Xử lý</th><th></th></tr></thead><tbody id="tbSoat"></tbody></table>
+  <div id="lechBox" hidden>
+    <h3 style="margin:18px 0 6px;font-size:15px">Lấy hàng lệch trong ngày (kho lấy mã khác với đơn: sale cần sửa đơn)</h3>
+    <table class="t"><thead><tr><th>Giờ</th><th>Đơn</th><th>Mã đơn đặt</th><th>Mã kho lấy thật</th><th>Lý do</th></tr></thead><tbody id="tbLech"></tbody></table>
+  </div>
 </section>
 </div>
 
@@ -1266,12 +1270,13 @@ function mockCloudPost(b){
     }
     save();return {saved:(b.rows||[]).length,skipped:0};
   }
+  if(b.action==='laylech'){s.lech=s.lech||[];for(const e of b.rows||[])if(!s.lech.some(x=>x.id===e.id))s.lech.push(e);save();return {saved:(b.rows||[]).length,skipped:0};}
   if(b.action==='nhaphoan'){s.nhap=s.nhap||[];let n=0;for(const e of b.rows||[])if(!s.nhap.some(x=>x.id===e.id)){s.nhap.push(e);n++;}save();return {saved:n,skipped:(b.rows||[]).length-n};}
   s.marks[b.khoa]=Object.assign({},s.marks[b.khoa],b.du_lieu,{at:Date.now()});save();return {ok:true};
 }
 async function apiPost(body,timeout){
   if(TEST){
-    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'||body.action==='nhaphoan'){await sleep(120);return mockCloudPost(body);}
+    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'||body.action==='nhaphoan'||body.action==='laylech'){await sleep(120);return mockCloudPost(body);}
     await sleep(600);
     const bad=body.orders.filter(x=>/10004$/.test(x)),ok=body.orders.filter(x=>!/10004$/.test(x));
     if(body.action==='chuanbi')return {done:ok,failed:bad.map(id=>({id,reason:'Shopee không trả khung giờ lấy hàng nào (lỗi giả)'}))};
@@ -1296,6 +1301,7 @@ async function api(params,timeout){
     if(params.hoan)return mockHoan();
     if(params.danhmuc)return {codes:MOCK.codes,pairs:[['1893-10','ADT25002TRANG170'],['2001-05','QD26036DEN150']]};
     if(params.nhaphoan)return {entries:MOCKSV().nhap||[]};
+    if(params.laylech)return {entries:MOCKSV().lech||[]};
     if(/^KHONGCO/.test(params.ma))return {found:false};
     return {found:true,order:{id:'GIA-'+params.ma.slice(-4),source:'Shopee (đơn giả)',status_name:/^HUY/.test(params.ma)?'Đã hủy':'Chờ đóng',cancelled:/^HUY/.test(params.ma)},items:MOCK.items};
   }
@@ -1349,7 +1355,7 @@ const PROD_SHAPE=/^(\d{3,5}-\d{1,3}|[A-Z]{2,4}\d{5}[A-Z]+\d{2,3})$/;
 const prodLike=code=>S.catalog.has(code)||PROD_SHAPE.test(code);
 async function lookupOrder(recId,code,pre){
   if(!checkOn()){S.check=null;renderCheck();return;}
-  const c=S.check={recId,code,state:'loading',order:null,items:[],wrong:0,ret:[]};
+  const c=S.check={recId,code,state:'loading',order:null,items:[],wrong:0,ret:[],swaps:[],pend:null};
   renderCheck();
   try{
     const d=pre||await api({ma:code});
@@ -1429,6 +1435,7 @@ function productScan(code){
     return false;
   }
   const hits=c.items.filter(it=>it.codes.includes(code));
+  c.pend=null;
   if(hits.length){
     const it=hits.find(x=>x.scanned<x.quantity);
     if(!it){
@@ -1442,6 +1449,8 @@ function productScan(code){
   }else if(prodLike(code)){
     c.wrong++;banner('SAI SẢN PHẨM: mã '+code+' KHÔNG có trong đơn '+c.code+'. Bỏ sản phẩm này ra.','err');beep('err');
     bigAlert('SAI SẢN PHẨM','Mã '+code+' không có trong đơn '+c.code+'. Bỏ sản phẩm này ra.');
+    /* đơn còn dòng chưa quét: cho phép ghi "lấy hàng lệch" (cố ý lấy mã này thay cho dòng thiếu hàng) */
+    if(c.items.some(x=>x.scanned<x.quantity))c.pend={code,sku:toSku(code),line:null};
   }else return false;
   renderCheck();sendNote();return true;
 }
@@ -1459,7 +1468,7 @@ function sealCheck(id,warn){
   /* mở kiện hoàn mà không quét sản phẩm nào là bình thường: không báo thiếu */
   if(hh&&!c.ret.length){meta.check='Không quét sản phẩm';return;}
   const n=checkCount(c);
-  meta.check=(n.got===n.need?'Đủ ':'Thiếu ')+n.got+'/'+n.need+(c.wrong?' · quét sai '+c.wrong+' lần':'');
+  meta.check=(n.got===n.need?'Đủ ':'Thiếu ')+n.got+'/'+n.need+(c.wrong?' · quét sai '+c.wrong+' lần':'')+(c.swaps.length?' · LẤY LỆCH '+c.swaps.length:'');
   if(warn&&n.got<n.need){
     banner(hh?'KIỆN HOÀN '+c.code+' THIẾU '+(n.need-n.got)+' sản phẩm so với đơn (chưa quét). Kiểm tra lại trong kiện.'
              :'ĐƠN '+c.code+' CÒN THIẾU '+(n.need-n.got)+' sản phẩm chưa quét. Kiểm tra lại gói hàng vừa đóng.','err');beep('err');S.keepBanner=true;
@@ -1487,6 +1496,7 @@ function renderCheck(){
     const ct=document.createElement('div');ct.className='c';ct.textContent=it.scanned+'/'+it.quantity;
     r.append(im,t,ct);el.append(r);
   }
+  if(!hh)renderLech(el,c);
   tail();
 }
 
@@ -2642,6 +2652,83 @@ function nhapWire(){
   $('btnNhapReload').onclick=async()=>{$('nhapInfo').textContent='Đang tải danh sách kiện hoàn… (có thể mất 20–40 giây)';await hoanLoad();nhapOpen();};
 }
 
+/* ---------- Lấy hàng lệch khi đóng: đơn thiếu hàng, kho cố ý lấy sản phẩm hoặc size khác. Phải bấm chọn dòng bị thay và lý do.
+   Ghi ngay vào soat-don/lay-lech.json (chỉ thêm) và máy chủ, để sale sửa đơn và sau này trừ tồn theo mã thật lấy. Không sửa đơn trên sàn hay Pancake. ---------- */
+const LECH={entries:[],err:''};
+const LECH_WHY=['Hết hàng đúng mã','Sale báo đổi cho khách','Hàng đúng mã bị lỗi','Lý do khác'];
+async function lechLoadLocal(){
+  let fh;
+  try{fh=await (await S.dir.getDirectoryHandle('soat-don')).getFileHandle('lay-lech.json');}
+  catch(e){if(e.name==='NotFoundError')return [];throw e;}
+  const text=await (await fh.getFile()).text();
+  if(!text.trim())return [];
+  const o=JSON.parse(text);                        /* file hỏng thì báo lỗi, không coi là trống để khỏi ghi đè */
+  return Array.isArray(o.entries)?o.entries:[];
+}
+async function lechLoad(){
+  const sv=async()=>{const d=await api({laylech:1},20000);if(!d||!Array.isArray(d.entries))throw new Error(d&&d.error||'máy chủ trả sai dạng');return d.entries;};
+  if(S.remote)return sv();
+  const local=await lechLoadLocal();
+  if(!cloudOn())return local;
+  try{
+    const far=await sv(),have=new Set(far.map(e=>e.id)),mine=new Set(local.map(e=>e.id)),up=local.filter(e=>!have.has(e.id));
+    if(up.length)apiPost({action:'laylech',rows:up.slice(0,500)},20000).catch(()=>{});
+    return local.concat(far.filter(e=>!mine.has(e.id)));
+  }catch(e){log('Chưa lấy được sổ lấy hàng lệch của máy khác: '+(e.message||e.name));return local;}
+}
+let lechChain=Promise.resolve();
+function lechAdd(entry){
+  const run=lechChain.then(async()=>{
+    const list=await lechLoadLocal();list.push(entry);
+    const d=await S.dir.getDirectoryHandle('soat-don',{create:true});
+    const fh=await d.getFileHandle('lay-lech.json',{create:true});
+    const w=await fh.createWritable();await w.write(JSON.stringify({entries:list,updatedAt:Date.now()}));await w.close();
+    const back=await lechLoadLocal();
+    if(!back.some(e=>e.id===entry.id))throw new Error('ghi xong đọc lại không thấy');
+    LECH.entries=LECH.entries.concat([entry]);
+    if(cloudOn())apiPost({action:'laylech',rows:[entry]},15000).catch(e=>log('Chưa đưa được lượt lấy hàng lệch lên máy chủ (đã lưu ở thư mục, lần mở Soát đơn sau sẽ đẩy lại): '+(e.message||e.name)));
+  });
+  lechChain=run.catch(()=>{});
+  return run;
+}
+/* khung hỏi ngay dưới danh sách sản phẩm của đơn, sau khi quét một mã không có trong đơn */
+function renderLech(el,c){
+  for(const s of c.swaps){
+    const r=document.createElement('div');r.className='retu';
+    const a=document.createElement('span');a.className='rn';a.textContent='LẤY LỆCH: '+s.sku+' thay cho '+s.thay+' · '+s.lyDo;
+    r.append(a);el.append(r);
+  }
+  const p=c.pend;if(!p)return;
+  const box=document.createElement('div');box.className='hoanask';box.style.marginTop='8px';
+  const open=c.items.filter(x=>x.scanned<x.quantity);
+  const b=document.createElement('b');box.append(b);
+  const bt=(label,fn,cls)=>{const x=document.createElement('button');x.textContent=label;if(cls)x.className=cls;x.onclick=fn;box.append(x);};
+  if(!p.line&&open.length>1){
+    b.textContent='Mã '+p.code+' không có trong đơn. Nếu CỐ Ý lấy mã này thay cho hàng thiếu, bấm dòng bị thay:';
+    for(const it of open)bt('Thay cho '+(it.detail||it.name),()=>{p.line=it;renderCheck();});
+  }else{
+    const it=p.line||open[0];
+    b.textContent='Lấy '+p.code+' THAY CHO '+(it.detail||it.name)+'? Bấm lý do để ghi lấy hàng lệch:';
+    for(const why of LECH_WHY)bt(why,()=>lechConfirm(c,it,why));
+  }
+  bt('Quét nhầm, đã bỏ ra',()=>{c.pend=null;renderCheck();$('scan').focus();});
+  el.append(box);
+}
+async function lechConfirm(c,it,why){
+  const p=c.pend;if(!p||S.check!==c)return;
+  if(why==='Lý do khác'){why=(prompt('Lý do lấy hàng lệch:','')||'').trim();if(!why)return;}
+  if(!S.dirOK){banner('Chưa mở thư mục video nên chưa ghi được lấy hàng lệch.','err');return;}
+  const may=await mayId(),at=Date.now();
+  const entry={id:may+'-'+at+'-'+Math.random().toString(36).slice(2,6),don:norm(c.order&&c.order.id||c.code),sku:p.sku,code:p.code,thay:it.sku||it.codes[0]||'',lyDo:why,at,may};
+  try{await lechAdd(entry);}
+  catch(e){banner('CHƯA GHI ĐƯỢC lấy hàng lệch: '+(e.message||e.name)+'. Bấm lại.','err');beep('err');return;}
+  c.pend=null;c.swaps.push(entry);it.scanned++;c.wrong=Math.max(0,c.wrong-1);
+  bigAlertOff();
+  const n=checkCount(c);
+  banner('ĐÃ GHI LẤY HÀNG LỆCH: '+p.sku+' thay cho '+entry.thay+' ('+why+'). Sale sẽ thấy ở mục Soát đơn.'+(n.got===n.need?' Đơn đã đủ '+n.need+' sản phẩm.':''),'warn');beep(n.got===n.need?'ok':'start');
+  renderCheck();sendNote();$('scan').focus();
+}
+
 /* ---------- Soát đơn: danh sách đơn chuẩn bị (chị Hiền dán) ↔ đơn đã đóng (có video). Lưu trong thư mục video: soat-don/NGÀY.json ---------- */
 const SOAT={day:'',data:{codes:[],notes:{}},err:'',rows:[],cloud:[],cloudErr:''};
 async function soatLoadLocal(day){
@@ -2686,6 +2773,7 @@ async function soatReload(sync){
     try{const d=await api({video:45},30000);if(!d||!Array.isArray(d.rows))throw new Error(d&&d.error||'máy chủ trả sai dạng');SOAT.cloud=d.rows.map(svVideo);SOAT.cloudErr='';}
     catch(e){SOAT.cloudErr=e.name==='AbortError'?'quá thời gian chờ':(e.message||e.name);}
   }
+  if(sync){try{LECH.entries=await lechLoad();LECH.err='';}catch(e){LECH.err=e.message||e.name;}}
   try{SOAT.data=await soatLoad(SOAT.day);}
   catch(e){SOAT.data={codes:[],notes:{}};SOAT.err='Không đọc được danh sách ngày này ('+(e.message||e.name)+'). Chưa sửa gì; thử "Tải lại" sau khi Drive đồng bộ xong.';}
   renderSoat();
@@ -2717,6 +2805,11 @@ function renderSoat(){
   const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
   kpi('Đơn chuẩn bị',data.codes.length);kpi('Đã đóng trong ngày',done);
   kpi('CHƯA ĐÓNG',miss,miss?'bad':'');kpi('Đã đóng ngày khác',other);kpi('Đóng ngoài danh sách',seen.size,seen.size?'amber':'');
+  const lech=LECH.entries.filter(e=>dayStr(new Date(e.at))===day).sort((a,b)=>a.at-b.at);
+  kpi('Lấy hàng lệch',LECH.err?'?':lech.length,lech.length||LECH.err?'amber':'');
+  $('lechBox').hidden=!lech.length&&!LECH.err;const tl=$('tbLech');tl.textContent='';
+  if(LECH.err){const c=tl.insertRow().insertCell();c.colSpan=5;c.className='warn';c.textContent='Chưa đọc được sổ lấy hàng lệch: '+LECH.err+'. Bấm "Tải lại".';}
+  for(const e of lech){const row=tl.insertRow();for(const [x,cls] of [[vnTime(e.at).slice(11,16),''],[e.don,'code'],[e.thay,'code'],[e.sku,'code'],[e.lyDo||'','']]){const c=row.insertCell();c.textContent=x;c.className=cls;}}
   const tb=$('tbSoat');tb.textContent='';
   const only=$('sOnlyBad').checked;let i=0;
   for(const r of rows){
