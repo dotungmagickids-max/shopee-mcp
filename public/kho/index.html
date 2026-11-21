@@ -1290,14 +1290,36 @@ async function loadCatalog(){
     const c=await kvGet('catalog');
     if(c&&c.codes)S.catalog=new Set(c.codes);
     if(c&&Date.now()-c.at<12*3600000)return;
-    const d=await api({danhmuc:1});
+    const d=await api({danhmuc:1},40000);
     if(d&&Array.isArray(d.codes)){
       const codes=d.codes.map(norm).filter(Boolean);
       S.catalog=new Set(codes);await kvSet('catalog',{at:Date.now(),codes});
       log('Đã tải danh mục mã sản phẩm: '+codes.length+' mã');
     }
-  }catch(e){log('Chưa tải được danh mục mã sản phẩm: '+(e.message||e.name));}
+  }catch(e){
+    log('Chưa tải được danh mục mã sản phẩm: '+(e.message||e.name)+'. Sẽ thử lại sau 1 phút.');
+    clearTimeout(loadCatalog.again);loadCatalog.again=setTimeout(loadCatalog,60000);
+  }
 }
+/* Mã sản phẩm: có trong danh mục, hoặc đúng dạng mã vạch (1924-12) / mã phân loại (QD26002DEN180) của Magickids.
+   Nhận theo dạng để khi chưa tải được danh mục, máy tít quét mã sản phẩm cũng KHÔNG bị coi là đơn mới. */
+/* Thông báo to, đỏ giữa màn hình (sai sản phẩm): người đóng hàng đứng xa vẫn thấy. Tự tắt sau 6 giây hoặc khi quét mã tiếp theo. */
+function bigAlert(title,sub){
+  let el=document.getElementById('bigAlert');
+  if(!el){
+    el=document.createElement('div');el.id='bigAlert';
+    el.style.cssText='position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:9999;pointer-events:none;background:#c62828;color:#fff;border:4px solid #fff;border-radius:16px;box-shadow:0 0 0 3px #c62828,0 12px 36px rgba(0,0,0,.45);padding:16px 28px;text-align:center;max-width:min(92vw,640px);font-family:inherit';
+    const a=document.createElement('div');a.style.cssText='font-size:clamp(30px,4.2vw,60px);font-weight:900;line-height:1.1;letter-spacing:.5px';
+    const b=document.createElement('div');b.style.cssText='font-size:clamp(15px,1.5vw,21px);font-weight:600;margin-top:8px;line-height:1.3';
+    el.append(a,b);document.body.append(el);
+  }
+  el.children[0].textContent=title;el.children[1].textContent=sub||'';
+  el.hidden=false;el.style.display='block';
+  clearTimeout(bigAlert.t);bigAlert.t=setTimeout(bigAlertOff,6000);
+}
+function bigAlertOff(){const el=document.getElementById('bigAlert');if(el){el.hidden=true;el.style.display='none';}clearTimeout(bigAlert.t);}
+const PROD_SHAPE=/^(\d{3,5}-\d{1,3}|[A-Z]{2,4}\d{5}[A-Z]+\d{2,3})$/;
+const prodLike=code=>S.catalog.has(code)||PROD_SHAPE.test(code);
 async function lookupOrder(recId,code,pre){
   if(!checkOn()){S.check=null;renderCheck();return;}
   const c=S.check={recId,code,state:'loading',order:null,items:[],wrong:0};
@@ -1328,7 +1350,7 @@ function sendNote(){
 function productScan(code){
   const c=S.check,active=S.rec&&c&&c.recId===S.rec.id&&c.state==='ok';
   if(!active){
-    if(S.catalog.has(code)){
+    if(prodLike(code)){
       banner(S.rec?'Đơn này chưa có danh sách sản phẩm nên chưa soát được mã '+code+'.':'Đây là mã sản phẩm ('+code+'). Quét mã đơn trước.','warn');beep('warn');return true;
     }
     return false;
@@ -1344,8 +1366,9 @@ function productScan(code){
       if(n.got===n.need){banner('ĐỦ HÀNG: đơn '+c.code+' đã quét đủ '+n.need+' sản phẩm.','ok');beep('ok');}
       else{$('banner').hidden=true;beep('start');}
     }
-  }else if(S.catalog.has(code)){
+  }else if(prodLike(code)){
     c.wrong++;banner('SAI SẢN PHẨM: mã '+code+' KHÔNG có trong đơn '+c.code+'. Bỏ sản phẩm này ra.','err');beep('err');
+    bigAlert('SAI SẢN PHẨM','Mã '+code+' không có trong đơn '+c.code+'. Bỏ sản phẩm này ra.');
   }else return false;
   renderCheck();sendNote();return true;
 }
@@ -1392,6 +1415,7 @@ function onScan(raw){
   if(/[^\x20-\x7E]/.test(raw)){banner('Mã quét bị sai ký tự: "'+raw.trim()+'". Tắt bộ gõ tiếng Việt (Unikey về chữ E) rồi quét lại.','err');beep('err');return;}
   const code=raw.toUpperCase().replace(/\s+/g,'');
   if(!code)return;
+  bigAlertOff();
   if(S.started&&productScan(code))return;
   if(!/^[A-Z0-9_-]{6,40}$/.test(code)){banner('Mã "'+code+'" không hợp lệ (cần 6–40 ký tự chữ và số). Quét lại.','err');beep('err');return;}
   if(!S.started){banner('Chưa bấm "Bắt đầu ca làm".','err');return;}
