@@ -737,10 +737,11 @@ function init(){
   zx={Z,qr:new Z.QRCodeReader(),bar:new Z.MultiFormatReader(),h1,h2};
 }
 /* nội dung đọc được có giống mã đơn không (cùng luật với camExtract ở trang chính) */
-function usable(text){
-  const t=String(text||'').trim();
-  if(!t||/:\/\/|tiktok|zalo|bit\.ly/i.test(t))return false;
-  return /^[A-Z0-9_-]{6,40}$/.test(t.toUpperCase().replace(/\s+/g,''))||/SPXVN[0-9A-Z]{8,20}|PKE\d{8,20}|\b\d{6}[A-Z0-9]{8}\b/.test(t.toUpperCase());
+/* QR chắc chắn là mã đơn: có mã vận đơn SPX, mã Viettel Post (PKE) hoặc mã đơn Shopee. QR khác (tem Viettel cũng có QR) thì phải đọc thêm mã vạch */
+function sure(text){
+  const t=String(text||'').toUpperCase();
+  if(!t||/:\/\/|TIKTOK|ZALO|BIT\.LY/.test(t))return false;
+  return /SPXVN[0-9A-Z]{8,20}|PKE\d{8,20}|(?:^|[^A-Z0-9])\d{6}(?=[A-Z0-9]{0,7}[A-Z])[A-Z0-9]{8}(?![A-Z0-9])/.test(t);
 }
 /* xoay ảnh 90 độ: mã vạch nằm dọc trong khung hình thì bộ đọc mã vạch (chỉ quét theo hàng ngang) mới thấy */
 function rot(d){
@@ -753,8 +754,8 @@ function decode(d){
   const Z=zx.Z,bmp=s=>new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(s.lum,s.w,s.h)));
   let qr=null;
   try{qr=zx.qr.decode(bmp(d),zx.h1).getText();}catch(e){}
-  if(qr&&usable(qr))return {t:'code',text:qr,fmt:'QR'};
-  /* tem Viettel Post: mã đơn nằm ở mã vạch; QR trên tem (nếu có) không phải mã đơn thì vẫn phải đọc tiếp mã vạch */
+  if(qr&&sure(qr))return {t:'code',text:qr,fmt:'QR'};
+  /* tem Viettel Post có cả QR và mã vạch: QR không chắc là mã đơn thì ưu tiên mã vạch, không đọc được mã vạch mới dùng QR */
   try{return {t:'code',text:zx.bar.decode(bmp(d),zx.h2).getText(),fmt:'Mã vạch'};}catch(e){}
   try{return {t:'code',text:zx.bar.decode(bmp(rot(d)),zx.h2).getText(),fmt:'Mã vạch dọc'};}catch(e){}
   if(qr)return {t:'code',text:qr,fmt:'QR'};
