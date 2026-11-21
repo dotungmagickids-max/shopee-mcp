@@ -9,7 +9,7 @@ import {
   tinhLo, tomTat, xepLo, type HangVe, type LoCat, type PhieuDat,
 } from "../src/lib/san-xuat";
 import { arrivalSaveInput, lotSaveInput, registerSanXuatTools, rescheduleInput } from "../src/lib/san-xuat-tools";
-import { docCsv, duBao, lapKeHoach, ngayIso, so } from "../scripts/lib/sx-seed";
+import { docCsv, duBao, lapKeHoach, ngayIso, so, soKyVong } from "../scripts/lib/sx-seed";
 
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
@@ -318,7 +318,7 @@ describe("script nạp số đầu", () => {
   ];
   const HANG_VE = [
     ["Ngày giao", "Mã hàng", "Lô", "Màu", "Size", "SL xưởng giao", "SL kho đếm", "Số tính về kho (tự tính)", "Lệch", "Kho nhận", "Xưởng xác nhận", "Ghi chú"],
-    ["20/11/2026", "ADT26001", "L1", "Đỏ", "130", "5", "", "5", "", "", "QLSX xưởng", "Phiếu xuất xưởng 20/11. Pancake #1001. Chờ kho đếm"],
+    ["20/11/2026", "ADT26001", "L1", "Đỏ", "130", "5", "", "5", "", "", "QLSX xưởng", "Phiếu xuất xưởng 20/11. Pancake #1001. Kho đã ký"],
     ["21/11/2026", "ADT26001", "L1", "Đỏ", "130", "4", "4", "4", "0", "Kho A", "Xưởng B", "Phiếu xưởng 21/11 Lần 2. Pancake #1002"],
     ["21/11/2026", "ADT26001", "L1", "Trắng", "130", "8", "8", "8", "0", "Kho A", "Xưởng B", ""],
     ["21/11/2026", "ADT26001", "L1", "Đỏ", "130", "2", "2", "", "", "Kho A", "Xưởng B", ""],
@@ -338,34 +338,114 @@ describe("script nạp số đầu", () => {
     ]);
   });
 
-  it("hàng về cho lô chưa có số cắt và dòng không ngày: không nạp, có cảnh báo", () => {
+  it("hàng về cho lô chưa có số cắt và dòng không ngày: không nạp, có cảnh báo, vẫn hiện trong tổng đã về", () => {
     assert.ok(!kh.hangVe.some((v) => v.ma_hang === "BD26011"));
     assert.ok(kh.canhBao.some((x) => /BD26011 L2 có hàng về .*KHÔNG nạp/.test(x)));
     assert.ok(kh.canhBao.some((x) => /QD26002 L2 có 1 dòng không có ngày giao/.test(x)));
+    assert.deepEqual(kh.daVe.find((d) => d.ma_hang === "BD26011"), { ma_hang: "BD26011", lo: "L2", daVe: 44, chuaNap: 44 });
   });
 
-  it("gom thành lần hàng về; trùng màu × size mở lần mới; số Pancake chỉ lấy khi kho đã đếm và có người ký", () => {
+  it("số kho đếm lấy cột 'Số tính về kho'; dòng có G mà H trống là dòng trùng, bỏ qua", () => {
     const adt = kh.hangVe.filter((v) => v.ma_hang === "ADT26001");
-    assert.deepEqual(adt.map((v) => [v.ngay, v.lines.length, v.pancake, v.nguoi_ky]), [
-      ["2026-11-20", 1, null, null],
-      ["2026-11-21", 2, "1002", "Kho A"],
-      ["2026-11-21", 1, null, "Kho A"],
+    assert.deepEqual(adt.map((v) => [v.ngay, v.lines.map((x) => x.kho_dem), v.pancake, v.nguoi_ky]), [
+      ["2026-11-20", [5], null, null],
+      ["2026-11-21", [4, 8], "1002", "Kho A"],
     ]);
     assert.match(adt[1].nguon, /tab "Giao hàng về kho", dòng 3, 4/);
-    assert.ok(kh.canhBao.some((x) => /#1001 nhưng kho chưa đếm đủ/.test(x)));
-    assert.ok(kh.canhBao.some((x) => /dòng 5: .*cột "Số tính về kho" trống/.test(x)));
+    assert.deepEqual(kh.boQua.length, 1);
+    assert.match(kh.boQua[0], /dòng 5: .*Đỏ 130: xưởng giao 2, kho đếm 2, "Số tính về kho" trống → coi là dòng ghi trùng/);
+    assert.ok(kh.canhBao.some((x) => /dòng 2: .*cột kho đếm trống, lấy 5 theo "Số tính về kho"/.test(x)));
+    assert.ok(kh.canhBao.some((x) => /#1001 nhưng kho chưa đếm đủ hoặc chưa có người ký/.test(x)), "không có người kho ký thì không ghi số Pancake");
   });
 
-  it("dự báo: lấy cột kho đếm (không lấy 'Số tính về kho'); lô chỉ có số sổ xưởng là chưa đối soát; nêu chỗ lệch với sheet", () => {
+  it("dự báo: lô chỉ có số sổ xưởng là chưa đối soát, không tính đã về; nêu chỗ lệch với sheet", () => {
     const { tienDo, lech } = duBao(kh, HOM_NAY);
     const adt = tienDo[0];
     assert.equal(adt.soCat, 40);
-    assert.equal(adt.khoDem, 14);
-    assert.equal(adt.choKhoDem, 5);
-    assert.equal(adt.conNo, 26);
+    assert.equal(adt.khoDem, 17);
+    assert.equal(adt.choKhoDem, 0);
+    assert.equal(adt.conNo, 23);
     assert.equal(adt.ngayTre, 2);
     assert.equal(kh.los[1].trang_thai, "chua_doi_soat");
+    assert.equal(tienDo[1].khoDem, 0);
+    assert.equal(tienDo[1].choKhoDem, 66);
     assert.equal(tienDo[1].ngayTre, 0);
-    assert.ok(lech.some((x) => /ADT26001 L1 Đỏ: sheet ghi "Đã về kho" 13, cộng cột kho đếm được 6 \(xưởng giao 11\)/.test(x)), lech.join("\n"));
+    assert.ok(lech.some((x) => /ADT26001 L1 Đỏ: sheet ghi "Đã về kho" 13, script tính được 9/.test(x)), lech.join("\n"));
+  });
+
+  // Dựng lại các ca Thu Hà soát 22/11/2026 trên tab "Giao hàng về kho" (số mẫu, cùng tổng với số kỳ vọng).
+  describe("tổng đã về theo lô so với số kỳ vọng", () => {
+    const TD = HANG_VE[0];
+    const cat = (ma: string, lo: string, mau: string, n: number) => ["", ma, lo, mau, "", "", "", "", String(n), String(n), "", "0", ""];
+    const LO = [LO_CAT[1],
+      cat("ADT26001", "L1", "Đỏ", 396), cat("QD26001", "L3", "Đen", 469), cat("QD26001", "L4", "Đen", 464),
+      cat("QD26033", "L1", "Đen", 205), cat("ADT26002", "L1", "Xanh than", 525), cat("ADT25002", "Tái 27/10", "Trắng", 845),
+      cat("ADT25003", "Tái 23/10", "Ghi", 680), cat("QD26002", "L2", "Đen", 291), cat("QN25004", "Tái 15/9", "Xanh", 368),
+    ];
+    // [ngày, mã, lô, màu, size, F xưởng giao, G kho đếm, H số tính về kho]
+    const dong = (r: (string | number)[]) => [...r.map(String), "", "Kho", "", ""];
+    const VE = [TD,
+      // Ca 2: G trống nhưng hàng đã về, kho đã ký, H có số → lấy H.
+      dong(["20/11/2026", "ADT26001", "L1", "Đỏ", "140", 48, "", 48]),
+      dong(["21/11/2026", "ADT26001", "L1", "Đỏ", "140", 47, 47, 47]),
+      dong(["20/11/2026", "ADT26002", "L1", "Xanh than", "140", 74, "", 74]),
+      dong(["11/11/2026", "ADT26002", "L1", "Xanh than", "140", 445, 445, 445]),
+      dong(["19/11/2026", "QD26033", "L1", "Đen", "140", 93, "", 93]),
+      dong(["20/11/2026", "QD26033", "L1", "Đen", "140", 112, 112, 112]),
+      // Ca 1: G có số, H trống, F có số → dòng trùng (tổng 129), không tính.
+      dong(["13/11/2026", "QD26001", "L3", "Be", "140", 13, 13, ""]),
+      dong(["13/11/2026", "QD26001", "L3", "Be", "170", 9, 9, ""]),
+      dong(["13/11/2026", "QD26001", "L3", "Đen", "150", 19, 19, ""]),
+      dong(["13/11/2026", "QD26001", "L3", "Đen", "160", 30, 30, ""]),
+      dong(["13/11/2026", "QD26001", "L3", "Đen", "170", 37, 37, ""]),
+      dong(["13/11/2026", "QD26001", "L3", "Đen", "180", 21, 21, ""]),
+      dong(["14/11/2026", "QD26001", "L3", "Đen", "140", 342, 342, 342]),
+      dong(["18/11/2026", "QD26001", "L4", "Đen", "140", 161, 161, 161]),
+      dong(["21/11/2026", "QD26001", "L4", "Đen", "160", 74, 74, 74]),
+      // Lô có hàng về nhưng chưa có số cắt.
+      dong(["21/11/2026", "BD26011", "L2", "Xanh than", "140", 186, 186, 186]),
+      dong(["09/11/2026", "ADT25002", "Tái 27/10", "Trắng", "140", 838, 838, 838]),
+      // Ngoại lệ: H trống và F trống mà G có số → lấy G.
+      dong(["31/10/2026", "ADT25003", "Tái 23/10", "Xanh than", "", "", 319, ""]),
+      dong(["31/10/2026", "ADT25003", "Tái 23/10", "Ghi", "", "", 360, ""]),
+      // Chỉ có số sổ cắt xưởng ở cột F: chưa đối soát, không tính là đã về.
+      dong(["07/10/2026", "QD26002", "L2", "Đen", "160", 238, "", ""]),
+      dong(["06/10/2026", "QN25004", "Tái 15/9", "Xanh", "160", 174, "", ""]),
+    ];
+    const KY_VONG = {
+      "ADT26001 L1": 95, "QD26001 L3": 342, "QD26001 L4": 235, "BD26011 L2": 186, "QD26033 L1": 205,
+      "ADT26002 L1": 519, "ADT25002 tái 27/10": 838, "ADT25003": 679,
+    };
+    const k = lapKeHoach(LO, VE);
+
+    it("cả 8 lô ra đúng số kỳ vọng", () => {
+      const ss = soKyVong(k.daVe, KY_VONG);
+      assert.deepEqual(ss.map((x) => [x.lo, x.daVe, x.lech]), Object.entries(KY_VONG).map(([lo, n]) => [lo, n, 0]));
+    });
+
+    it("6 dòng trùng của QD26001 L3 (129 cái) bị bỏ qua và được liệt kê", () => {
+      assert.equal(k.boQua.length, 6);
+      assert.ok(k.boQua.every((x) => /QD26001 L3/.test(x)));
+      const l3 = duBao(k, HOM_NAY).tienDo.find((t) => t.lo.ma_hang === "QD26001" && t.lo.lo === "L3")!;
+      assert.equal(l3.khoDem, 342);
+      assert.ok(l3.khoDem <= l3.soCat);
+    });
+
+    it("QD26002 và QN25004 nạp ở trạng thái chưa đối soát, đã về = 0", () => {
+      for (const ma of ["QD26002", "QN25004"]) {
+        assert.equal(k.los.find((l) => l.ma_hang === ma)!.trang_thai, "chua_doi_soat");
+        assert.equal(k.daVe.find((d) => d.ma_hang === ma)!.daVe, 0);
+      }
+      const { tienDo } = duBao(k, HOM_NAY);
+      assert.equal(tienDo.find((t) => t.lo.ma_hang === "QD26002")!.choKhoDem, 238);
+    });
+
+    it("lệch với kỳ vọng và lô không thấy trong sheet đều được nêu rõ", () => {
+      assert.deepEqual(soKyVong(k.daVe, { "ADT26001 L1": 96, "QD26001 L3": 471, "XX99999 L1": 10 }), [
+        { lo: "ADT26001 L1", kyVong: 96, daVe: 95, lech: -1 },
+        { lo: "QD26001 L3", kyVong: 471, daVe: 342, lech: -129 },
+        { lo: "XX99999 L1", kyVong: 10, daVe: null, lech: null },
+      ]);
+    });
   });
 });

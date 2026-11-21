@@ -110,6 +110,18 @@ export interface KeHoach {
   hangVe: VeNap[];
   /** Chỗ lệch, chỗ bị bỏ qua: Thu Hà đối chiếu với file SX trước khi nạp thật. */
   canhBao: string[];
+  /** Dòng của tab Giao hàng bị coi là ghi trùng (G có số, H trống, F có số): không tính. */
+  boQua: string[];
+  /** Tổng đã về (số tính về kho) theo từng lô, tính trên mọi dòng không trùng, kể cả dòng chưa nạp được. */
+  daVe: DaVeLo[];
+}
+
+export interface DaVeLo {
+  ma_hang: string;
+  lo: string;
+  daVe: number;
+  /** Phần trong `daVe` chưa nạp được (lô chưa có số cắt, dòng không có ngày). */
+  chuaNap: number;
 }
 
 const khoaLo = (ma: string, lo: string) => `${ma.toUpperCase()}|${lo}`;
@@ -205,14 +217,21 @@ export function docLoCat(bang: Bang, tenTab = "Phiếu lô cắt"): Pick<KeHoach
 /**
  * Tab "Giao hàng về kho". Cột: A ngày, B mã, C lô, D màu, E size, F xưởng giao, G kho đếm,
  * H số tính về kho, I lệch, J kho nhận, K xưởng xác nhận, L ghi chú.
- * Số đã về lấy cột G (kho đếm), không lấy cột H. Gom dòng thành lần hàng về theo (ngày, mã, lô, người kho nhận);
- * mở lần mới khi trùng màu × size hoặc ghi chú bắt đầu bằng "Phiếu".
+ * Số kho đếm khi nạp (Thu Hà soát 22/11/2026, chỉ áp cho việc nạp số đầu từ sheet):
+ *   - lấy cột H "Số tính về kho";
+ *   - H trống và F trống mà G có số → lấy G (số ghi theo phiếu Pancake, không có phiếu xưởng);
+ *   - H trống mà cả F và G có số → dòng ghi trùng, bỏ qua, liệt kê ở `boQua`;
+ *   - chỉ có F (sổ cắt xưởng), kho chưa đếm → kho đếm để trống, không tính là đã về.
+ * Gom dòng thành lần hàng về theo (ngày, mã, lô, người kho nhận); mở lần mới khi trùng màu × size
+ * hoặc ghi chú bắt đầu bằng "Phiếu".
  */
-export function docHangVe(bang: Bang, los: LoNap[], tenTab = "Giao hàng về kho"): Pick<KeHoach, "hangVe" | "canhBao"> {
+export function docHangVe(bang: Bang, los: LoNap[], tenTab = "Giao hàng về kho"): Pick<KeHoach, "hangVe" | "canhBao" | "boQua" | "daVe"> {
   const dau = bang.findIndex((r) => r.some((c) => c.trim() === "Mã hàng"));
   if (dau < 0) throw new Error(`${tenTab}: không thấy dòng tiêu đề có cột "Mã hàng"`);
   const coLo = new Map(los.map((l) => [khoaLo(l.ma_hang, l.lo), l]));
   const canhBao: string[] = [];
+  const boQua: string[] = [];
+  const tong = new Map<string, DaVeLo>();
   const mo = new Map<string, VeNap & { dong: number[] }>();
   const xong: (VeNap & { dong: number[] })[] = [];
   const thieuLo = new Map<string, { dong: number[]; xuong: number; kho: number }>();
@@ -224,13 +243,23 @@ export function docHangVe(bang: Bang, los: LoNap[], tenTab = "Giao hàng về kh
     const ma = maS.toUpperCase();
     if (!ma || !lo) return;
     const xuong = so(fS);
-    const kho = so(gS);
-    if (xuong == null && kho == null) {
+    const g = so(gS);
+    const h = so(hS);
+    if (xuong == null && g == null && h == null) {
       canhBao.push(`${tenTab} dòng ${dong}: ${ma} ${lo} ${mau} ${size} không có số xưởng giao lẫn kho đếm, bỏ qua.`);
       return;
     }
+    if (h == null && g != null && xuong != null) {
+      boQua.push(`${tenTab} dòng ${dong}: ${ngayS || "(không ngày)"} ${ma} ${lo} ${mau} ${size}: xưởng giao ${xuong}, kho đếm ${g}, "Số tính về kho" trống → coi là dòng ghi trùng, không tính.`);
+      return;
+    }
+    const kho = h ?? (xuong == null ? g : null);
     const key = khoaLo(ma, lo);
+    const T = tong.get(key) ?? { ma_hang: ma, lo, daVe: 0, chuaNap: 0 };
+    T.daVe += kho ?? 0;
+    tong.set(key, T);
     if (!coLo.has(key)) {
+      T.chuaNap += kho ?? 0;
       const t = thieuLo.get(key) ?? { dong: [], xuong: 0, kho: 0 };
       t.dong.push(dong);
       t.xuong += xuong ?? 0;
@@ -240,14 +269,17 @@ export function docHangVe(bang: Bang, los: LoNap[], tenTab = "Giao hàng về kh
     }
     const ngay = ngayIso(ngayS);
     if (!ngay) {
+      T.chuaNap += kho ?? 0;
       const t = khongNgay.get(key) ?? { dong: [], xuong: 0 };
       t.dong.push(dong);
       t.xuong += xuong ?? kho ?? 0;
       khongNgay.set(key, t);
       return;
     }
-    if (kho != null && hS === "") {
-      canhBao.push(`${tenTab} dòng ${dong}: ${ma} ${lo} ${mau} ${size} có kho đếm ${kho} nhưng cột "Số tính về kho" trống (sheet không cộng dòng này). Sổ vẫn tính ${kho} theo kho đếm: cần soát có ghi trùng với phiếu khác không.`);
+    if (h != null && g == null) {
+      canhBao.push(`${tenTab} dòng ${dong}: ${ma} ${lo} ${mau} ${size} cột kho đếm trống, lấy ${h} theo "Số tính về kho" (hàng đã về, kho đã ký).`);
+    } else if (h != null && g != null && h !== g) {
+      canhBao.push(`${tenTab} dòng ${dong}: ${ma} ${lo} ${mau} ${size} "Số tính về kho" ${h} khác kho đếm ${g}, lấy ${h}.`);
     }
     if (kho != null && xuong != null && kho !== xuong) {
       canhBao.push(`${tenTab} dòng ${dong}: ${ma} ${lo} ${mau} ${size} kho đếm ${kho} khác xưởng giao ${xuong}.`);
@@ -291,7 +323,20 @@ export function docHangVe(bang: Bang, los: LoNap[], tenTab = "Giao hàng về kh
       }
       return { ...v, pancake, nguon };
     });
-  return { hangVe, canhBao };
+  return { hangVe, canhBao, boQua, daVe: [...tong.values()] };
+}
+
+/**
+ * So tổng đã về theo lô với số kỳ vọng (vd { "ADT26001 L1": 95 }). Tên lô so không phân biệt hoa thường.
+ * Trả mỗi lô kỳ vọng một dòng; `lech` khác 0 là lệch.
+ */
+export function soKyVong(daVe: DaVeLo[], kyVong: Record<string, number>): { lo: string; kyVong: number; daVe: number | null; lech: number | null }[] {
+  const chuan = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ");
+  return Object.entries(kyVong).map(([lo, kv]) => {
+    const co = daVe.filter((d) => chuan(`${d.ma_hang} ${d.lo}`) === chuan(lo) || (chuan(d.ma_hang) === chuan(lo) && daVe.filter((x) => chuan(x.ma_hang) === chuan(lo)).length === 1));
+    if (!co.length) return { lo, kyVong: kv, daVe: null, lech: null };
+    return { lo, kyVong: kv, daVe: co[0].daVe, lech: co[0].daVe - kv };
+  });
 }
 
 export function lapKeHoach(bangLoCat: Bang, bangHangVe: Bang): KeHoach {
@@ -303,7 +348,7 @@ export function lapKeHoach(bangLoCat: Bang, bangHangVe: Bang): KeHoach {
     const ve = b.hangVe.filter((v) => v.ma_hang === l.ma_hang && v.lo === l.lo);
     if (ve.length && ve.every((v) => v.lines.every((x) => x.kho_dem == null))) l.trang_thai = "chua_doi_soat";
   }
-  return { los: a.los, phieu: a.phieu, hangVe: b.hangVe, canhBao };
+  return { los: a.los, phieu: a.phieu, hangVe: b.hangVe, canhBao, boQua: b.boQua, daVe: b.daVe };
 }
 
 /** Số sẽ hiện trên trang sau khi nạp, và chỗ lệch so với cột "Đã về kho" của sheet. */
@@ -336,7 +381,7 @@ export function duBao(kh: KeHoach, homNay: string): { tienDo: TienDoLo[]; lech: 
     for (const [k, m] of theoMau) {
       const sheet = L.sheetDaVe[k];
       if (sheet != null && sheet !== m.kho) {
-        lech.push(`${L.ma_hang} ${L.lo} ${m.mau}: sheet ghi "Đã về kho" ${sheet}, cộng cột kho đếm được ${m.kho}${m.xuong !== m.kho ? ` (xưởng giao ${m.xuong})` : ""}.`);
+        lech.push(`${L.ma_hang} ${L.lo} ${m.mau}: sheet ghi "Đã về kho" ${sheet}, script tính được ${m.kho}${m.xuong !== m.kho ? ` (xưởng giao ${m.xuong})` : ""}.`);
       }
     }
   });

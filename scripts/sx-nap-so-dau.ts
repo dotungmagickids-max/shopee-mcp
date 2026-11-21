@@ -4,7 +4,8 @@
  *   1. Trong Google Sheet file SX, tải tab "Phiếu lô cắt" và tab "Giao hàng về kho" về dạng CSV
  *      (Tệp → Tải xuống → CSV), hoặc lưu kết quả Sheets API ({ values: [[…]] }) thành .json.
  *   2. Chạy thử (mặc định, KHÔNG ghi gì, không cần khóa Supabase):
- *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv
+ *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv [--ky-vong ky-vong.json]
+ *      --ky-vong: file JSON { "ADT26001 L1": 95, … } là tổng đã về Thu Hà kỳ vọng theo lô; bản chạy thử in chỗ lệch.
  *   3. Sau khi anh duyệt migration 0025 và duyệt số chạy thử, mới nạp thật:
  *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv --ghi
  *
@@ -14,7 +15,7 @@
  */
 import fs from "node:fs";
 import { homNayVN } from "../src/lib/san-xuat";
-import { docBang, duBao, lapKeHoach } from "./lib/sx-seed";
+import { docBang, duBao, lapKeHoach, soKyVong } from "./lib/sx-seed";
 
 function thamSo(ten: string): string | undefined {
   const i = process.argv.indexOf(ten);
@@ -23,6 +24,7 @@ function thamSo(ten: string): string | undefined {
 
 const fLoCat = thamSo("--lo-cat");
 const fHangVe = thamSo("--hang-ve");
+const fKyVong = thamSo("--ky-vong");
 const ghi = process.argv.includes("--ghi");
 if (!fLoCat || !fHangVe) {
   console.error("Cách dùng: npx tsx scripts/sx-nap-so-dau.ts --lo-cat <file.csv|.json> --hang-ve <file.csv|.json> [--ghi]");
@@ -61,6 +63,23 @@ for (const v of kh.hangVe) {
   console.log(
     `${v.ngay}  ${cot(v.ma_hang, 10)}${cot(v.lo, 12)}xưởng ${phai(xuong, 4)}  kho ${phai(cho ? "chờ" : kho, 4)}  ký: ${cot(v.nguoi_ky ?? "—", 10)} ${v.pancake ? `Pancake #${v.pancake}` : ""}`
   );
+}
+
+console.log(`\n--- Dòng bỏ qua vì ghi trùng (${kh.boQua.length}) ---`);
+for (const x of kh.boQua) console.log(`• ${x}`);
+
+console.log("\n--- Tổng đã về theo từng lô (số tính về kho) ---");
+for (const d of kh.daVe) {
+  console.log(`${cot(d.ma_hang, 10)}${cot(d.lo, 12)}${phai(d.daVe, 6)}${d.chuaNap ? `  (trong đó ${d.chuaNap} CHƯA NẠP được: lô chưa có số cắt hoặc dòng không có ngày)` : ""}`);
+}
+if (fKyVong) {
+  const ss = soKyVong(kh.daVe, JSON.parse(fs.readFileSync(fKyVong, "utf8").replace(/^\uFEFF/, "")));
+  const lechKv = ss.filter((x) => x.lech !== 0);
+  console.log(`\n--- So với số Thu Hà kỳ vọng: ${ss.length - lechKv.length}/${ss.length} lô khớp ---`);
+  for (const x of ss) {
+    const kq = x.daVe == null ? "KHÔNG THẤY LÔ trong sheet" : x.lech === 0 ? "khớp" : `LỆCH ${x.lech! > 0 ? "+" : ""}${x.lech} (script ${x.daVe})`;
+    console.log(`${cot(x.lo, 24)}kỳ vọng ${phai(x.kyVong, 5)}  ${kq}`);
+  }
 }
 
 console.log(`\n--- Chỗ lệch so với sheet (${lech.length}) ---`);
