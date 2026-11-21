@@ -175,7 +175,7 @@ export function morningText(day: string, rows: AdDay[], errors: string[] = [], w
 }
 
 /** Tồn và số ngày còn bán theo mã sản phẩm (bảng pancake_variations đồng bộ đêm). */
-async function loadStock(): Promise<StockInfo> {
+export async function loadStock(): Promise<StockInfo> {
   const out: StockInfo = new Map();
   for (let page = 0; page < 20; page++) {
     const { data, error } = await db()
