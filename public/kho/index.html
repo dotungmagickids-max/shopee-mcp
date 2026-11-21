@@ -2270,8 +2270,9 @@ function cloudBackfill(){
 async function remoteVideos(){
   const d=await api({video:45},30000);
   if(!d||!Array.isArray(d.rows))throw new Error(d&&d.error||'máy chủ trả sai dạng');
-  S.videos=d.rows.map((r,i)=>({id:'sv'+i,code:r.ma,orderId:r.ma_don||'',sysId:r.so_don||'',mode:r.che_do==='HH'?'HH':'DH',startedAt:Date.parse(r.bat_dau),durationSec:Number(r.giay)||0,size:Number(r.kich_thuoc)||0,check:r.soat||'',source:r.kenh||'',type:r.loai_ma||'',fileName:r.file,dir:null,note:'Video nằm ở '+(r.may||'máy kho')}));
+  S.videos=d.rows.map(svVideo);
 }
+const svVideo=(r,i)=>({id:'sv'+i,code:r.ma,orderId:r.ma_don||'',sysId:r.so_don||'',mode:r.che_do==='HH'?'HH':'DH',startedAt:Date.parse(r.bat_dau),durationSec:Number(r.giay)||0,size:Number(r.kich_thuoc)||0,check:r.soat||'',source:r.kenh||'',type:r.loai_ma||'',fileName:r.file,dir:null,note:'Video nằm ở '+(r.may||'máy kho')});
 async function startRemote(){
   const msg=$('gateMsg');msg.textContent='';
   try{
@@ -2449,7 +2450,7 @@ function hoanCsv(){
 }
 
 /* ---------- Soát đơn: danh sách đơn chuẩn bị (chị Hiền dán) ↔ đơn đã đóng (có video). Lưu trong thư mục video: soat-don/NGÀY.json ---------- */
-const SOAT={day:'',data:{codes:[],notes:{}},err:'',rows:[]};
+const SOAT={day:'',data:{codes:[],notes:{}},err:'',rows:[],cloud:[],cloudErr:''};
 async function soatLoadLocal(day){
   let fh;
   try{fh=await (await S.dir.getDirectoryHandle('soat-don')).getFileHandle(day+'.json');}
@@ -2487,6 +2488,11 @@ async function soatReload(sync){
   if(!$('sDay').value)$('sDay').value=dayStr(new Date());
   SOAT.day=$('sDay').value;SOAT.err='';
   if(sync&&!S.remote){await syncLedger();await cloudPullDay(SOAT.day);}
+  /* máy này mở thư mục riêng (ví dụ máy văn phòng): đơn do máy khác đóng chỉ có trong sổ video trên máy chủ */
+  if(sync&&!S.remote&&cloudOn()){
+    try{const d=await api({video:45},30000);if(!d||!Array.isArray(d.rows))throw new Error(d&&d.error||'máy chủ trả sai dạng');SOAT.cloud=d.rows.map(svVideo);SOAT.cloudErr='';}
+    catch(e){SOAT.cloudErr=e.name==='AbortError'?'quá thời gian chờ':(e.message||e.name);}
+  }
   try{SOAT.data=await soatLoad(SOAT.day);}
   catch(e){SOAT.data={codes:[],notes:{}};SOAT.err='Không đọc được danh sách ngày này ('+(e.message||e.name)+'). Chưa sửa gì; thử "Tải lại" sau khi Drive đồng bộ xong.';}
   renderSoat();
@@ -2494,7 +2500,8 @@ async function soatReload(sync){
 }
 function renderSoat(){
   const day=SOAT.day,data=SOAT.data,want=new Set(data.codes);
-  const dh=S.videos.filter(v=>v.mode==='DH').sort((a,b)=>a.startedAt-b.startedAt);
+  const mine=new Set(S.videos.map(v=>v.fileName));
+  const dh=S.videos.concat(S.remote?[]:SOAT.cloud.filter(v=>!mine.has(v.fileName))).filter(v=>v.mode==='DH').sort((a,b)=>a.startedAt-b.startedAt);
   const all=new Map(),today=new Map();
   for(const v of dh){const same=dayStr(new Date(v.startedAt))===day;for(const k of videoKeys(v)){all.set(k,v);if(same)today.set(k,v);}}
   const rows=[];let done=0,miss=0,other=0;
@@ -2512,7 +2519,7 @@ function renderSoat(){
   const seen=new Set();
   for(const v of extra){const k=norm(v.orderId||v.code);if(seen.has(k))continue;seen.add(k);rows.push({key:k,c:'',v,st:'Đóng ngoài danh sách',cls:'out'});}
   SOAT.rows=rows;
-  $('soatInfo').textContent=SOAT.err||(data.codes.length?'Danh sách chuẩn bị cập nhật lúc '+(data.updatedAt?vnTime(data.updatedAt):'–')+'. Bấm "Tải lại" để lấy số mới từ máy khác.':'Ngày này chưa có danh sách đơn chuẩn bị. Bấm "Dán danh sách đơn chuẩn bị".');
+  $('soatInfo').textContent=SOAT.err||(data.codes.length?'Danh sách chuẩn bị cập nhật lúc '+(data.updatedAt?vnTime(data.updatedAt):'–')+'. Bấm "Tải lại" để lấy số mới từ máy khác.'+(SOAT.cloudErr&&!S.remote?' CHƯA LẤY ĐƯỢC ĐƠN MÁY KHÁC ĐÃ ĐÓNG ('+SOAT.cloudErr+'): số "Đã đóng" có thể thiếu.':''):'Ngày này chưa có danh sách đơn chuẩn bị. Bấm "Dán danh sách đơn chuẩn bị".');
   const cards=$('soatCards');cards.textContent='';
   const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
   kpi('Đơn chuẩn bị',data.codes.length);kpi('Đã đóng trong ngày',done);
