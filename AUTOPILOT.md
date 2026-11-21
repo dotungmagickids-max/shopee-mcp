@@ -83,7 +83,8 @@ Lệnh bot: `/status` (hôm nay), `/report` (hôm qua), `/stop` (dừng khẩn c
 `/pause_all`, `/resume_all`, `/mode` mở ở giai đoạn 2.
 
 ## Dashboard `/admin`
-- **Tổng quan**: chi QC, GMV, ROAS, đơn QC và chi phí/đơn, đơn toàn shop, số dư ví, biểu đồ theo giờ, lỗi 24h, độ phủ thu thập 48h.
+`/admin` là Web quản trị Magickids: sau đăng nhập vào trang **Hôm nay** (`/admin/hom-nay`: doanh số, lãi, quảng cáo, tồn, đơn, việc, hệ thống; chỉ đọc) và menu chung tới các phần mềm con. Các trang dưới đây nằm trong mục **QC Shopee**.
+- **Tổng quan** (`/admin/shopee`): chi QC, GMV, ROAS, đơn QC và chi phí/đơn, đơn toàn shop, số dư ví, biểu đồ theo giờ, lỗi 24h, độ phủ thu thập 48h.
 - **Chiến dịch**: từng shop (tên + shop_id), từng chiến dịch (tên + campaign_id), ngân sách (đánh dấu đỏ “Không giới hạn” khi `campaign_budget = 0`), ROAS mục tiêu, chi/ROAS hôm nay và 7 ngày, đề xuất **tăng / giữ / giảm / tắt** kèm lý do.
 - **Bản đồ nhiệt** giờ × thứ: số đơn, chi phí, ROAS, chi phí mỗi đơn; 2/4/8 tuần.
 - **Nhật ký**: thay đổi/đề xuất (trước → sau, ai, lúc nào), lần chạy job, lệnh API lỗi.

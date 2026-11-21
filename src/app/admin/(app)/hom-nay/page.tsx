@@ -39,7 +39,7 @@ function BangBan({ c, homNay }: { c: CotBan; homNay: boolean }) {
   const ghiChu = new Set<string>();
   const note = (ten: string, o: OBan) => {
     if (o.thieu) ghiChu.add(`${ten}: ${o.thieu}`);
-    else if (o.laiGhiChu) ghiChu.add(`${ten}: lãi ${o.lai == null ? "chưa có, " : ""}${o.laiGhiChu}`);
+    else if (o.laiGhiChu) ghiChu.add(`${ten}: ${o.lai == null ? "lãi chưa có, " : ""}${o.laiGhiChu}`);
   };
   c.dong.forEach((d) => note(d.kenh.ten, d.o));
   const t = c.tong;
@@ -66,7 +66,9 @@ function BangBan({ c, homNay }: { c: CotBan; homNay: boolean }) {
                 <td className="l">{kenh.ten}</td>
                 <O v={so(o.don)} vi={o.thieu} />
                 <O v={tien(o.doanhSo)} vi={o.thieu} />
-                <O v={truoc.doanhSo == null ? "chưa có" : `${tien(truoc.doanhSo)}${!homNay && thayDoi != null ? ` (${phanTram(thayDoi, true)})` : ""}`} vi={truoc.thieu} />
+                {truoc.doanhSo == null ? <td className="thieu" title={truoc.thieu ?? undefined}>chưa có</td> : (
+                  <td>{tien(truoc.doanhSo)}{!homNay && thayDoi != null ? <small className={thayDoi < 0 ? "error" : "ok"}>{phanTram(thayDoi, true)}</small> : null}</td>
+                )}
                 {o.lai == null ? <td className="thieu" title={o.laiGhiChu ?? undefined}>chưa có</td> : <td className={o.lai < 0 ? "neg" : ""}>{tien(o.lai)}</td>}
               </tr>
             ))}
