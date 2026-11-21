@@ -736,11 +736,37 @@ function init(){
   h2.set(Z.DecodeHintType.TRY_HARDER,true);h2.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.CODE_128]);
   zx={Z,qr:new Z.QRCodeReader(),bar:new Z.MultiFormatReader(),h1,h2};
 }
+/* nội dung đọc được có giống mã đơn không (cùng luật với camExtract ở trang chính) */
+/* QR chắc chắn là mã đơn: có mã vận đơn SPX, mã Viettel Post (PKE) hoặc mã đơn Shopee. QR khác (tem Viettel cũng có QR) thì phải đọc thêm mã vạch */
+function sure(text){
+  const t=String(text||'').toUpperCase();
+  if(!t||/:\/\/|TIKTOK|ZALO|BIT\.LY/.test(t))return false;
+  return /SPXVN[0-9A-Z]{8,20}|PKE\d{8,20}|(?:^|[^A-Z0-9])\d{6}(?=[A-Z0-9]{0,7}[A-Z])[A-Z0-9]{8}(?![A-Z0-9])/.test(t);
+}
+/* xoay ảnh 90 độ: mã vạch nằm dọc trong khung hình thì bộ đọc mã vạch (chỉ quét theo hàng ngang) mới thấy */
+function rot(d){
+  const w=d.w,h=d.h,src=d.lum,out=new src.constructor(w*h);
+  for(let y=0;y<h;y++){const row=y*w,col=h-1-y;for(let x=0;x<w;x++)out[x*h+col]=src[row+x];}
+  return {lum:out,w:h,h:w};
+}
+/* làm nét: tăng chênh lệch giữa mỗi điểm và 4 điểm quanh nó */
+function sharp(d){
+  const w=d.w,h=d.h,s=d.lum,o=new Uint8ClampedArray(s.length);
+  for(let y=1;y<h-1;y++)for(let x=1,i=y*w+1;x<w-1;x++,i++)o[i]=3*s[i]-(s[i-1]+s[i+1]+s[i-w]+s[i+w])/2;
+  return {lum:o,w,h};
+}
 function decode(d){
   init();if(!zx)return null;
-  const Z=zx.Z,bmp=()=>new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(d.lum,d.w,d.h)));
-  try{return {t:'code',text:zx.qr.decode(bmp(),zx.h1).getText(),fmt:'QR'};}catch(e){}
-  try{return {t:'code',text:zx.bar.decode(bmp(),zx.h2).getText(),fmt:'Mã vạch'};}catch(e){}
+  const Z=zx.Z,bmp=s=>new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(s.lum,s.w,s.h)));
+  let qr=null;
+  try{qr=zx.qr.decode(bmp(d),zx.h1).getText();}catch(e){}
+  /* QR trên tem Viettel Post nhỏ, hình hơi mờ là đọc trượt: làm nét rồi đọc lại */
+  if(!qr)try{qr=zx.qr.decode(bmp(sharp(d)),zx.h1).getText();}catch(e){}
+  if(qr&&sure(qr))return {t:'code',text:qr,fmt:'QR'};
+  /* tem Viettel Post có cả QR và mã vạch: QR không chắc là mã đơn thì ưu tiên mã vạch, không đọc được mã vạch mới dùng QR */
+  try{return {t:'code',text:zx.bar.decode(bmp(d),zx.h2).getText(),fmt:'Mã vạch'};}catch(e){}
+  try{return {t:'code',text:zx.bar.decode(bmp(rot(d)),zx.h2).getText(),fmt:'Mã vạch dọc'};}catch(e){}
+  if(qr)return {t:'code',text:qr,fmt:'QR'};
   return {t:'none'};
 }
 </script>
