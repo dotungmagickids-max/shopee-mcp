@@ -58,7 +58,7 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
       inputSchema: {
         query: z.string().optional().describe("Text to search in title, content, reason, area"),
         include_old: z.boolean().default(false),
-        limit: z.number().int().min(1).max(100).default(20),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
       },
       annotations: ro,
     },
@@ -85,7 +85,7 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
     {
       title: "Magickids: ca khó và bài học",
       description: "How past hard cases were handled (size exchange, defects, difficult customers, returns) and lessons learned.",
-      inputSchema: { query: z.string().optional(), limit: z.number().int().min(1).max(100).default(20) },
+      inputSchema: { query: z.string().optional(), limit: z.coerce.number().int().min(1).max(100).default(20) },
       annotations: ro,
     },
     async ({ query, limit }) => call("mk_cases", { p_agent: agent, p_query: query ?? null, p_limit: limit })
@@ -100,7 +100,7 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
       inputSchema: {
         query: z.string().optional().describe("Code or name fragment"),
         in_stock_only: z.boolean().default(true),
-        limit: z.number().int().min(1).max(500).default(100),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
       },
       annotations: ro,
     },
@@ -134,7 +134,7 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
         from: date,
         to: date,
         code: z.string().optional().describe("Product code or prefix, e.g. AO26 or BD24066"),
-        limit: z.number().int().min(1).max(500).default(50),
+        limit: z.coerce.number().int().min(1).max(500).default(50),
       },
       annotations: ro,
     },
@@ -258,7 +258,7 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
       title: "Magickids: cập nhật việc",
       description: "Change a task's status, add a note (appended with time and who), or move its due date.",
       inputSchema: {
-        id: z.number().int().positive(),
+        id: z.coerce.number().int().positive(),
         status: taskStatus.optional(),
         note: z.string().max(2000).optional(),
         due: date.optional(),
