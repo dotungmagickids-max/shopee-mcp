@@ -16,6 +16,18 @@ export function supabaseEnv() {
 }
 
 /**
+ * Đường dẫn tới công cụ nằm ngoài máy chủ này (artifact, Google Sheet) cho menu Web quản trị.
+ * Để trong biến môi trường vì repo công khai; thiếu hoặc không phải https thì menu ghi "chưa gắn link".
+ */
+export function adminLinks(): { noiDung: string | null; kho: string | null; maHang: string | null } {
+  const link = (name: string) => {
+    const v = process.env[name]?.trim();
+    return v && /^https:\/\/\S+$/.test(v) ? v : null;
+  };
+  return { noiDung: link("WEB_LINK_NOI_DUNG"), kho: link("WEB_LINK_KHO"), maHang: link("WEB_LINK_MA_HANG") };
+}
+
+/**
  * Partner credentials for a region. Region-specific variables
  * (e.g. SHOPEE_PARTNER_ID_TEST_GLOBAL) win over the shared SHOPEE_PARTNER_ID,
  * since sandbox and China apps usually have their own partner id/key.

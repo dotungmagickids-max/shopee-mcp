@@ -33,7 +33,7 @@ function DecideButtons({ id, back }: { id: number; back: string }) {
 }
 
 /** Danh sách đề xuất đang chờ duyệt, kèm nút Đồng ý / Bỏ qua. */
-export async function Proposals({ back = "/admin" }: { back?: string }) {
+export async function Proposals({ back = "/admin/shopee" }: { back?: string }) {
   const rows = await pendingProposals();
   return (
     <section className="card">
