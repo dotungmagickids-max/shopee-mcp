@@ -23,8 +23,8 @@ export function scrub(s: string): string {
     .replace(/\bEAA[A-Za-z0-9]{10,}/g, "EAA***");
 }
 
-function authParams(): Record<string, string> {
-  const t = token();
+function authParams(pageToken?: string): Record<string, string> {
+  const t = pageToken ?? token();
   const secret = process.env.META_APP_SECRET?.trim();
   return secret ? { access_token: t, appsecret_proof: appSecretProof(t, secret) } : { access_token: t };
 }
@@ -56,13 +56,13 @@ function token(): string {
   return t;
 }
 
-async function get(pathOrUrl: string, params: Record<string, string> = {}): Promise<any> {
+async function get(pathOrUrl: string, params: Record<string, string> = {}, pageToken?: string): Promise<any> {
   const url = pathOrUrl.startsWith("http")
     ? new URL(pathOrUrl)
     : new URL(`${GRAPH}/${pathOrUrl.replace(/^\//, "")}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   // Trang tiếp (paging.next) đã kèm token; vẫn đặt lại để chắc có appsecret_proof.
-  for (const [k, v] of Object.entries(authParams())) url.searchParams.set(k, v);
+  for (const [k, v] of Object.entries(authParams(pageToken))) url.searchParams.set(k, v);
   return send(url, { method: "GET", headers: { Accept: "application/json" } });
 }
 
@@ -267,6 +267,8 @@ export type AdInfo = {
   adset_daily: number | null;
   campaign_daily: number | null;
   page_id: string | null;
+  /** Bài gốc của quảng cáo, dạng `pageId_postId`. */
+  story_id: string | null;
 };
 
 /** Trạng thái, ngân sách ngày (nhóm / chiến dịch) và page của các quảng cáo, gọi theo lô 50 id. Chỉ đọc. */
@@ -290,10 +292,56 @@ export async function adsInfo(ids: string[]): Promise<Map<string, AdInfo>> {
           campaign_status: String(r.campaign?.effective_status ?? ""),
           adset_daily: numOrNull(r.adset?.daily_budget),
           campaign_daily: numOrNull(r.campaign?.daily_budget),
+          story_id: story || null,
           page_id: r.creative?.object_story_spec?.page_id ? String(r.creative.object_story_spec.page_id) : story.includes("_") ? story.split("_")[0] : null,
         });
       }
     })
   );
   return out;
+}
+
+export type PagePost = {
+  id: string; // pageId_postId
+  message: string;
+  created_time: string;
+  picture: string | null;
+  permalink: string | null;
+  kind: string; // added_video, added_photos, ...
+};
+
+/** Bài và reel đã đăng của page trong `days` ngày gần nhất (đọc bằng token của page). Chỉ đọc. */
+export async function pagePosts(pageId: string, days = 30): Promise<PagePost[]> {
+  const page = await get(pageId, { fields: "access_token" });
+  const pageToken = page?.access_token ? String(page.access_token) : undefined;
+  if (!pageToken) throw new MetaError("Token hệ thống chưa được gán quyền page này");
+  const out: PagePost[] = [];
+  let body = await get(
+    `${pageId}/published_posts`,
+    { fields: "id,message,created_time,full_picture,permalink_url,status_type", since: String(Math.floor(Date.now() / 1000) - days * 86_400), limit: "100" },
+    pageToken
+  );
+  for (let i = 0; i < 10; i++) {
+    for (const r of body?.data ?? []) {
+      out.push({
+        id: String(r.id),
+        message: String(r.message ?? ""),
+        created_time: String(r.created_time ?? ""),
+        picture: r.full_picture ?? null,
+        permalink: r.permalink_url ?? null,
+        kind: String(r.status_type ?? ""),
+      });
+    }
+    const next = body?.paging?.next;
+    if (!next) break;
+    body = await get(next, {}, pageToken);
+  }
+  return out;
+}
+
+/** Lệnh tạo trên Meta (chỉ FB Magic Tool gọi, sau khi anh bấm xác nhận). Không tự thử lại. Trả id đối tượng mới. */
+export async function createObject(accountId: string, edge: "campaigns" | "adsets" | "adcreatives" | "ads", params: Record<string, string>): Promise<string> {
+  const r = await post(`act_${accountId}/${edge}`, params);
+  if (!r?.id) throw new MetaError(`Meta không trả id khi tạo ${edge}`);
+  return String(r.id);
 }

@@ -18,9 +18,10 @@ export default async function FbLayout({ children }: { children: ReactNode }) {
       <nav className="nav">
         <b>FB Magic Tool</b>
         <a href="/fb">Đánh giá</a>
+        <a href="/fb/len-camp">Lên camp</a>
         <a href="/fb/tran">Bảng trần</a>
         <span className="spacer" />
-        <span className="tag" title="Giai đoạn này chưa gọi lệnh ghi lên Meta">CHỈ ĐỌC</span>
+        <span className="tag" title="Lên camp luôn tạo ở trạng thái tạm dừng. Nút ở màn Đánh giá chưa gọi lệnh ghi.">TẠO = TẠM DỪNG</span>
         <a href="/admin">Shopee Autopilot</a>
       </nav>
       {children}
