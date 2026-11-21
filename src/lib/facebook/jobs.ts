@@ -100,7 +100,7 @@ function adLine(a: AdDay): string {
 }
 
 /** Hàng tồn theo mã: tồn và số ngày còn bán (từ pancake_variations). */
-export type StockInfo = Map<string, { stock: number; days: number | null }>;
+export type StockInfo = Map<string, { stock: number; days: number | null; rate?: number }>;
 
 /**
  * Nội dung báo sáng (hàm thuần trên số đã thu).
