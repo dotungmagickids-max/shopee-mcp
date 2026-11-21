@@ -9,7 +9,7 @@ import {
   tinhLo, tomTat, xepLo, type HangVe, type LoCat, type PhieuDat,
 } from "../src/lib/san-xuat";
 import { arrivalSaveInput, lotSaveInput, registerSanXuatTools, rescheduleInput } from "../src/lib/san-xuat-tools";
-import { docCsv, duBao, lapKeHoach, ngayIso, so, soKyVong } from "../scripts/lib/sx-seed";
+import { docCsv, docPhieuDat, duBao, lapKeHoach, ngayIso, so, soKyVong } from "../scripts/lib/sx-seed";
 
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
@@ -380,7 +380,10 @@ describe("script nạp số đầu", () => {
     const LO = [LO_CAT[1],
       cat("ADT26001", "L1", "Đỏ", 396), cat("QD26001", "L3", "Đen", 469), cat("QD26001", "L4", "Đen", 464),
       cat("QD26033", "L1", "Đen", 205), cat("ADT26002", "L1", "Xanh than", 525), cat("ADT25002", "Tái 27/10", "Trắng", 845),
+      // BD26011 L2 nằm ở hai dòng không liền nhau (Xanh than ở đây, Ghi ở cuối bảng).
+      cat("BD26011", "L2", "Xanh than", 250),
       cat("ADT25003", "Tái 23/10", "Ghi", 680), cat("QD26002", "L2", "Đen", 291), cat("QN25004", "Tái 15/9", "Xanh", 368),
+      cat("BD26011", "L2", "Ghi", 160),
     ];
     // [ngày, mã, lô, màu, size, F xưởng giao, G kho đếm, H số tính về kho]
     const dong = (r: (string | number)[]) => [...r.map(String), "", "Kho", "", ""];
@@ -402,9 +405,10 @@ describe("script nạp số đầu", () => {
       dong(["14/11/2026", "QD26001", "L3", "Đen", "140", 342, 342, 342]),
       dong(["18/11/2026", "QD26001", "L4", "Đen", "140", 161, 161, 161]),
       dong(["21/11/2026", "QD26001", "L4", "Đen", "160", 74, 74, 74]),
-      // Lô có hàng về nhưng chưa có số cắt.
-      dong(["21/11/2026", "BD26011", "L2", "Xanh than", "140", 186, 186, 186]),
+      dong(["21/11/2026", "BD26011", "L2", "Xanh than", "140", 185, 185, 185]),
+      dong(["21/11/2026", "BD26011", "L2", "Ghi", "140", 1, 1, 1]),
       dong(["09/11/2026", "ADT25002", "Tái 27/10", "Trắng", "140", 838, 838, 838]),
+      dong(["12/11/2026", "ADT25002", "Tái 27/10", "Trắng", "160", 1, 1, 1]),
       // Ngoại lệ: H trống và F trống mà G có số → lấy G.
       dong(["31/10/2026", "ADT25003", "Tái 23/10", "Xanh than", "", "", 319, ""]),
       dong(["31/10/2026", "ADT25003", "Tái 23/10", "Ghi", "", "", 360, ""]),
@@ -414,19 +418,41 @@ describe("script nạp số đầu", () => {
     ];
     const KY_VONG = {
       "ADT26001 L1": 95, "QD26001 L3": 342, "QD26001 L4": 235, "BD26011 L2": 186, "QD26033 L1": 205,
-      "ADT26002 L1": 519, "ADT25002 tái 27/10": 838, "ADT25003": 679,
+      "ADT26002 L1": 519, "ADT25002 tái 27/10": 839, "ADT25003": 679,
     };
-    const k = lapKeHoach(LO, VE);
+    // Phiếu đặt mẫu: một phiếu chưa cắt, một phiếu 780 = lô đã cắt 410 (sheet gọi là L2) + 370 chưa cắt.
+    const PHIEU = [
+      { so_phieu: "PĐH-THỬ-01", ma_hang: "ADT25002", dot: "Lô 1", ngay_dat: "17/11/2026", gia: 61000, lines: [{ mau: "Xanh than", size: 130, so_luong: 610 }, { mau: "Trắng", size: 130, so_luong: 390 }] },
+      { so_phieu: "PĐH-THỬ-05", ma_hang: "bd26011", dot: "Lô 1", lo_cat: "L2", lines: [{ mau: "Xanh than", size: "", so_luong: 250 }, { mau: "Ghi", size: "", so_luong: 160 }] },
+      { so_phieu: "PĐH-THỬ-05", ma_hang: "BD26011", dot: "Lô 2", canh_bao: "hai nguồn ghi 780 và 410", lines: [{ mau: "", size: "", so_luong: 370 }, { mau: "Ghi", size: "130", so_luong: 0 }] },
+      { so_phieu: "PĐH-THỬ-09", ma_hang: "QD26002", dot: "", lo_cat: "L9", lines: [{ so_luong: 100 }] },
+    ];
+    const k = lapKeHoach(LO, VE, PHIEU);
+    const db = duBao(k, HOM_NAY);
 
-    it("cả 8 lô ra đúng số kỳ vọng", () => {
+    it("cả 8 lô ra đúng số đã về kỳ vọng", () => {
       const ss = soKyVong(k.daVe, KY_VONG);
-      assert.deepEqual(ss.map((x) => [x.lo, x.daVe, x.lech]), Object.entries(KY_VONG).map(([lo, n]) => [lo, n, 0]));
+      assert.deepEqual(ss.map((x) => [x.lo, x.loai, x.thucTe, x.lech]), Object.entries(KY_VONG).map(([lo, n]) => [lo, "đã về", n, 0]));
+    });
+
+    it("gom các dòng cùng (mã, lô) dù không liền nhau; còn nợ theo lô và tổng còn nợ khớp kỳ vọng", () => {
+      const bd = k.los.filter((l) => l.ma_hang === "BD26011");
+      assert.equal(bd.length, 1);
+      assert.deepEqual(bd[0].lines.map((x) => [x.mau, x.so_cat]), [["Xanh than", 250], ["Ghi", 160]]);
+      assert.match(bd[0].nguon, /dòng 8, 12/);
+      const tong = db.tienDo.filter((t) => t.lo.trang_thai === "dang_ve" && t.conNo > 0).reduce((a, t) => a + t.conNo, 0);
+      assert.deepEqual(soKyVong(k.daVe, { "BD26011 L2": { da_ve: 186, con_no: 224 }, tong_con_no: tong }, db.tienDo).map((x) => [x.lo, x.loai, x.thucTe, x.lech]), [
+        ["BD26011 L2", "đã về", 186, 0],
+        ["BD26011 L2", "còn nợ", 224, 0],
+        ["Tổng còn nợ", "còn nợ", tong, 0],
+      ]);
+      assert.equal(tong, 301 + 127 + 229 + 224 + 6 + 6 + 1);
     });
 
     it("6 dòng trùng của QD26001 L3 (129 cái) bị bỏ qua và được liệt kê", () => {
       assert.equal(k.boQua.length, 6);
       assert.ok(k.boQua.every((x) => /QD26001 L3/.test(x)));
-      const l3 = duBao(k, HOM_NAY).tienDo.find((t) => t.lo.ma_hang === "QD26001" && t.lo.lo === "L3")!;
+      const l3 = db.tienDo.find((t) => t.lo.ma_hang === "QD26001" && t.lo.lo === "L3")!;
       assert.equal(l3.khoDem, 342);
       assert.ok(l3.khoDem <= l3.soCat);
     });
@@ -436,16 +462,51 @@ describe("script nạp số đầu", () => {
         assert.equal(k.los.find((l) => l.ma_hang === ma)!.trang_thai, "chua_doi_soat");
         assert.equal(k.daVe.find((d) => d.ma_hang === ma)!.daVe, 0);
       }
-      const { tienDo } = duBao(k, HOM_NAY);
-      assert.equal(tienDo.find((t) => t.lo.ma_hang === "QD26002")!.choKhoDem, 238);
+      assert.equal(db.tienDo.find((t) => t.lo.ma_hang === "QD26002")!.choKhoDem, 238);
     });
 
     it("lệch với kỳ vọng và lô không thấy trong sheet đều được nêu rõ", () => {
       assert.deepEqual(soKyVong(k.daVe, { "ADT26001 L1": 96, "QD26001 L3": 471, "XX99999 L1": 10 }), [
-        { lo: "ADT26001 L1", kyVong: 96, daVe: 95, lech: -1 },
-        { lo: "QD26001 L3", kyVong: 471, daVe: 342, lech: -129 },
-        { lo: "XX99999 L1", kyVong: 10, daVe: null, lech: null },
+        { lo: "ADT26001 L1", loai: "đã về", kyVong: 96, thucTe: 95, lech: -1 },
+        { lo: "QD26001 L3", loai: "đã về", kyVong: 471, thucTe: 342, lech: -129 },
+        { lo: "XX99999 L1", loai: "đã về", kyVong: 10, thucTe: null, lech: null },
       ]);
+    });
+
+    it("phiếu đặt từ file: nối với lô đã cắt, tính 'đã đặt, xưởng chưa cắt', in điều cần soát", () => {
+      assert.deepEqual(k.phieu.map((p) => [p.ma_hang, p.dot, p.lines.reduce((a, x) => a + x.so_luong, 0), p.gia ?? null, p.ngay_dat]), [
+        ["ADT25002", "Lô 1", 1000, 61000, "2026-11-17"],
+        ["BD26011", "Lô 1", 410, null, null],
+        ["BD26011", "Lô 2", 370, null, null],
+        ["QD26002", "", 100, null, null],
+      ]);
+      assert.equal(k.phieu[0].nguon, "phiếu đặt PĐH-THỬ-01");
+      assert.equal(k.los.find((l) => l.ma_hang === "BD26011")!.dot_dat, "Lô 1");
+      assert.deepEqual(db.cho.map((x) => [x.p.ma_hang, x.p.dot, x.soDat, x.daCat, x.conCho]), [
+        ["ADT25002", "Lô 1", 1000, 0, 1000],
+        ["BD26011", "Lô 2", 370, 0, 370],
+        ["QD26002", "", 100, 0, 100],
+      ]);
+      assert.ok(k.canhBao.some((x) => /^CẦN SOÁT .*BD26011 Lô 2: hai nguồn ghi 780 và 410/.test(x)));
+      assert.ok(k.canhBao.some((x) => /QD26002 : ghi lô cắt "L9" nhưng sheet không có lô này/.test(x)));
+    });
+
+    it("phiếu trong file thay phiếu cùng (mã, đợt) suy ra từ cột SL đặt của sheet", () => {
+      const kk = lapKeHoach(LO_CAT, HANG_VE, [{ so_phieu: "PĐH-THỬ-02", ma_hang: "ADT26002", dot: "L2", lines: [{ mau: "Đỏ", size: 130, so_luong: 70 }, { mau: "Đỏ", size: 140, so_luong: 430 }] }]);
+      assert.deepEqual(kk.phieu.map((p) => [p.ma_hang, p.dot, p.lines.length, p.nguon]), [["ADT26002", "L2", 2, "phiếu đặt PĐH-THỬ-02"]]);
+      assert.ok(kk.canhBao.some((x) => /ADT26002 L2: lấy theo file phiếu đặt, bỏ số 500/.test(x)));
+    });
+
+    it("file phiếu đặt sai bị từ chối", () => {
+      const sai = (v: unknown, re: RegExp) => assert.throws(() => docPhieuDat(v), re);
+      sai({}, /mảng JSON/);
+      sai([{ dot: "L1", so_phieu: "P1", lines: [{ so_luong: 1 }] }], /thiếu mã hàng/);
+      sai([{ ma_hang: "ADT26001", lines: [{ so_luong: 1 }] }], /thiếu so_phieu hoặc nguon/);
+      sai([{ ma_hang: "ADT26001", so_phieu: "P1", lines: [] }], /thiếu số lượng/);
+      sai([{ ma_hang: "ADT26001", so_phieu: "P1", lines: [{ mau: "Đỏ", size: 130, so_luong: 1.5 }] }], /số nguyên không âm/);
+      sai([{ ma_hang: "ADT26001", so_phieu: "P1", lines: [{ mau: "Đỏ", size: 130, so_luong: 1 }, { mau: "đỏ", size: "130", so_luong: 2 }] }], /trùng dòng/);
+      sai([{ ma_hang: "ADT26001", so_phieu: "P1", lines: [{ so_luong: 1 }] }, { ma_hang: "adt26001", so_phieu: "P2", lines: [{ so_luong: 1 }] }], /trùng \(mã hàng, đợt\)/);
+      assert.deepEqual(docPhieuDat([{ ma_hang: "ADT26001", so_phieu: "P1", trang_thai: "huy", lines: [{ so_luong: 1 }] }]).phieu, []);
     });
   });
 });

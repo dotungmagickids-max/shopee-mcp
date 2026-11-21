@@ -3,7 +3,7 @@
  * Phần này thuần: đọc bảng → kế hoạch nạp + cảnh báo. Không gọi mạng. Script chạy ở scripts/sx-nap-so-dau.ts.
  * KHÔNG dùng tab "Tiến độ SX" (số ở đó đã biết là sai, vd ADT25003).
  */
-import { tinhLo, type HangVe, type LoCat, type TienDoLo } from "../../src/lib/san-xuat";
+import { phieuChoCat, tinhLo, type HangVe, type LoCat, type PhieuCho, type PhieuDat, type TienDoLo } from "../../src/lib/san-xuat";
 
 export type Bang = string[][];
 
@@ -87,6 +87,8 @@ export interface PhieuNap {
   ma_hang: string;
   dot: string;
   ngay_dat: string | null;
+  gia?: number | null;
+  ngay_du_kien_cat?: string | null;
   trang_thai: "cho_cat" | "da_cat";
   ghi_chu: string | null;
   lines: { mau: string; size: string; so_luong: number }[];
@@ -326,20 +328,111 @@ export function docHangVe(bang: Bang, los: LoNap[], tenTab = "Giao hàng về kh
   return { hangVe, canhBao, boQua, daVe: [...tong.values()] };
 }
 
-/**
- * So tổng đã về theo lô với số kỳ vọng (vd { "ADT26001 L1": 95 }). Tên lô so không phân biệt hoa thường.
- * Trả mỗi lô kỳ vọng một dòng; `lech` khác 0 là lệch.
- */
-export function soKyVong(daVe: DaVeLo[], kyVong: Record<string, number>): { lo: string; kyVong: number; daVe: number | null; lech: number | null }[] {
-  const chuan = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ");
-  return Object.entries(kyVong).map(([lo, kv]) => {
-    const co = daVe.filter((d) => chuan(`${d.ma_hang} ${d.lo}`) === chuan(lo) || (chuan(d.ma_hang) === chuan(lo) && daVe.filter((x) => chuan(x.ma_hang) === chuan(lo)).length === 1));
-    if (!co.length) return { lo, kyVong: kv, daVe: null, lech: null };
-    return { lo, kyVong: kv, daVe: co[0].daVe, lech: co[0].daVe - kv };
-  });
+export type KyVong = Record<string, number | { da_ve?: number; con_no?: number }>;
+export interface DongSoSanh {
+  lo: string;
+  loai: "đã về" | "còn nợ";
+  kyVong: number;
+  /** null = không thấy lô trong sheet */
+  thucTe: number | null;
+  lech: number | null;
 }
 
-export function lapKeHoach(bangLoCat: Bang, bangHangVe: Bang): KeHoach {
+/**
+ * So với số kỳ vọng. Khóa là "<mã hàng> <lô>" (không phân biệt hoa thường; chỉ ghi mã hàng nếu mã đó có một lô),
+ * giá trị là tổng đã về, hoặc { da_ve, con_no }. Khóa "tong_con_no" là tổng còn nợ của các lô đang về.
+ * `lech` khác 0 là lệch.
+ */
+export function soKyVong(daVe: DaVeLo[], kyVong: KyVong, tienDo: TienDoLo[] = []): DongSoSanh[] {
+  const chuan = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ");
+  const out: DongSoSanh[] = [];
+  const them = (lo: string, loai: DongSoSanh["loai"], kv: number, thucTe: number | null) =>
+    out.push({ lo, loai, kyVong: kv, thucTe, lech: thucTe == null ? null : thucTe - kv });
+  for (const [lo, v] of Object.entries(kyVong)) {
+    if (chuan(lo) === "tong_con_no") {
+      const mo = tienDo.filter((t) => t.lo.trang_thai === "dang_ve" && t.conNo > 0);
+      them("Tổng còn nợ", "còn nợ", Number(v), mo.reduce((a, t) => a + t.conNo, 0));
+      continue;
+    }
+    const khop = <T extends { ma_hang: string; lo: string }>(ds: T[]): T | undefined =>
+      ds.find((d) => chuan(`${d.ma_hang} ${d.lo}`) === chuan(lo)) ??
+      (ds.filter((d) => chuan(d.ma_hang) === chuan(lo)).length === 1 ? ds.find((d) => chuan(d.ma_hang) === chuan(lo)) : undefined);
+    const kv = typeof v === "number" ? { da_ve: v } : v;
+    if (kv.da_ve != null) them(lo, "đã về", kv.da_ve, khop(daVe)?.daVe ?? null);
+    if (kv.con_no != null) them(lo, "còn nợ", kv.con_no, khop(tienDo.map((t) => ({ ma_hang: t.lo.ma_hang, lo: t.lo.lo, t })))?.t.conNo ?? null);
+  }
+  return out;
+}
+
+/**
+ * Một phiếu đặt trong file --phieu-dat (JSON, mảng các phần tử này). Mỗi (mã hàng, đợt) một phần tử.
+ * File này dựng từ sổ phiếu đặt của phòng sản xuất, để NGOÀI repo.
+ */
+export interface PhieuVao {
+  so_phieu?: string;
+  ma_hang: string;
+  dot?: string;
+  /** YYYY-MM-DD hoặc dd/mm/yyyy */
+  ngay_dat?: string;
+  gia?: number;
+  ngay_du_kien_cat?: string;
+  trang_thai?: "cho_cat" | "da_cat" | "huy";
+  /** Tên lô cắt (cùng mã) đã cắt cho phiếu này, để tính "đã đặt, xưởng chưa cắt". */
+  lo_cat?: string;
+  ghi_chu?: string;
+  nguon?: string;
+  /** Điều cần người soát lại (vd hai nguồn ghi khác nhau): in nguyên văn ở mục cảnh báo. */
+  canh_bao?: string;
+  lines: { mau?: string; size?: string | number; so_luong: number }[];
+}
+
+const ngayNao = (x: string | undefined): string | null =>
+  !x ? null : /^\d{4}-\d{2}-\d{2}$/.test(x.trim()) ? x.trim() : ngayIso(x);
+
+/** Đọc file phiếu đặt. `lienKet` nối phiếu với lô cắt đã cắt cho phiếu đó. */
+export function docPhieuDat(vao: unknown): { phieu: PhieuNap[]; lienKet: { ma_hang: string; lo: string; dot: string }[]; canhBao: string[] } {
+  if (!Array.isArray(vao)) throw new Error("File phiếu đặt phải là một mảng JSON");
+  const phieu: PhieuNap[] = [];
+  const lienKet: { ma_hang: string; lo: string; dot: string }[] = [];
+  const canhBao: string[] = [];
+  const daCo = new Set<string>();
+  (vao as PhieuVao[]).forEach((v, i) => {
+    const ma = String(v?.ma_hang ?? "").trim().toUpperCase();
+    const dot = String(v?.dot ?? "").trim();
+    const ten = `Phiếu đặt #${i + 1} ${v?.so_phieu ?? ""} ${ma} ${dot}`.replace(/\s+/g, " ").trim();
+    if (!ma) throw new Error(`${ten}: thiếu mã hàng`);
+    const nguon = (v.nguon ?? (v.so_phieu ? `phiếu đặt ${v.so_phieu}` : "")).trim();
+    if (nguon.length < 3) throw new Error(`${ten}: thiếu so_phieu hoặc nguon`);
+    if (daCo.has(khoaLo(ma, dot))) throw new Error(`${ten}: trùng (mã hàng, đợt) với phiếu khác trong file`);
+    daCo.add(khoaLo(ma, dot));
+    if (!Array.isArray(v.lines) || !v.lines.length) throw new Error(`${ten}: thiếu số lượng màu × size`);
+    const thay = new Set<string>();
+    const lines = v.lines.map((x) => {
+      const mau = String(x.mau ?? "").trim();
+      const size = String(x.size ?? "").trim();
+      if (!Number.isInteger(x.so_luong) || x.so_luong < 0) throw new Error(`${ten}: số lượng ${mau} ${size} phải là số nguyên không âm`);
+      if (thay.has(`${mau.toLowerCase()}|${size}`)) throw new Error(`${ten}: trùng dòng ${mau} ${size}`);
+      thay.add(`${mau.toLowerCase()}|${size}`);
+      return { mau, size, so_luong: x.so_luong };
+    }).filter((x) => x.so_luong > 0);
+    if (!lines.length) throw new Error(`${ten}: mọi dòng đều bằng 0`);
+    phieu.push({
+      ma_hang: ma, dot, ngay_dat: ngayNao(v.ngay_dat), gia: v.gia ?? null, ngay_du_kien_cat: ngayNao(v.ngay_du_kien_cat),
+      trang_thai: v.trang_thai === "da_cat" ? "da_cat" : "cho_cat",
+      ghi_chu: [v.so_phieu, v.ghi_chu].filter(Boolean).join(" · ").slice(0, 2000) || null, lines, nguon,
+    });
+    if (v.trang_thai === "huy") {
+      phieu.pop();
+      canhBao.push(`${ten}: trạng thái "huy" → không nạp.`);
+      return;
+    }
+    if (v.lo_cat?.trim()) lienKet.push({ ma_hang: ma, lo: v.lo_cat.trim(), dot });
+    if (v.canh_bao?.trim()) canhBao.push(`CẦN SOÁT ${ten}: ${v.canh_bao.trim()}`);
+  });
+  return { phieu, lienKet, canhBao };
+}
+
+export function lapKeHoach(bangLoCat: Bang, bangHangVe: Bang, phieuVao?: unknown): KeHoach {
   const a = docLoCat(bangLoCat);
   const b = docHangVe(bangHangVe, a.los);
   const canhBao = [...a.canhBao, ...b.canhBao];
@@ -348,13 +441,31 @@ export function lapKeHoach(bangLoCat: Bang, bangHangVe: Bang): KeHoach {
     const ve = b.hangVe.filter((v) => v.ma_hang === l.ma_hang && v.lo === l.lo);
     if (ve.length && ve.every((v) => v.lines.every((x) => x.kho_dem == null))) l.trang_thai = "chua_doi_soat";
   }
-  return { los: a.los, phieu: a.phieu, hangVe: b.hangVe, canhBao, boQua: b.boQua, daVe: b.daVe };
+  let phieu = a.phieu;
+  if (phieuVao !== undefined) {
+    const p = docPhieuDat(phieuVao);
+    canhBao.push(...p.canhBao);
+    // Phiếu trong file phiếu đặt thay phiếu cùng (mã, đợt) suy ra từ cột "SL đặt" của sheet.
+    const key = new Set(p.phieu.map((x) => khoaLo(x.ma_hang, x.dot)));
+    for (const x of a.phieu.filter((x) => key.has(khoaLo(x.ma_hang, x.dot)))) {
+      canhBao.push(`Phiếu đặt ${x.ma_hang} ${x.dot}: lấy theo file phiếu đặt, bỏ số ${x.lines.reduce((t, d) => t + d.so_luong, 0)} suy ra từ cột "SL đặt" của sheet.`);
+    }
+    phieu = [...p.phieu, ...a.phieu.filter((x) => !key.has(khoaLo(x.ma_hang, x.dot)))];
+    for (const lk of p.lienKet) {
+      const l = a.los.find((x) => x.ma_hang === lk.ma_hang && x.lo === lk.lo);
+      if (l) l.dot_dat = lk.dot;
+      else canhBao.push(`Phiếu đặt ${lk.ma_hang} ${lk.dot}: ghi lô cắt "${lk.lo}" nhưng sheet không có lô này (hoặc lô chưa có số cắt) → chưa nối được.`);
+    }
+  }
+  return { los: a.los, phieu, hangVe: b.hangVe, canhBao, boQua: b.boQua, daVe: b.daVe };
 }
 
 /** Số sẽ hiện trên trang sau khi nạp, và chỗ lệch so với cột "Đã về kho" của sheet. */
-export function duBao(kh: KeHoach, homNay: string): { tienDo: TienDoLo[]; lech: string[] } {
+export function duBao(kh: KeHoach, homNay: string): { tienDo: TienDoLo[]; lech: string[]; cho: PhieuCho[] } {
+  const phieu: PhieuDat[] = kh.phieu.map((p, i) => ({ id: i + 1, ma_hang: p.ma_hang, dot: p.dot, trang_thai: p.trang_thai, dong: p.lines }));
   const los: LoCat[] = kh.los.map((l, i) => ({
     id: i + 1, ma_hang: l.ma_hang, lo: l.lo, hen_tra: l.hen_tra, ngay_cat: l.ngay_cat, trang_thai: l.trang_thai, dong: l.lines,
+    phieu_dat_id: l.dot_dat == null ? null : phieu.find((p) => p.ma_hang === l.ma_hang && p.dot === l.dot_dat)?.id ?? null,
   }));
   const idCua = new Map(los.map((l) => [khoaLo(l.ma_hang, l.lo), l.id]));
   const hangVe: HangVe[] = kh.hangVe.map((v, i) => ({
@@ -385,5 +496,5 @@ export function duBao(kh: KeHoach, homNay: string): { tienDo: TienDoLo[]; lech: 
       }
     }
   });
-  return { tienDo, lech };
+  return { tienDo, lech, cho: phieuChoCat(phieu, los) };
 }

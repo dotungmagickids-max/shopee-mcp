@@ -4,8 +4,12 @@
  *   1. Trong Google Sheet file SX, tải tab "Phiếu lô cắt" và tab "Giao hàng về kho" về dạng CSV
  *      (Tệp → Tải xuống → CSV), hoặc lưu kết quả Sheets API ({ values: [[…]] }) thành .json.
  *   2. Chạy thử (mặc định, KHÔNG ghi gì, không cần khóa Supabase):
- *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv [--ky-vong ky-vong.json]
- *      --ky-vong: file JSON { "ADT26001 L1": 95, … } là tổng đã về Thu Hà kỳ vọng theo lô; bản chạy thử in chỗ lệch.
+ *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv [--phieu-dat phieu-dat.json] [--ky-vong ky-vong.json]
+ *      --phieu-dat: file JSON các phiếu đặt đã chốt (xem PhieuVao trong scripts/lib/sx-seed.ts), dựng từ sổ phiếu đặt.
+ *                   Hai tab của file SX không có đủ phiếu đặt; thiếu file này thì chỉ có phiếu suy ra từ cột "SL đặt".
+ *      --ky-vong:   file JSON { "ADT26001 L1": 95, "BD26011 L2": { "da_ve": 186, "con_no": 224 }, "tong_con_no": 2021 }
+ *                   là số Thu Hà kỳ vọng; bản chạy thử in chỗ lệch.
+ *      Hai file này để NGOÀI repo (repo công khai).
  *   3. Sau khi anh duyệt migration 0025 và duyệt số chạy thử, mới nạp thật:
  *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv --ghi
  *
@@ -25,15 +29,21 @@ function thamSo(ten: string): string | undefined {
 const fLoCat = thamSo("--lo-cat");
 const fHangVe = thamSo("--hang-ve");
 const fKyVong = thamSo("--ky-vong");
+const fPhieuDat = thamSo("--phieu-dat");
 const ghi = process.argv.includes("--ghi");
 if (!fLoCat || !fHangVe) {
-  console.error("Cách dùng: npx tsx scripts/sx-nap-so-dau.ts --lo-cat <file.csv|.json> --hang-ve <file.csv|.json> [--ghi]");
+  console.error("Cách dùng: npx tsx scripts/sx-nap-so-dau.ts --lo-cat <file.csv|.json> --hang-ve <file.csv|.json> [--phieu-dat <file.json>] [--ky-vong <file.json>] [--ghi]");
   process.exit(1);
 }
 
-const kh = lapKeHoach(docBang(fs.readFileSync(fLoCat, "utf8"), fLoCat), docBang(fs.readFileSync(fHangVe, "utf8"), fHangVe));
+const docJson = (f: string) => JSON.parse(fs.readFileSync(f, "utf8").replace(/^\uFEFF/, ""));
+const kh = lapKeHoach(
+  docBang(fs.readFileSync(fLoCat, "utf8"), fLoCat),
+  docBang(fs.readFileSync(fHangVe, "utf8"), fHangVe),
+  fPhieuDat ? docJson(fPhieuDat) : undefined
+);
 const homNay = homNayVN();
-const { tienDo, lech } = duBao(kh, homNay);
+const { tienDo, lech, cho } = duBao(kh, homNay);
 const cot = (s: string | number, n: number) => String(s).padEnd(n);
 const phai = (s: string | number, n: number) => String(s).padStart(n);
 
@@ -50,10 +60,18 @@ for (const t of tienDo) {
 const mo = tienDo.filter((t) => t.lo.trang_thai === "dang_ve" && t.conNo > 0);
 console.log(`Tổng còn nợ (lô đang về): ${mo.reduce((a, t) => a + t.conNo, 0)} cái · ${mo.filter((t) => t.ngayTre > 0).length} lô trễ hẹn.`);
 
-console.log("\n--- Phiếu đặt ---");
+console.log(`\n--- Phiếu đặt${fPhieuDat ? "" : " (không có --phieu-dat: chỉ gồm phiếu suy ra từ cột SL đặt của sheet)"} ---`);
+console.log(`${cot("Mã hàng", 10)}${cot("Đợt", 14)}${phai("Đặt", 6)}${phai("Đã cắt", 8)}${phai("Chờ cắt", 9)}  Trạng thái  Lô cắt nối  Ghi chú`);
 for (const p of kh.phieu) {
-  console.log(`${cot(p.ma_hang, 10)}${cot(p.dot, 12)}${phai(p.lines.reduce((a, x) => a + x.so_luong, 0), 6)}  ${p.trang_thai}  đặt ${p.ngay_dat ?? "?"}`);
+  const soDat = p.lines.reduce((a, x) => a + x.so_luong, 0);
+  const noi = kh.los.filter((l) => l.ma_hang === p.ma_hang && l.dot_dat === p.dot);
+  const daCat = noi.reduce((a, l) => a + l.lines.reduce((t, x) => t + x.so_cat, 0), 0);
+  const c = cho.find((x) => x.p.ma_hang === p.ma_hang && x.p.dot === p.dot);
+  console.log(
+    `${cot(p.ma_hang, 10)}${cot(p.dot || "—", 14)}${phai(soDat, 6)}${phai(daCat, 8)}${phai(c ? c.conCho : 0, 9)}  ${cot(p.trang_thai, 10)}  ${cot(noi.map((l) => l.lo).join(", ") || "—", 10)}  ${(p.ghi_chu ?? "").slice(0, 60)}`
+  );
 }
+console.log(`Đã đặt, xưởng chưa cắt: ${cho.reduce((a, x) => a + x.conCho, 0)} cái (${cho.length} phiếu).`);
 
 console.log("\n--- Lần hàng về ---");
 for (const v of kh.hangVe) {
@@ -73,12 +91,12 @@ for (const d of kh.daVe) {
   console.log(`${cot(d.ma_hang, 10)}${cot(d.lo, 12)}${phai(d.daVe, 6)}${d.chuaNap ? `  (trong đó ${d.chuaNap} CHƯA NẠP được: lô chưa có số cắt hoặc dòng không có ngày)` : ""}`);
 }
 if (fKyVong) {
-  const ss = soKyVong(kh.daVe, JSON.parse(fs.readFileSync(fKyVong, "utf8").replace(/^\uFEFF/, "")));
+  const ss = soKyVong(kh.daVe, docJson(fKyVong), tienDo);
   const lechKv = ss.filter((x) => x.lech !== 0);
-  console.log(`\n--- So với số Thu Hà kỳ vọng: ${ss.length - lechKv.length}/${ss.length} lô khớp ---`);
+  console.log(`\n--- So với số Thu Hà kỳ vọng: ${ss.length - lechKv.length}/${ss.length} số khớp ---`);
   for (const x of ss) {
-    const kq = x.daVe == null ? "KHÔNG THẤY LÔ trong sheet" : x.lech === 0 ? "khớp" : `LỆCH ${x.lech! > 0 ? "+" : ""}${x.lech} (script ${x.daVe})`;
-    console.log(`${cot(x.lo, 24)}kỳ vọng ${phai(x.kyVong, 5)}  ${kq}`);
+    const kq = x.thucTe == null ? "KHÔNG THẤY LÔ trong sheet" : x.lech === 0 ? "khớp" : `LỆCH ${x.lech! > 0 ? "+" : ""}${x.lech} (script ${x.thucTe})`;
+    console.log(`${cot(x.lo, 24)}${cot(x.loai, 8)}kỳ vọng ${phai(x.kyVong, 5)}  ${kq}`);
   }
 }
 
@@ -109,7 +127,7 @@ async function goi(fn: string, args: Record<string, unknown>, ten: string): Prom
 for (const p of kh.phieu) {
   await goi("mk_sx_order_save", {
     p_ma_hang: p.ma_hang, p_dot: p.dot, p_nguon: p.nguon, p_lines: p.lines, p_ngay_dat: p.ngay_dat,
-    p_trang_thai: p.trang_thai, p_ghi_chu: p.ghi_chu,
+    p_gia: p.gia ?? null, p_ngay_du_kien_cat: p.ngay_du_kien_cat ?? null, p_trang_thai: p.trang_thai, p_ghi_chu: p.ghi_chu,
   }, `phiếu đặt ${p.ma_hang} ${p.dot}`);
 }
 for (const l of kh.los) {
