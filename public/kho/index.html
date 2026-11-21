@@ -59,6 +59,14 @@ table.t tr.out td{background:#fff4d6}
 .hoanask{margin-top:12px;padding:10px 12px;border:2px solid var(--amber);border-radius:10px;background:#fff8e6}
 .hoanask b{display:block;margin-bottom:8px}
 .hoanask button{margin:0 8px 6px 0}
+.retu{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 0;border-top:1px solid #ddd}
+.retu .rc{font-weight:700;min-width:120px}
+.retu .rn{flex:1;min-width:120px;font-size:13px}
+.retu .lech{color:#c62828;font-weight:700}
+.retu button{margin:0;padding:5px 10px}
+.retu button.on{background:#1b5e20;color:#fff;border-color:#1b5e20}
+.retu button.on.w2{background:#b26a00;border-color:#b26a00}
+.retu button.on.w3{background:#c62828;border-color:#c62828}
 .batch{margin:18px 0 6px}
 .batch h3 button{float:right;font-size:13px;padding:3px 10px;margin:-2px 0}
 .tembox{border:2px solid #0f7a4a;border-radius:10px;padding:10px 14px;margin:8px 0;background:#f3fbf6}
@@ -1324,7 +1332,7 @@ const PROD_SHAPE=/^(\d{3,5}-\d{1,3}|[A-Z]{2,4}\d{5}[A-Z]+\d{2,3})$/;
 const prodLike=code=>S.catalog.has(code)||PROD_SHAPE.test(code);
 async function lookupOrder(recId,code,pre){
   if(!checkOn()){S.check=null;renderCheck();return;}
-  const c=S.check={recId,code,state:'loading',order:null,items:[],wrong:0};
+  const c=S.check={recId,code,state:'loading',order:null,items:[],wrong:0,ret:[]};
   renderCheck();
   try{
     const d=pre||await api({ma:code});
@@ -1348,8 +1356,65 @@ function sendNote(){
   const n=checkCount(c);
   S.worker.postMessage({t:'note',id:c.recId,text:'Soát '+n.got+'/'+n.need+(c.wrong?' · sai '+c.wrong:'')});
 }
+/* ---------- Hàng hoàn: quét từng sản phẩm lấy ra khỏi kiện, mỗi cái chọn một cách xử lý.
+   Xác nhận đơn hoàn KHÔNG phải là nhập kho: chỉ sản phẩm "Nhập luôn" mới tính vào tồn bán được. ---------- */
+const RET_WAYS=[['nhap','Nhập luôn'],['lammoi','Chờ làm mới'],['hong','Hỏng']];
+const retWayName=w=>(RET_WAYS.find(z=>z[0]===w)||['','chưa chọn'])[1];
+/* đếm sản phẩm theo cách xử lý: {n, nhap, lammoi, hong, chua, lech} */
+function retCount(list){
+  const o={n:0,nhap:0,lammoi:0,hong:0,chua:0,lech:0};
+  for(const u of Array.isArray(list)?list:[]){o.n++;if(u.way==='nhap'||u.way==='lammoi'||u.way==='hong')o[u.way]++;else o.chua++;if(!u.ok)o.lech++;}
+  return o;
+}
+function retText(list){
+  return (Array.isArray(list)?list:[]).map(u=>u.code+' '+retWayName(u.way)+(u.ok?'':' (khác đơn)')).join('; ');
+}
+/* một sản phẩm vừa quét trong lúc mở kiện hoàn. Ghi lại cả khi không tra được đơn hoặc sản phẩm không có trong đơn. */
+function returnScan(c,code){
+  const hits=c.state==='ok'?c.items.filter(it=>it.codes.includes(code)):[];
+  if(!hits.length&&!prodLike(code))return false;
+  const it=hits.find(x=>x.scanned<x.quantity)||null,known=c.state==='ok';
+  c.ret.push({code,name:hits[0]?(hits[0].detail||hits[0].name):'',ok:!!it||!known,way:'',at:Date.now()});
+  if(it){
+    it.scanned++;
+    const n=checkCount(c);
+    if(n.got===n.need){banner('ĐỦ HÀNG: kiện '+c.code+' đã quét đủ '+n.need+' sản phẩm của đơn. Chọn cách xử lý cho từng sản phẩm.','ok');beep('ok');}
+    else{$('banner').hidden=true;beep('start');}
+  }else if(hits.length){
+    c.wrong++;banner('THỪA SO VỚI ĐƠN: '+hits[0].name+' ('+hits[0].detail+') đơn chỉ có '+hits[0].quantity+' cái. Vẫn ghi lại sản phẩm này.','warn');beep('warn');
+  }else if(known){
+    c.wrong++;banner('KHÁC ĐƠN: mã '+code+' không có trong đơn '+c.code+'. Vẫn ghi lại sản phẩm này.','err');beep('err');
+    bigAlert('KHÁC ĐƠN','Mã '+code+' không có trong đơn '+c.code+'. Vẫn ghi lại, chọn cách xử lý.');
+  }else{$('banner').hidden=true;beep('start');}
+  renderCheck();sendNote();return true;
+}
+/* danh sách sản phẩm đã quét của một kiện + ba nút cách xử lý cho từng cái */
+function renderRet(el,list,onChange){
+  const n=retCount(list),h=document.createElement('b');
+  h.textContent='Sản phẩm lấy ra từ kiện: '+n.n+(n.chua?' · CHƯA CHỌN cách xử lý: '+n.chua:n.n?' · đã chọn đủ':' · quét mã vạch từng sản phẩm');
+  el.append(h);
+  list.forEach((u,i)=>{
+    const r=document.createElement('div');r.className='retu';
+    const a=document.createElement('span');a.className='rc';a.textContent=u.code;
+    const b=document.createElement('span');b.className='rn';b.textContent=u.name||'';
+    if(!u.ok){const x=document.createElement('span');x.className='lech';x.textContent=' KHÁC ĐƠN';b.append(x);}
+    r.append(a,b);
+    RET_WAYS.forEach(([val,label],k)=>{
+      const bt=document.createElement('button');bt.type='button';bt.textContent=label;bt.className=(u.way===val?'on ':'')+'w'+(k+1);
+      bt.onclick=()=>{u.way=u.way===val?'':val;onChange(i);$('scan').focus();};
+      r.append(bt);
+    });
+    el.append(r);
+  });
+}
+/* ghi sản phẩm của kiện vào file tình trạng kiện hoàn (cùng chỗ với tình trạng kiện, có đưa lên máy chủ) */
+async function retSave(meta){
+  if(!canStore())throw new Error('chưa mở thư mục video');
+  await hoanMarkSave('V:'+meta.fileName,{items:(meta.ret||[]).map(u=>({code:u.code,name:u.name||'',ok:!!u.ok,way:u.way||'',at:u.at||0})),code:meta.code});
+}
 /* trả về true nếu mã vừa quét là mã sản phẩm (đã xử lý xong), false nếu là mã đơn */
 function productScan(code){
+  if(S.rec&&S.rec.mode==='HH'&&S.check&&S.check.recId===S.rec.id)return returnScan(S.check,code);
   const c=S.check,active=S.rec&&c&&c.recId===S.rec.id&&c.state==='ok';
   if(!active){
     if(prodLike(code)){
@@ -1378,14 +1443,17 @@ function productScan(code){
 function sealCheck(id,warn){
   const meta=S.sessions.get(id),c=S.check;
   if(!meta||meta.check||!c||c.recId!==id)return;
-  if(c.state!=='ok'){meta.check='Không soát';return;}
+  const hh=meta.mode==='HH';
+  if(hh)meta.ret=c.ret;
+  if(c.state!=='ok'){meta.check=hh&&c.ret.length?'Không có đơn · quét '+c.ret.length+' sản phẩm':'Không soát';return;}
   /* mã đơn tra ra từ mã kho quét (ví dụ quét SPXVN… ra 261119N12G44SH): dùng để đối soát với danh sách đơn chuẩn bị */
   if(c.order&&c.order.id){meta.orderId=String(c.order.id);meta.sysId=c.order.system_id==null?'':String(c.order.system_id);meta.source=c.order.source||'';}
   if(c.order&&c.order.cancelled){meta.check='Đơn đã hủy';return;}
   const n=checkCount(c);
   meta.check=(n.got===n.need?'Đủ ':'Thiếu ')+n.got+'/'+n.need+(c.wrong?' · quét sai '+c.wrong+' lần':'');
   if(warn&&n.got<n.need){
-    banner('ĐƠN '+c.code+' CÒN THIẾU '+(n.need-n.got)+' sản phẩm chưa quét. Kiểm tra lại gói hàng vừa đóng.','err');beep('err');S.keepBanner=true;
+    banner(hh?'KIỆN HOÀN '+c.code+' THIẾU '+(n.need-n.got)+' sản phẩm so với đơn (chưa quét). Kiểm tra lại trong kiện.'
+             :'ĐƠN '+c.code+' CÒN THIẾU '+(n.need-n.got)+' sản phẩm chưa quét. Kiểm tra lại gói hàng vừa đóng.','err');beep('err');S.keepBanner=true;
   }
 }
 function renderCheck(){
@@ -1393,9 +1461,10 @@ function renderCheck(){
   if(!S.rec||!c||c.recId!==S.rec.id){el.hidden=true;return;}
   el.hidden=false;el.textContent='';el.className='';
   const h=document.createElement('h4');el.append(h);
-  if(c.state==='loading'){h.textContent='Đang tra sản phẩm của đơn…';return;}
-  if(c.state==='notfound'){h.textContent='Không tìm thấy đơn này – không soát được sản phẩm. Máy vẫn đang quay.';return;}
-  if(c.state==='error'){h.textContent='Không tra được đơn (mất mạng?) – không soát được sản phẩm. Máy vẫn đang quay.';return;}
+  const hh=S.rec.mode==='HH',tail=()=>{if(hh)renderRet(el,c.ret,()=>renderCheck());};
+  if(c.state==='loading'){h.textContent='Đang tra sản phẩm của đơn…';tail();return;}
+  if(c.state==='notfound'){h.textContent=hh?'Không tìm thấy đơn của kiện này. Vẫn quét từng sản phẩm để ghi lại.':'Không tìm thấy đơn này – không soát được sản phẩm. Máy vẫn đang quay.';tail();return;}
+  if(c.state==='error'){h.textContent=hh?'Không tra được đơn (mất mạng?). Vẫn quét từng sản phẩm để ghi lại.':'Không tra được đơn (mất mạng?) – không soát được sản phẩm. Máy vẫn đang quay.';tail();return;}
   const n=checkCount(c);
   h.textContent=(c.order.source||'Đơn')+' · '+(c.order.status_name||'')+' · đã quét '+n.got+'/'+n.need+(c.wrong?' · sai '+c.wrong:'');
   if(n.got===n.need)el.className='full';
@@ -1409,6 +1478,7 @@ function renderCheck(){
     const ct=document.createElement('div');ct.className='c';ct.textContent=it.scanned+'/'+it.quantity;
     r.append(im,t,ct);el.append(r);
   }
+  tail();
 }
 
 /* ---------- quét mã, bắt đầu / dừng quay ---------- */
@@ -2286,7 +2356,13 @@ function hoanMarkSave(key,patch){
 /* ngay sau khi lưu video mở kiện: hỏi tình trạng, một lần bấm */
 function hoanAsk(meta){
   const box=$('hoanAsk');box.textContent='';box.hidden=false;
-  const b=document.createElement('b');b.textContent='Kiện '+meta.code+' vừa mở: hàng bên trong thế nào?';box.append(b);
+  if(Array.isArray(meta.ret)&&meta.ret.length){
+    const save=()=>retSave(meta).catch(e=>banner('Chưa ghi được sản phẩm của kiện '+meta.code+': '+(e.message||e.name),'err'));
+    const part=document.createElement('div');box.append(part);
+    const draw=()=>{part.textContent='';renderRet(part,meta.ret,()=>{draw();save();});};
+    draw();save();
+  }
+  const b=document.createElement('b');b.textContent='Kiện '+meta.code+' vừa mở: hàng bên trong thế nào?';b.style.marginTop='10px';box.append(b);
   for(const [val,label] of HOAN_STATES.slice(1,5)){
     const bt=document.createElement('button');bt.textContent=label;if(val==='dung')bt.className='primary';
     bt.onclick=async()=>{
@@ -2353,6 +2429,8 @@ function renderHoan(){
   kpi('CHƯA VỀ',wait.length,wait.length?'amber':'');kpi('Chưa về quá 7 ngày',late,late?'bad':'');
   kpi('Tiền hoàn Shopee của kiện chưa về',Math.round(money).toLocaleString('vi-VN')+' đ',money?'amber':'');kpi('Kiện có vấn đề (thiếu, lỗi, sai)',bad,bad?'bad':'');
   kpi('Về ngoài danh sách',extra,extra?'amber':'');
+  const rc=retCount(Object.keys(HOAN.marks).filter(k=>k.startsWith('V:')).flatMap(k=>(HOAN.marks[k]||{}).items||[]));
+  if(rc.n){kpi('Sản phẩm hoàn đã quét',rc.n);kpi('Nhập luôn',rc.nhap);kpi('CHỜ LÀM MỚI',rc.lammoi,rc.lammoi?'amber':'');kpi('Hỏng',rc.hong,rc.hong?'bad':'');kpi('Chưa chọn cách xử lý',rc.chua,rc.chua?'bad':'');}
   const kenh=$('hKenh').value,only=$('hOnly').checked;
   const ord=x=>x.arrived?(x.r?2:3):(x.paid?0:1);
   for(const x of rows.slice().sort((a,b)=>ord(a)-ord(b)||(b.days||0)-(a.days||0))){
@@ -2365,6 +2443,7 @@ function renderHoan(){
     cell(r?r.id:(v.orderId||''),'code');
     cell(r?(r.codes.find(c=>c!==norm(r.id))||''):v.code,'code');
     const it=cell(r?r.items.map(i=>(i.sku||i.name)+' ×'+i.quantity).join(', '):'');it.style.whiteSpace='normal';
+    if(x.mark.items&&x.mark.items.length){const q=document.createElement('div');q.style.cssText='margin-top:4px;font-weight:600';q.textContent='Đã quét: '+retText(x.mark.items);it.append(q);}
     const st=cell(r?r.status+(r.reason?' · '+r.reason:''):'',!x.arrived&&x.paid?'warn':'');st.style.whiteSpace='normal';
     cell(x.days!=null&&!x.arrived?x.days:'','num'+(!x.arrived&&x.days>=7?' warn':''));
     cell(v?vnTime(v.startedAt).slice(0,16):(x.arrived?(x.mark.gone?'(video đã tự xóa)':'(không có video)'):'CHƯA VỀ'),x.arrived?'':'warn');
@@ -2386,9 +2465,9 @@ function renderHoan(){
 function hoanCsv(){
   const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
   const name=s=>(HOAN_STATES.find(z=>z[0]===(s||''))||['',''])[1];
-  const lines=[['Kênh','Loại','Mã đơn','Các mã','Sản phẩm','Trạng thái','Lý do','Tiền hoàn','Chờ (ngày)','Đã về','Video lúc','Tình trạng kiện','Ghi chú'].map(esc).join(',')];
+  const lines=[['Kênh','Loại','Mã đơn','Các mã','Sản phẩm','Trạng thái','Lý do','Tiền hoàn','Chờ (ngày)','Đã về','Video lúc','Tình trạng kiện','Ghi chú','Sản phẩm đã quét','Nhập luôn','Chờ làm mới','Hỏng','Chưa chọn'].map(esc).join(',')];
   for(const x of HOAN.rows){const r=x.r,v=x.v;
-    lines.push([r?r.channel:'',r?(HOAN_KIND[r.kind]||r.kind):'Về ngoài danh sách',r?r.id:(v.orderId||''),r?r.codes.join(' '):v.code,r?r.items.map(i=>(i.sku||i.name)+' x'+i.quantity).join('; '):'',r?r.status:'',r?r.reason:'',r&&r.refund!=null?r.refund:'',x.days!=null?x.days:'',x.arrived?'Đã về':'CHƯA VỀ',v?vnTime(v.startedAt):'',name(x.mark.state),x.mark.note||''].map(esc).join(','));}
+    lines.push([r?r.channel:'',r?(HOAN_KIND[r.kind]||r.kind):'Về ngoài danh sách',r?r.id:(v.orderId||''),r?r.codes.join(' '):v.code,r?r.items.map(i=>(i.sku||i.name)+' x'+i.quantity).join('; '):'',r?r.status:'',r?r.reason:'',r&&r.refund!=null?r.refund:'',x.days!=null?x.days:'',x.arrived?'Đã về':'CHƯA VỀ',v?vnTime(v.startedAt):'',name(x.mark.state),x.mark.note||'',retText(x.mark.items),...(z=>[z.nhap,z.lammoi,z.hong,z.chua])(retCount(x.mark.items))].map(esc).join(','));}
   downloadBlob(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv'}),'soat-hang-hoan-'+dayStr(new Date())+'.csv');
 }
 
