@@ -134,14 +134,20 @@ export async function lookupOrder(code: string): Promise<KhoOrder | { found: fal
 export async function productCatalog(): Promise<{ codes: string[]; pairs: Array<[string, string]> }> {
   const codes = new Set<string>();
   const pairs = new Map<string, string>();
+  await eachVariation((v) => {
+    const b = normSku(v?.barcode);
+    const d = normSku(v?.display_id);
+    if (b) codes.add(b);
+    if (d) codes.add(d);
+    if (b && d && b !== d) pairs.set(b, d);
+  });
+  return { codes: [...codes], pairs: [...pairs] };
+}
+
+/** Đi qua mọi phân loại sản phẩm trên Pancake (100 dòng mỗi trang, 6 trang một lượt). Chỉ đọc. */
+async function eachVariation(fn: (v: any) => void): Promise<void> {
   const add = (body: any) => {
-    for (const v of body?.data ?? []) {
-      const b = normSku(v?.barcode);
-      const d = normSku(v?.display_id);
-      if (b) codes.add(b);
-      if (d) codes.add(d);
-      if (b && d && b !== d) pairs.set(b, d);
-    }
+    for (const v of body?.data ?? []) fn(v);
   };
   const first = await getJson("products/variations", { page_size: 100, page_number: 1 });
   add(first);
@@ -151,7 +157,22 @@ export async function productCatalog(): Promise<{ codes: string[]; pairs: Array<
     for (let i = p; i < p + 6 && i <= total; i++) batch.push(getJson("products/variations", { page_size: 100, page_number: i }));
     for (const b of await Promise.all(batch)) add(b);
   }
-  return { codes: [...codes], pairs: [...pairs] };
+}
+
+/**
+ * Tồn thực trên Pancake theo mã phân loại, để so với số đếm khi tổng kiểm kho. Chỉ đọc.
+ * Dùng actual_remain_quantity (hàng đang nằm trong kho), không dùng remain_quantity (đã trừ đơn chờ hàng).
+ */
+export async function pancakeStock(): Promise<{ at: number; stock: Array<[string, number, string]> }> {
+  const m = new Map<string, [string, number, string]>();
+  await eachVariation((v) => {
+    const sku = normSku(v?.display_id);
+    if (!sku) return;
+    const wh: any[] = v?.variations_warehouses ?? [];
+    const qty = wh.length ? wh.reduce((s, w) => s + Number(w?.actual_remain_quantity ?? 0), 0) : Number(v?.remain_quantity ?? 0);
+    m.set(sku, [sku, Number.isFinite(qty) ? qty : 0, String(v?.product?.name ?? "").slice(0, 120)]);
+  });
+  return { at: Date.now(), stock: [...m.values()] };
 }
 
 /* ------------------------------------------------------------------------------------------------

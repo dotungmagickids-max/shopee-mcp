@@ -166,6 +166,8 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
   <button data-v="list" data-m="HH">Danh sách video</button>
   <button data-v="hoan">Soát hàng hoàn</button>
   <button data-v="nhap">Nhập hàng hoàn</button>
+  <div class="grp">Kho</div>
+  <button data-v="kiem">Tổng kiểm kho</button>
 </nav>
 <main id="vRec">
   <section class="card left">
@@ -254,6 +256,27 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
   <table class="t"><thead><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Cần nhập</th><th class="num">Đã nhập</th><th class="num">Không nhập</th><th class="num">Còn thiếu</th><th class="num">Số kiện</th><th></th></tr></thead><tbody id="tbNhap"></tbody></table>
   <h3 style="margin:18px 0 6px;font-size:15px">Các lượt vừa ghi</h3>
   <table class="t"><tbody id="tbNhapLog"></tbody></table>
+</section>
+<section id="vKiem" class="card view" hidden>
+  <h2>Tổng kiểm kho</h2>
+  <div class="filters">
+    <label>Đợt kiểm (ngày bắt đầu) <input type="date" id="kDot"></label>
+    <label>Kệ / khu <input id="kKe" autocomplete="off" placeholder="ví dụ A3" style="width:110px"></label>
+    <input id="kScan" autocomplete="off" spellcheck="false" placeholder="Quét mã vạch, rồi gõ số lượng và Enter" style="min-width:320px">
+    <button id="btnKiemGhi" class="primary">Ghi</button>
+  </div>
+  <div class="filters" style="margin-top:8px">
+    <select id="kLoc"><option value="">Mã vừa đếm trước</option><option value="lech">Chỉ mã lệch với Pancake</option><option value="chua">Pancake có tồn, chưa đếm</option></select>
+    <input type="search" id="kTim" placeholder="Tìm mã sản phẩm">
+    <button id="btnKiemReload">Tải lại</button>
+    <button id="btnKiemCsv">Xuất CSV</button>
+  </div>
+  <div id="kPend" class="hoanask" hidden></div>
+  <div class="hint" id="kiemInfo" style="margin:8px 0;white-space:normal"></div>
+  <div class="cards" id="kiemCards"></div>
+  <table class="t"><thead><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Đã đếm</th><th class="num">Tồn Pancake</th><th class="num">Lệch</th><th>Kệ</th></tr></thead><tbody id="tbKiem"></tbody></table>
+  <h3 style="margin:18px 0 6px;font-size:15px">Các lượt vừa đếm</h3>
+  <table class="t"><tbody id="tbKiemLog"></tbody></table>
 </section>
 <section id="vSoat" class="card view" hidden>
   <h2>Soát đơn đóng hàng</h2>
@@ -1270,13 +1293,14 @@ function mockCloudPost(b){
     }
     save();return {saved:(b.rows||[]).length,skipped:0};
   }
+  if(b.action==='kiemke'){s.kiem=s.kiem||{};const l=s.kiem[b.dot]=s.kiem[b.dot]||[];for(const e of b.rows||[])if(!l.some(x=>x.id===e.id))l.push(e);save();return {saved:(b.rows||[]).length,skipped:0};}
   if(b.action==='laylech'){s.lech=s.lech||[];for(const e of b.rows||[])if(!s.lech.some(x=>x.id===e.id))s.lech.push(e);save();return {saved:(b.rows||[]).length,skipped:0};}
   if(b.action==='nhaphoan'){s.nhap=s.nhap||[];let n=0;for(const e of b.rows||[])if(!s.nhap.some(x=>x.id===e.id)){s.nhap.push(e);n++;}save();return {saved:n,skipped:(b.rows||[]).length-n};}
   s.marks[b.khoa]=Object.assign({},s.marks[b.khoa],b.du_lieu,{at:Date.now()});save();return {ok:true};
 }
 async function apiPost(body,timeout){
   if(TEST){
-    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'||body.action==='nhaphoan'||body.action==='laylech'){await sleep(120);return mockCloudPost(body);}
+    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'||body.action==='nhaphoan'||body.action==='laylech'||body.action==='kiemke'){await sleep(120);return mockCloudPost(body);}
     await sleep(600);
     const bad=body.orders.filter(x=>/10004$/.test(x)),ok=body.orders.filter(x=>!/10004$/.test(x));
     if(body.action==='chuanbi')return {done:ok,failed:bad.map(id=>({id,reason:'Shopee không trả khung giờ lấy hàng nào (lỗi giả)'}))};
@@ -1302,6 +1326,8 @@ async function api(params,timeout){
     if(params.danhmuc)return {codes:MOCK.codes,pairs:[['1893-10','ADT25002TRANG170'],['2001-05','QD26036DEN150']]};
     if(params.nhaphoan)return {entries:MOCKSV().nhap||[]};
     if(params.laylech)return {entries:MOCKSV().lech||[]};
+    if(params.kiemke)return {entries:(MOCKSV().kiem||{})[params.kiemke]||[]};
+    if(params.tonpancake)return {at:Date.now(),stock:[['ADT25002TRANG170',5,'Áo dài tay phối kẻ ADT25002'],['QD26036DEN150',12,'Quần gió ống suông QD26036'],['BD26011GHI140',3,'Bộ đồ BD26011']]};
     if(/^KHONGCO/.test(params.ma))return {found:false};
     return {found:true,order:{id:'GIA-'+params.ma.slice(-4),source:'Shopee (đơn giả)',status_name:/^HUY/.test(params.ma)?'Đã hủy':'Chờ đóng',cancelled:/^HUY/.test(params.ma)},items:MOCK.items};
   }
@@ -1744,19 +1770,20 @@ function go(view,mode){
     setMode(mode||S.mode);
   }
   S.view=view;if(view==='list')S.listMode=mode||S.listMode||'DH';
-  $('vRec').hidden=view!=='rec';$('vHome').hidden=view!=='home';$('vList').hidden=view!=='list';$('vSoat').hidden=view!=='soat';$('vXuat').hidden=view!=='xuat';$('vHoan').hidden=view!=='hoan';$('vNhap').hidden=view!=='nhap';
+  $('vRec').hidden=view!=='rec';$('vHome').hidden=view!=='home';$('vList').hidden=view!=='list';$('vSoat').hidden=view!=='soat';$('vXuat').hidden=view!=='xuat';$('vHoan').hidden=view!=='hoan';$('vNhap').hidden=view!=='nhap';$('vKiem').hidden=view!=='kiem';
   navMark();
   if(view==='xuat')xuatOpen();
   if(view==='soat')soatReload(true);
   if(view==='hoan')hoanOpen();
   if(view==='nhap')nhapOpen();
+  if(view==='kiem')kiemOpen();
   if(view==='home')renderHome();
   if(view==='list'){renderBig();$('q2').focus();}
   if(view==='rec')$('scan').focus();
 }
 function navMark(){
   for(const b of document.querySelectorAll('#nav button'))
-    b.classList.toggle('on',b.dataset.v===S.view&&(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan'||S.view==='nhap'||b.dataset.m===(S.view==='rec'?S.mode:S.listMode)));
+    b.classList.toggle('on',b.dataset.v===S.view&&(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan'||S.view==='nhap'||S.view==='kiem'||b.dataset.m===(S.view==='rec'?S.mode:S.listMode)));
 }
 function renderHome(){
   const el=$('vHome');el.textContent='';
@@ -2729,6 +2756,175 @@ async function lechConfirm(c,it,why){
   renderCheck();sendNote();$('scan').focus();
 }
 
+/* ---------- Tổng kiểm kho: đếm cả kho một lần. Quét mã vạch rồi gõ số lượng (bỏ trống = 1 cái). Mỗi lượt đếm là một dòng trong
+   kiem-ke/<đợt>.json (chỉ thêm, lượt hủy là dòng số âm) và đưa lên máy chủ, nhiều máy đếm cùng lúc được.
+   So với tồn thực trên Pancake để thấy mức lệch. Chỉ là sổ của mình: KHÔNG chỉnh tồn trên Pancake. ---------- */
+const KIEM={dot:'',entries:[],stock:null,stockAt:0,err:'',cloudErr:'',stockErr:'',pend:null,rows:[],busy:false};
+async function kiemLoadLocal(dot){
+  let fh;
+  try{fh=await (await S.dir.getDirectoryHandle('kiem-ke')).getFileHandle(dot+'.json');}
+  catch(e){if(e.name==='NotFoundError')return [];throw e;}
+  const text=await (await fh.getFile()).text();
+  if(!text.trim())return [];
+  const o=JSON.parse(text);                        /* file hỏng thì báo lỗi, không coi là trống để khỏi ghi đè */
+  return Array.isArray(o.entries)?o.entries:[];
+}
+async function kiemLoad(dot){
+  KIEM.cloudErr='';
+  const sv=async()=>{const d=await api({kiemke:dot},30000);if(!d||!Array.isArray(d.entries))throw new Error(d&&d.error||'máy chủ trả sai dạng');return d.entries;};
+  if(S.remote)return sv();
+  const local=await kiemLoadLocal(dot);
+  if(!cloudOn())return local;
+  try{
+    const far=await sv(),have=new Set(far.map(e=>e.id)),mine=new Set(local.map(e=>e.id)),up=local.filter(e=>!have.has(e.id));
+    for(let i=0;i<up.length;i+=300)apiPost({action:'kiemke',dot,rows:up.slice(i,i+300)},30000).catch(()=>{});
+    return local.concat(far.filter(e=>!mine.has(e.id)));
+  }catch(e){KIEM.cloudErr=e.name==='AbortError'?'quá thời gian chờ':(e.message||e.name);return local;}
+}
+let kiemChain=Promise.resolve();
+function kiemAdd(dot,entry){
+  const run=kiemChain.then(async()=>{
+    if(S.remote){await apiPost({action:'kiemke',dot,rows:[entry]},15000);if(KIEM.dot===dot)KIEM.entries.push(entry);return;}
+    const list=await kiemLoadLocal(dot);list.push(entry);
+    const d=await S.dir.getDirectoryHandle('kiem-ke',{create:true});
+    const fh=await d.getFileHandle(dot+'.json',{create:true});
+    const w=await fh.createWritable();await w.write(JSON.stringify({entries:list,updatedAt:Date.now()}));await w.close();
+    const back=await kiemLoadLocal(dot);
+    if(!back.some(e=>e.id===entry.id))throw new Error('ghi xong đọc lại không thấy');
+    if(KIEM.dot===dot)KIEM.entries.push(entry);
+    if(cloudOn())apiPost({action:'kiemke',dot,rows:[entry]},15000).catch(e=>log('Chưa đưa được lượt đếm lên máy chủ (đã lưu ở thư mục, lần mở sau sẽ đẩy lại): '+(e.message||e.name)));
+  });
+  kiemChain=run.catch(()=>{});
+  return run;
+}
+/* bảng theo mã: đã đếm, tồn Pancake, lệch. stock = Map mã → [tồn, tên], hoặc null nếu chưa lấy được */
+function kiemRows(entries,stock){
+  const m=new Map();
+  const row=sku=>{let r=m.get(sku);if(!r){r={sku,name:'',dem:0,pos:null,ke:new Set(),last:0,n:0};m.set(sku,r);}return r;};
+  for(const e of entries||[]){if(!e||!e.sku)continue;const r=row(norm(e.sku));r.dem+=+e.qty||0;r.n++;r.last=Math.max(r.last,e.at||0);if(e.ke)r.ke.add(e.ke);}
+  if(stock)for(const [sku,v] of stock){
+    if(!m.has(sku)&&!v[0])continue;                 /* mã Pancake tồn 0 và không đếm thấy thì không cần hiện */
+    const r=row(sku);r.pos=v[0];r.name=v[1]||'';
+  }
+  for(const r of m.values()){if(stock&&r.pos==null)r.pos=0;r.lech=r.pos==null?null:r.dem-r.pos;r.counted=r.n>0;}
+  return [...m.values()];
+}
+async function kiemOpen(){
+  if(KIEM.busy)return;
+  if(!canStore()){$('kiemInfo').textContent='Chưa mở thư mục video.';return;}
+  if(!$('kDot').value)$('kDot').value=S.settings.kiemDot||dayStr(new Date());
+  KIEM.busy=true;KIEM.err='';KIEM.dot=$('kDot').value;KIEM.pend=null;
+  $('kiemInfo').textContent='Đang đọc số đếm của đợt kiểm…';
+  try{
+    try{KIEM.entries=await kiemLoad(KIEM.dot);}catch(e){KIEM.entries=[];KIEM.err='Không đọc được sổ đếm của đợt này ('+(e.message||e.name)+'). Chưa sửa gì; thử "Tải lại" sau khi Drive đồng bộ xong.';}
+    if(checkOn()&&(!KIEM.stock||Date.now()-KIEM.stockAt>10*60000)){
+      try{const d=await api({tonpancake:1},60000);if(!d||!Array.isArray(d.stock))throw new Error(d&&d.error||'máy chủ trả sai dạng');
+        KIEM.stock=new Map(d.stock.map(x=>[norm(x[0]),[+x[1]||0,x[2]||'']]));KIEM.stockAt=d.at||Date.now();KIEM.stockErr='';}
+      catch(e){KIEM.stockErr=e.name==='AbortError'?'quá thời gian chờ':(e.message||e.name);}
+    }
+  }finally{KIEM.busy=false;}
+  renderKiem();$('kScan').focus();
+}
+function renderKiem(){
+  const tb=$('tbKiem'),cards=$('kiemCards'),lg=$('tbKiemLog');tb.textContent='';cards.textContent='';lg.textContent='';
+  renderKiemPend();
+  if(KIEM.err){$('kiemInfo').textContent=KIEM.err;KIEM.rows=[];return;}
+  const rows=kiemRows(KIEM.entries,KIEM.stock);KIEM.rows=rows;
+  $('kiemInfo').textContent='Đợt kiểm bắt đầu '+KIEM.dot.slice(8)+'/'+KIEM.dot.slice(5,7)+'. Cách đếm: quét mã vạch một sản phẩm, đếm cả chồng cùng mã, gõ số lượng rồi Enter (quét luôn mã tiếp theo thì mã trước tính 1 cái). Trong lúc tổng kiểm phải NGỪNG đóng hàng và nhập hàng, nếu không số so với Pancake sẽ sai. Sổ này là của mình, không chỉnh tồn trên Pancake.'
+    +(KIEM.stock?' Tồn Pancake lấy lúc '+vnTime(KIEM.stockAt).slice(11,16)+'.':' CHƯA LẤY ĐƯỢC TỒN PANCAKE'+(KIEM.stockErr?' ('+KIEM.stockErr+')':'')+': vẫn đếm được, chưa so được.')
+    +(KIEM.cloudErr?' CHƯA LẤY ĐƯỢC SỐ ĐẾM CỦA MÁY KHÁC ('+KIEM.cloudErr+'): số "Đã đếm" có thể thiếu.':'');
+  const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
+  const cnt=rows.filter(r=>r.counted),fmt=x=>Math.round(x).toLocaleString('vi-VN');
+  const lech=KIEM.stock?cnt.filter(r=>r.lech!==0):[],chua=KIEM.stock?rows.filter(r=>!r.counted&&r.pos>0):[];
+  kpi('Mã đã đếm',fmt(cnt.length));kpi('Tổng số cái đã đếm',fmt(cnt.reduce((s,r)=>s+r.dem,0)));
+  kpi('Tồn Pancake của các mã đã đếm',KIEM.stock?fmt(cnt.reduce((s,r)=>s+r.pos,0)):'?');
+  kpi('Mã đã đếm LỆCH với Pancake',KIEM.stock?fmt(lech.length):'?',lech.length?'bad':'');
+  kpi('Pancake có tồn, CHƯA ĐẾM',KIEM.stock?fmt(chua.length)+' mã · '+fmt(chua.reduce((s,r)=>s+r.pos,0))+' cái':'?',chua.length?'amber':'');
+  const loc=$('kLoc').value,tim=norm($('kTim').value);
+  let list=rows.filter(r=>(!tim||r.sku.includes(tim))&&(loc==='lech'?r.counted&&r.lech!==0&&r.lech!=null:loc==='chua'?!r.counted&&r.pos>0:(tim?true:r.counted)));
+  list.sort(loc==='lech'?(a,b)=>Math.abs(b.lech)-Math.abs(a.lech):loc==='chua'?(a,b)=>b.pos-a.pos:(a,b)=>b.last-a.last||a.sku.localeCompare(b.sku));
+  const total=list.length;list=list.slice(0,300);
+  for(const r of list){
+    const row=tb.insertRow();row.className=r.counted&&r.lech?'bad':(!r.counted?'out':'');
+    const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    cell(r.sku,'code');cell(r.name).style.whiteSpace='normal';cell(r.counted?r.dem:'chưa đếm','num');cell(r.pos==null?'?':r.pos,'num');
+    cell(r.lech==null||!r.counted?'':(r.lech>0?'+':'')+r.lech,'num'+(r.counted&&r.lech?' warn':''));cell([...r.ke].join(', '));
+  }
+  if(!list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent=KIEM.entries.length||loc||tim?'Không có mã nào khớp bộ lọc.':'Chưa đếm mã nào trong đợt này. Quét mã vạch sản phẩm đầu tiên để bắt đầu.';}
+  else if(total>list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent='Đang hiện 300 trên '+total+' mã. Dùng ô tìm hoặc Xuất CSV để xem hết.';}
+  const undone=new Set(KIEM.entries.filter(e=>/^HUY:/.test(e.note||'')).map(e=>e.note.slice(4)));
+  for(const e of KIEM.entries.filter(e=>!/^HUY:/.test(e.note||'')).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,15)){
+    const row=lg.insertRow(),off=undone.has(e.id);
+    const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    cell(vnTime(e.at).slice(0,16));cell(e.sku,'code');cell(e.qty+' cái','num');cell(e.ke||'');cell(off?'ĐÃ HỦY':'');
+    const a=row.insertCell();
+    if(!off){const b=document.createElement('button');b.textContent='Hủy lượt này';
+      b.onclick=()=>{if(confirm('Hủy lượt đếm '+e.qty+' cái '+e.sku+'?'))kiemWrite({sku:e.sku,code:e.code||'',qty:-e.qty,ke:e.ke||'',note:'HUY:'+e.id}).then(ok=>{if(ok){banner('Đã hủy lượt đếm '+e.sku+'.','ok');renderKiem();}});};
+      a.append(b);}
+  }
+}
+function renderKiemPend(){
+  const box=$('kPend'),p=KIEM.pend;box.textContent='';box.hidden=!p;if(!p)return;
+  const st=KIEM.stock&&KIEM.stock.get(p.sku),had=KIEM.entries.filter(e=>e.sku===p.sku).reduce((s,e)=>s+(+e.qty||0),0);
+  const b=document.createElement('b');b.style.fontSize='18px';
+  b.textContent='ĐANG ĐẾM: '+p.sku+(st&&st[1]?' · '+st[1]:'')+'. Gõ số lượng rồi Enter (Enter trống hoặc quét mã tiếp theo = 1 cái).'+(had?' Mã này đã đếm '+had+' cái ở lượt trước, lượt này sẽ CỘNG THÊM.':'');
+  const x=document.createElement('button');x.textContent='Bỏ, không ghi mã này';x.onclick=()=>{KIEM.pend=null;renderKiemPend();$('kScan').focus();};
+  box.append(b,x);
+}
+async function kiemWrite(p){
+  if(!canStore()){banner('Chưa mở thư mục video nên chưa ghi được.','err');return false;}
+  const may=await mayId();
+  const entry=Object.assign({id:may+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),at:Date.now(),may,note:''},p);
+  try{await kiemAdd(KIEM.dot,entry);return true;}
+  catch(e){banner('CHƯA GHI ĐƯỢC lượt đếm '+p.sku+': '+(e.message||e.name)+'. Đếm lại mã này.','err');beep('err');bigAlert('CHƯA GHI ĐƯỢC',p.sku+': đếm lại mã này');return false;}
+}
+async function kiemFlush(qty){
+  const p=KIEM.pend;if(!p)return true;
+  KIEM.pend=null;
+  if(!(await kiemWrite({sku:p.sku,code:p.code,qty,ke:$('kKe').value.trim().slice(0,40)}))){KIEM.pend=p;renderKiemPend();return false;}
+  const r=kiemRows(KIEM.entries.filter(e=>e.sku===p.sku),null)[0];
+  banner('Đã ghi '+qty+' cái '+p.sku+'. Tổng mã này: '+(r?r.dem:qty)+' cái.','ok');
+  return true;
+}
+/* một lần Enter ở ô quét: mã sản phẩm, hoặc số lượng của mã đang đếm */
+let kiemBusy=Promise.resolve();
+function kiemScan(raw){
+  kiemBusy=kiemBusy.then(async()=>{
+    const v=norm(raw);
+    if(KIEM.err){banner('Chưa đọc được sổ đếm nên chưa ghi. Bấm "Tải lại".','err');beep('err');return;}
+    if(!v||/^\d{1,4}$/.test(v)){
+      if(!KIEM.pend){if(v){banner('Quét mã sản phẩm trước rồi mới gõ số lượng.','warn');beep('warn');}return;}
+      const q=v?parseInt(v,10):1;
+      if(!q){KIEM.pend=null;banner('Số lượng 0: không ghi mã này.','warn');renderKiem();return;}
+      if(await kiemFlush(q)){beep('ok');renderKiem();}
+      return;
+    }
+    const sku=toSku(v);
+    if(!prodLike(v)&&!prodLike(sku)&&!(KIEM.stock&&KIEM.stock.has(sku))){banner('Mã '+v+' không phải mã sản phẩm. Không ghi.','err');beep('err');bigAlert('KHÔNG PHẢI MÃ SẢN PHẨM',v);return;}
+    if(KIEM.pend&&!(await kiemFlush(1)))return;
+    KIEM.pend={sku,code:v};$('banner').hidden=true;beep('start');renderKiem();
+  }).catch(e=>log('Lỗi khi ghi lượt đếm: '+(e.message||e.name)));
+  return kiemBusy;
+}
+function kiemCsv(){
+  const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
+  const lines=[['Mã sản phẩm','Tên','Đã đếm','Tồn Pancake','Lệch (đếm trừ Pancake)','Đã đếm chưa','Kệ'].map(esc).join(',')];
+  for(const r of KIEM.rows.slice().sort((a,b)=>a.sku.localeCompare(b.sku)))lines.push([r.sku,r.name,r.dem,r.pos==null?'':r.pos,r.lech==null?'':r.lech,r.counted?'Đã đếm':'CHƯA ĐẾM',[...r.ke].join(' ')].map(esc).join(','));
+  downloadBlob(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv'}),'tong-kiem-kho-'+KIEM.dot+'.csv');
+}
+function kiemWire(){
+  const fire=()=>{const v=$('kScan').value;$('kScan').value='';kiemScan(v).then(()=>$('kScan').focus());};
+  $('kScan').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();fire();}});
+  $('btnKiemGhi').onclick=fire;$('kLoc').onchange=renderKiem;$('kTim').oninput=renderKiem;$('btnKiemCsv').onclick=kiemCsv;
+  $('kKe').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('kScan').focus();}});
+  $('btnKiemReload').onclick=()=>{KIEM.stockAt=0;kiemOpen();};
+  $('kDot').onchange=async()=>{
+    if(KIEM.pend&&!confirm('Mã '+KIEM.pend.sku+' đang đếm dở sẽ không được ghi. Đổi đợt kiểm?')){$('kDot').value=KIEM.dot;return;}
+    S.settings=Object.assign({},S.settings,{kiemDot:$('kDot').value});try{await kvSet('settings',S.settings);}catch(e){}
+    kiemOpen();
+  };
+}
+
 /* ---------- Soát đơn: danh sách đơn chuẩn bị (chị Hiền dán) ↔ đơn đã đóng (có video). Lưu trong thư mục video: soat-don/NGÀY.json ---------- */
 const SOAT={day:'',data:{codes:[],notes:{}},err:'',rows:[],cloud:[],cloudErr:''};
 async function soatLoadLocal(day){
@@ -3025,7 +3221,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 $('xKenh').onchange=renderXuat;$('xNhom').onchange=renderXuat;$('xGap').onchange=renderXuat;
 $('btnXuatTem').onclick=()=>xuatTem(XUAT.sel,'các đơn đang chọn');$('xTem').onchange=temModeChange;
 $('btnSoatClear').onclick=soatClear;$('btnNgoaiClear').onclick=ngoaiClear;
-$('btnHoanLoad').onclick=hoanLoad;nhapWire();$('hFrom').onchange=async()=>{S.settings=Object.assign({},S.settings,{hoanFrom:$('hFrom').value});try{await kvSet('settings',S.settings);}catch(e){}renderHoan();};$('hKenh').onchange=renderHoan;$('hOnly').onchange=renderHoan;$('btnHoanCsv').onclick=hoanCsv;
+$('btnHoanLoad').onclick=hoanLoad;nhapWire();kiemWire();$('hFrom').onchange=async()=>{S.settings=Object.assign({},S.settings,{hoanFrom:$('hFrom').value});try{await kvSet('settings',S.settings);}catch(e){}renderHoan();};$('hKenh').onchange=renderHoan;$('hOnly').onchange=renderHoan;$('btnHoanCsv').onclick=hoanCsv;
 $('btnXuatSoat').onclick=xuatToSoat;$('btnXuatPrint').onclick=()=>{if(!XUAT.sel.length){banner('Chưa có đơn nào để in.','warn');return;}window.print();};
 $('sDay').onchange=()=>soatReload(false);$('btnSoatReload').onclick=()=>soatReload(true);$('sOnlyBad').onchange=renderSoat;$('btnSoatCsv').onclick=soatCsv;
 $('btnSoatPaste').onclick=()=>{if(SOAT.err){banner(SOAT.err,'err');return;}PASTE.target='soat';PASTE.fromFile=false;const d=SOAT.day;$('pasteTitle').textContent='Dán danh sách đơn chuẩn bị ngày '+d.slice(8)+'/'+d.slice(5,7);$('pasteInfo').textContent='';$('dlgPaste').showModal();$('pasteBox').focus();};
@@ -3071,7 +3267,7 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.altKey||e.metaKey||document.querySelector('dialog[open]')||!S.started)return;
   const a=document.activeElement,edit=a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
   if(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan')return;
-  if(!edit&&(e.key.length===1||e.key==='Enter')){if(a&&a.blur)a.blur();$(S.view==='list'?'q2':S.view==='nhap'?'nScan':'scan').focus();if(e.key==='Enter')e.preventDefault();}
+  if(!edit&&(e.key.length===1||e.key==='Enter')){if(a&&a.blur)a.blur();$(S.view==='list'?'q2':S.view==='nhap'?'nScan':S.view==='kiem'?'kScan':'scan').focus();if(e.key==='Enter')e.preventDefault();}
 },true);
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('button');if(b&&!b.closest('dialog'))b.blur();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.started)wake();});
