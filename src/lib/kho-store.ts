@@ -34,6 +34,43 @@ export function cleanNote(v: any): Record<string, string> {
   return o;
 }
 
+const str = (x: unknown, n: number) => (x == null ? "" : String(x).slice(0, n));
+const num = (x: unknown) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+
+/**
+ * Tình trạng một kiện hoàn: ngoài ghi chú còn giữ sản phẩm đã quét lúc mở kiện (items), sản phẩm của đơn (need),
+ * các mã của kiện (codes, code) và dấu "video đã tự xóa" (gone). Không có tên, SĐT, địa chỉ khách.
+ */
+export function cleanMark(v: any): Record<string, unknown> {
+  const o: Record<string, unknown> = cleanNote(v);
+  if (Array.isArray(v?.items)) o.items = v.items.slice(0, 100).map((u: any) => ({ code: normSku(str(u?.code, 60)), name: str(u?.name, 200), ok: !!u?.ok, at: num(u?.at) })).filter((u: any) => u.code);
+  if (Array.isArray(v?.need)) o.need = v.need.slice(0, 100).map((u: any) => ({ sku: normSku(str(u?.sku, 60)), name: str(u?.name, 200), quantity: Math.min(999, Math.max(1, Math.round(num(u?.quantity)) || 1)) })).filter((u: any) => u.sku);
+  if (Array.isArray(v?.codes)) o.codes = v.codes.slice(0, 10).map((x: unknown) => normSku(str(x, 60))).filter(Boolean);
+  if (v?.code != null) o.code = normSku(str(v.code, 60));
+  if (num(v?.gone) > 0) o.gone = num(v.gone);
+  return o;
+}
+
+export interface NhapHoan {
+  id: string;
+  sku: string;
+  code: string;
+  qty: number;
+  kind: "nhap" | "bo";
+  note: string;
+  at: number;
+  may: string;
+}
+
+/** Một lượt nhập hàng hoàn vào kho (kind "bo": ghi "không nhập"). qty âm là lượt hủy. null nếu thiếu mã hoặc số lượng. */
+export function nhapEntry(v: any): NhapHoan | null {
+  const id = str(v?.id, 80);
+  const sku = normSku(str(v?.sku, 60));
+  const qty = Math.round(num(v?.qty));
+  if (!/^[\w.-]{6,80}$/.test(id) || !sku || !qty || Math.abs(qty) > 999) return null;
+  return { id, sku, code: normSku(str(v?.code, 60)), qty, kind: v?.kind === "bo" ? "bo" : "nhap", note: str(v?.note, 200), at: num(v?.at) || Date.now(), may: str(v?.may, 40) };
+}
+
 export interface VideoRow {
   file: string;
   ma: string;
@@ -108,14 +145,14 @@ export async function dayGet(ngay: string): Promise<DayDoc> {
   return { ngay, codes: (codes.data ?? []).map((r) => r.ma), notes: outNotes, resetAt, updatedAt: Math.max(updatedAt, resetAt) };
 }
 
-async function notesMerge(phamVi: string, notes: Record<string, unknown>): Promise<void> {
+async function notesMerge(phamVi: string, notes: Record<string, unknown>, clean: (v: any) => Record<string, unknown> = cleanNote): Promise<void> {
   const keys = Object.keys(notes).filter(validKey).slice(0, 500);
   if (!keys.length) return;
   const cur = await db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", phamVi).in("khoa", keys);
   fail("kho_ghi_chu", cur.error);
   const old = new Map((cur.data ?? []).map((r) => [r.khoa, r.du_lieu ?? {}]));
   const now = new Date().toISOString();
-  const rows = keys.map((k) => ({ pham_vi: phamVi, khoa: k, du_lieu: { ...(old.get(k) as object), ...cleanNote(notes[k]), at: Date.now() }, cap_nhat: now }));
+  const rows = keys.map((k) => ({ pham_vi: phamVi, khoa: k, du_lieu: { ...(old.get(k) as object), ...clean(notes[k]), at: Date.now() }, cap_nhat: now }));
   fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert(rows)).error);
 }
 
@@ -148,7 +185,30 @@ export async function marksGet(): Promise<{ marks: Record<string, Record<string,
 }
 
 export async function markSet(khoa: string, duLieu: unknown): Promise<void> {
-  await notesMerge("hoan", { [khoa]: duLieu });
+  await notesMerge("hoan", { [khoa]: duLieu }, cleanMark);
+}
+
+/** Sổ nhập hàng hoàn: mỗi lượt một dòng, chỉ thêm, không sửa (lượt hủy là một dòng số âm). Dòng đã có thì bỏ qua. */
+export async function nhapAdd(rows: unknown): Promise<{ saved: number; skipped: number }> {
+  const list = Array.isArray(rows) ? rows.slice(0, 500) : [];
+  const good = new Map<string, NhapHoan>();
+  for (const v of list) {
+    const e = nhapEntry(v);
+    if (e) good.set(e.id, e);
+  }
+  if (good.size) {
+    const now = new Date().toISOString();
+    const up = [...good.values()].map(({ id, ...d }) => ({ pham_vi: "nhap-hoan", khoa: id, du_lieu: d, cap_nhat: now }));
+    fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert(up, { onConflict: "pham_vi,khoa", ignoreDuplicates: true })).error);
+  }
+  return { saved: good.size, skipped: list.length - good.size };
+}
+
+/** Các lượt nhập hàng hoàn của 180 ngày gần nhất. */
+export async function nhapList(): Promise<{ entries: NhapHoan[] }> {
+  const since = new Date(Date.now() - 180 * 86400_000).toISOString();
+  const rows = await allRows<{ khoa: string; du_lieu: Omit<NhapHoan, "id"> }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", "nhap-hoan").gte("cap_nhat", since).order("khoa"));
+  return { entries: rows.map((r) => ({ id: r.khoa, ...r.du_lieu })) };
 }
 
 export async function videoUpsert(rows: unknown, may: unknown): Promise<{ saved: number; skipped: number }> {

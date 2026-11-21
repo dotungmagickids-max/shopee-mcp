@@ -127,11 +127,21 @@ export async function lookupOrder(code: string): Promise<KhoOrder | { found: fal
   return shapeOrder(body?.data ?? [], code);
 }
 
-/** Mọi mã sản phẩm có thể in trên tem (mã vạch + mã phân loại) để trang kho phân biệt "sai sản phẩm" với "mã đơn mới". */
-export async function productCodes(): Promise<string[]> {
+/**
+ * Mọi mã sản phẩm có thể in trên tem (mã vạch + mã phân loại) để trang kho phân biệt "sai sản phẩm" với "mã đơn mới".
+ * pairs: [mã vạch, mã phân loại] để trang kho đổi mã vạch vừa quét ra mã phân loại (nhập hàng hoàn).
+ */
+export async function productCatalog(): Promise<{ codes: string[]; pairs: Array<[string, string]> }> {
   const codes = new Set<string>();
+  const pairs = new Map<string, string>();
   const add = (body: any) => {
-    for (const v of body?.data ?? []) for (const c of [v?.barcode, v?.display_id]) if (normSku(c)) codes.add(normSku(c));
+    for (const v of body?.data ?? []) {
+      const b = normSku(v?.barcode);
+      const d = normSku(v?.display_id);
+      if (b) codes.add(b);
+      if (d) codes.add(d);
+      if (b && d && b !== d) pairs.set(b, d);
+    }
   };
   const first = await getJson("products/variations", { page_size: 100, page_number: 1 });
   add(first);
@@ -141,7 +151,7 @@ export async function productCodes(): Promise<string[]> {
     for (let i = p; i < p + 6 && i <= total; i++) batch.push(getJson("products/variations", { page_size: 100, page_number: i }));
     for (const b of await Promise.all(batch)) add(b);
   }
-  return [...codes];
+  return { codes: [...codes], pairs: [...pairs] };
 }
 
 /* ------------------------------------------------------------------------------------------------

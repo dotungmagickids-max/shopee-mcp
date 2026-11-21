@@ -165,6 +165,7 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
   <button data-v="rec" data-m="HH">Quay mới</button>
   <button data-v="list" data-m="HH">Danh sách video</button>
   <button data-v="hoan">Soát hàng hoàn</button>
+  <button data-v="nhap">Nhập hàng hoàn</button>
 </nav>
 <main id="vRec">
   <section class="card left">
@@ -237,6 +238,22 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
   <div class="hint" id="hoanInfo" style="margin:8px 0;white-space:normal"></div>
   <div class="cards" id="hoanCards"></div>
   <table class="t"><thead><tr><th>Kênh</th><th>Loại</th><th>Mã đơn</th><th>Mã vận đơn hoàn</th><th>Sản phẩm</th><th>Trạng thái</th><th class="num">Chờ (ngày)</th><th>Đã về lúc</th><th>Tình trạng kiện</th><th>Ghi chú</th><th></th></tr></thead><tbody id="tbHoan"></tbody></table>
+</section>
+<section id="vNhap" class="card view" hidden>
+  <h2>Nhập hàng hoàn vào kho</h2>
+  <div class="filters">
+    <input id="nScan" autocomplete="off" spellcheck="false" placeholder="Quét mã vạch sản phẩm, hoặc gõ mã rồi Enter" style="min-width:320px">
+    <label>Số lượng <input id="nQty" type="number" min="1" max="999" value="1" style="width:80px"></label>
+    <button id="btnNhap" class="primary">Nhập kho</button>
+    <label><input type="checkbox" id="nOnly" checked> Chỉ hiện mã còn thiếu</label>
+    <button id="btnNhapReload">Tải lại</button>
+    <button id="btnNhapCsv">Xuất CSV</button>
+  </div>
+  <div class="hint" id="nhapInfo" style="margin:8px 0;white-space:normal"></div>
+  <div class="cards" id="nhapCards"></div>
+  <table class="t"><thead><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Cần nhập</th><th class="num">Đã nhập</th><th class="num">Không nhập</th><th class="num">Còn thiếu</th><th class="num">Số kiện</th><th></th></tr></thead><tbody id="tbNhap"></tbody></table>
+  <h3 style="margin:18px 0 6px;font-size:15px">Các lượt vừa ghi</h3>
+  <table class="t"><tbody id="tbNhapLog"></tbody></table>
 </section>
 <section id="vSoat" class="card view" hidden>
   <h2>Soát đơn đóng hàng</h2>
@@ -788,7 +805,7 @@ const DEFAULTS={quality:'std',maxMin:10,autoDelDays:0,hoanDelDays:0,cameraId:'',
 /* các dạng mã đơn / mã vận đơn đã biết: camera tem chỉ tự quay với các dạng này (hoặc mã mà dịch vụ tra ra đơn) */
 const KNOWN=/^(SPXVN[0-9A-Z]{8,20}|\d{6}[A-Z0-9]{8}|PKE\d{8,20}|\d{12}|(?=(?:[0-9]*[A-Z]){4})[A-Z0-9]{8})$/;   /* SPX, mã đơn Shopee, Viettel Post, J&T, GHN */
 const S={dir:null,dirOK:false,worker:null,stream:null,track:null,camOK:false,camSize:'',fps:0,lastFrameAt:0,
-  mode:'DH',view:'rec',listMode:'DH',viewOnly:false,rec:null,sessions:new Map(),seq:0,videos:[],pending:0,saving:0,settings:Object.assign({},DEFAULTS),check:null,catalog:new Set(),keepBanner:false,
+  mode:'DH',view:'rec',listMode:'DH',viewOnly:false,rec:null,sessions:new Map(),seq:0,videos:[],pending:0,saving:0,settings:Object.assign({},DEFAULTS),check:null,catalog:new Set(),pair:new Map(),keepBanner:false,
   cam2:{track:null,ok:false,worker:null,raw:'',rawAt:0,cand:'',candN:0,candAt:0,pending:false,blocks:new Map(),retry:false},started:false,ac:null,retrying:false,playing:null};
 if(TEST)window.__mk=S;
 
@@ -1249,11 +1266,12 @@ function mockCloudPost(b){
     }
     save();return {saved:(b.rows||[]).length,skipped:0};
   }
+  if(b.action==='nhaphoan'){s.nhap=s.nhap||[];let n=0;for(const e of b.rows||[])if(!s.nhap.some(x=>x.id===e.id)){s.nhap.push(e);n++;}save();return {saved:n,skipped:(b.rows||[]).length-n};}
   s.marks[b.khoa]=Object.assign({},s.marks[b.khoa],b.du_lieu,{at:Date.now()});save();return {ok:true};
 }
 async function apiPost(body,timeout){
   if(TEST){
-    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'){await sleep(120);return mockCloudPost(body);}
+    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'||body.action==='nhaphoan'){await sleep(120);return mockCloudPost(body);}
     await sleep(600);
     const bad=body.orders.filter(x=>/10004$/.test(x)),ok=body.orders.filter(x=>!/10004$/.test(x));
     if(body.action==='chuanbi')return {done:ok,failed:bad.map(id=>({id,reason:'Shopee không trả khung giờ lấy hàng nào (lỗi giả)'}))};
@@ -1276,7 +1294,8 @@ async function api(params,timeout){
     if(params.hoanmarks)return {marks:MOCKSV().marks};
     if(params.xuat)return mockXuat();
     if(params.hoan)return mockHoan();
-    if(params.danhmuc)return {codes:MOCK.codes};
+    if(params.danhmuc)return {codes:MOCK.codes,pairs:[['1893-10','ADT25002TRANG170'],['2001-05','QD26036DEN150']]};
+    if(params.nhaphoan)return {entries:MOCKSV().nhap||[]};
     if(/^KHONGCO/.test(params.ma))return {found:false};
     return {found:true,order:{id:'GIA-'+params.ma.slice(-4),source:'Shopee (đơn giả)',status_name:/^HUY/.test(params.ma)?'Đã hủy':'Chờ đóng',cancelled:/^HUY/.test(params.ma)},items:MOCK.items};
   }
@@ -1294,12 +1313,14 @@ async function loadCatalog(){
   if(!checkOn())return;
   try{
     const c=await kvGet('catalog');
-    if(c&&c.codes)S.catalog=new Set(c.codes);
-    if(c&&Date.now()-c.at<12*3600000)return;
+    if(c&&c.codes){S.catalog=new Set(c.codes);S.pair=new Map(c.pairs||[]);}
+    if(c&&c.pairs&&Date.now()-c.at<12*3600000)return;
     const d=await api({danhmuc:1},40000);
     if(d&&Array.isArray(d.codes)){
       const codes=d.codes.map(norm).filter(Boolean);
-      S.catalog=new Set(codes);await kvSet('catalog',{at:Date.now(),codes});
+      /* cặp [mã vạch, mã phân loại]: để đổi mã vạch vừa quét ra mã phân loại (mục Nhập hàng hoàn) */
+      const pairs=(Array.isArray(d.pairs)?d.pairs:[]).map(p=>[norm(p&&p[0]),norm(p&&p[1])]).filter(p=>p[0]&&p[1]);
+      S.catalog=new Set(codes);S.pair=new Map(pairs);await kvSet('catalog',{at:Date.now(),codes,pairs});
       log('Đã tải danh mục mã sản phẩm: '+codes.length+' mã');
     }
   }catch(e){
@@ -1337,7 +1358,7 @@ async function lookupOrder(recId,code,pre){
     else{
       c.state='ok';c.order=d.order||{};
       c.items=(d.items||[]).map(it=>({name:it.name||'',detail:it.detail||'',image:it.image||'',quantity:Math.max(1,+it.quantity||1),scanned:0,
-        codes:[norm(it.barcode),norm(it.display_id)].filter(Boolean)}));
+        sku:norm(it.display_id)||norm(it.barcode),codes:[norm(it.barcode),norm(it.display_id)].filter(Boolean)}));
       if(c.order.cancelled){banner('ĐƠN ĐÃ HỦY – KHÔNG ĐÓNG ĐƠN NÀY: '+code,'err');beep('err');}
     }
   }catch(e){
@@ -1392,7 +1413,10 @@ function renderRet(el,list){
 /* ghi sản phẩm đã quét của kiện vào file tình trạng kiện hoàn (cùng chỗ với tình trạng kiện, có đưa lên máy chủ) */
 async function retSave(meta){
   if(!canStore())throw new Error('chưa mở thư mục video');
-  await hoanMarkSave('V:'+meta.fileName,{items:(meta.ret||[]).map(u=>({code:u.code,name:u.name||'',ok:!!u.ok,at:u.at||0})),code:meta.code});
+  const patch={code:meta.code};
+  if(Array.isArray(meta.ret)&&meta.ret.length)patch.items=meta.ret.map(u=>({code:u.code,name:u.name||'',ok:!!u.ok,at:u.at||0}));
+  if(Array.isArray(meta.need)&&meta.need.length)patch.need=meta.need;
+  await hoanMarkSave('V:'+meta.fileName,patch);
 }
 /* trả về true nếu mã vừa quét là mã sản phẩm (đã xử lý xong), false nếu là mã đơn */
 function productScan(code){
@@ -1427,6 +1451,7 @@ function sealCheck(id,warn){
   if(!meta||meta.check||!c||c.recId!==id)return;
   const hh=meta.mode==='HH';
   if(hh)meta.ret=c.ret;
+  if(hh&&c.state==='ok')meta.need=c.items.filter(it=>it.sku).map(it=>({sku:it.sku,name:(it.name+' '+it.detail).trim(),quantity:it.quantity}));
   if(c.state!=='ok'){meta.check=hh&&c.ret.length?'Không có đơn · quét '+c.ret.length+' sản phẩm':'Không soát';return;}
   /* mã đơn tra ra từ mã kho quét (ví dụ quét SPXVN… ra 261119N12G44SH): dùng để đối soát với danh sách đơn chuẩn bị */
   if(c.order&&c.order.id){meta.orderId=String(c.order.id);meta.sysId=c.order.system_id==null?'':String(c.order.system_id);meta.source=c.order.source||'';}
@@ -1709,18 +1734,19 @@ function go(view,mode){
     setMode(mode||S.mode);
   }
   S.view=view;if(view==='list')S.listMode=mode||S.listMode||'DH';
-  $('vRec').hidden=view!=='rec';$('vHome').hidden=view!=='home';$('vList').hidden=view!=='list';$('vSoat').hidden=view!=='soat';$('vXuat').hidden=view!=='xuat';$('vHoan').hidden=view!=='hoan';
+  $('vRec').hidden=view!=='rec';$('vHome').hidden=view!=='home';$('vList').hidden=view!=='list';$('vSoat').hidden=view!=='soat';$('vXuat').hidden=view!=='xuat';$('vHoan').hidden=view!=='hoan';$('vNhap').hidden=view!=='nhap';
   navMark();
   if(view==='xuat')xuatOpen();
   if(view==='soat')soatReload(true);
   if(view==='hoan')hoanOpen();
+  if(view==='nhap')nhapOpen();
   if(view==='home')renderHome();
   if(view==='list'){renderBig();$('q2').focus();}
   if(view==='rec')$('scan').focus();
 }
 function navMark(){
   for(const b of document.querySelectorAll('#nav button'))
-    b.classList.toggle('on',b.dataset.v===S.view&&(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan'||b.dataset.m===(S.view==='rec'?S.mode:S.listMode)));
+    b.classList.toggle('on',b.dataset.v===S.view&&(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan'||S.view==='nhap'||b.dataset.m===(S.view==='rec'?S.mode:S.listMode)));
 }
 function renderHome(){
   const el=$('vHome');el.textContent='';
@@ -2311,7 +2337,7 @@ async function hoanMarksLoad(){
   try{
     const d=await api({hoanmarks:1},15000),sv=d&&d.marks||{},merged=Object.assign({},local);
     for(const k of Object.keys(local))if(!sv[k]||(local[k].at||0)>(sv[k].at||0)+2000)apiPost({action:'hoanmark',khoa:k,du_lieu:local[k]},15000).catch(()=>{});
-    for(const k of Object.keys(sv))if(!local[k]||(sv[k].at||0)>=(local[k].at||0))merged[k]=sv[k];
+    for(const k of Object.keys(sv))if(!local[k]||(sv[k].at||0)>=(local[k].at||0))merged[k]=Object.assign({},local[k],sv[k]);
     return merged;
   }catch(e){return local;}
 }
@@ -2341,7 +2367,7 @@ function hoanMarkSave(key,patch){
 /* ngay sau khi lưu video mở kiện: hỏi tình trạng, một lần bấm */
 function hoanAsk(meta){
   const box=$('hoanAsk');box.textContent='';box.hidden=false;
-  if(Array.isArray(meta.ret)&&meta.ret.length)retSave(meta).catch(e=>banner('Chưa ghi được sản phẩm đã quét của kiện '+meta.code+': '+(e.message||e.name),'err'));
+  if((Array.isArray(meta.ret)&&meta.ret.length)||(Array.isArray(meta.need)&&meta.need.length))retSave(meta).catch(e=>banner('Chưa ghi được sản phẩm của kiện '+meta.code+': '+(e.message||e.name),'err'));
   const b=document.createElement('b');b.textContent='Kiện '+meta.code+' vừa mở: hàng bên trong thế nào?';box.append(b);
   for(const [val,label] of HOAN_STATES.slice(1,5)){
     const bt=document.createElement('button');bt.textContent=label;if(val==='dung')bt.className='primary';
@@ -2447,6 +2473,173 @@ function hoanCsv(){
   for(const x of HOAN.rows){const r=x.r,v=x.v;
     lines.push([r?r.channel:'',r?(HOAN_KIND[r.kind]||r.kind):'Về ngoài danh sách',r?r.id:(v.orderId||''),r?r.codes.join(' '):v.code,r?r.items.map(i=>(i.sku||i.name)+' x'+i.quantity).join('; '):'',r?r.status:'',r?r.reason:'',r&&r.refund!=null?r.refund:'',x.days!=null?x.days:'',x.arrived?'Đã về':'CHƯA VỀ',v?vnTime(v.startedAt):'',name(x.mark.state),x.mark.note||'',retText(x.mark.items)].map(esc).join(','));}
   downloadBlob(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv'}),'soat-hang-hoan-'+dayStr(new Date())+'.csv');
+}
+
+/* ---------- Nhập hàng hoàn vào kho (bước 2, sau khi mở kiện kiểm tra). Danh sách cần nhập lấy từ sản phẩm của các kiện hoàn đã về:
+   kiện có quét sản phẩm lúc mở thì tính theo số quét, kiện không quét thì tính theo sản phẩm của đơn.
+   Mỗi lượt nhập là một dòng trong soat-hoan/nhap-hoan.json (chỉ thêm, lượt hủy là dòng số âm) và đưa lên máy chủ.
+   Chỉ là sổ của mình: KHÔNG ghi gì lên Pancake. ---------- */
+const NHAP={entries:[],err:'',cloudErr:'',rows:[],busy:false};
+const toSku=code=>{const c=norm(code);return (S.pair&&S.pair.get(c))||c;};
+async function nhapLoadLocal(){
+  let fh;
+  try{fh=await (await S.dir.getDirectoryHandle('soat-hoan')).getFileHandle('nhap-hoan.json');}
+  catch(e){if(e.name==='NotFoundError')return [];throw e;}
+  const text=await (await fh.getFile()).text();
+  if(!text.trim())return [];
+  const o=JSON.parse(text);                        /* file hỏng thì báo lỗi, không coi là trống để khỏi ghi đè */
+  return Array.isArray(o.entries)?o.entries:[];
+}
+async function nhapLoad(){
+  NHAP.cloudErr='';
+  if(S.remote){const d=await api({nhaphoan:1},20000);if(!d||!Array.isArray(d.entries))throw new Error(d&&d.error||'máy chủ trả sai dạng');return d.entries;}
+  const local=await nhapLoadLocal();
+  if(!cloudOn())return local;
+  try{
+    const d=await api({nhaphoan:1},20000);if(!d||!Array.isArray(d.entries))throw new Error(d&&d.error||'máy chủ trả sai dạng');
+    const have=new Set(d.entries.map(e=>e.id)),mine=new Set(local.map(e=>e.id)),up=local.filter(e=>!have.has(e.id));
+    for(let i=0;i<up.length;i+=200)apiPost({action:'nhaphoan',rows:up.slice(i,i+200)},20000).catch(()=>{});
+    return local.concat(d.entries.filter(e=>!mine.has(e.id)));
+  }catch(e){NHAP.cloudErr=e.name==='AbortError'?'quá thời gian chờ':(e.message||e.name);return local;}
+}
+let nhapChain=Promise.resolve();
+function nhapAdd(entry){
+  const run=nhapChain.then(async()=>{
+    if(S.remote){await apiPost({action:'nhaphoan',rows:[entry]},15000);NHAP.entries=NHAP.entries.concat([entry]);return;}
+    const list=await nhapLoadLocal();list.push(entry);
+    const d=await S.dir.getDirectoryHandle('soat-hoan',{create:true});
+    const fh=await d.getFileHandle('nhap-hoan.json',{create:true});
+    const w=await fh.createWritable();await w.write(JSON.stringify({entries:list,updatedAt:Date.now()}));await w.close();
+    /* đọc lại để chắc đã ghi thật */
+    const back=await nhapLoadLocal();
+    if(!back.some(e=>e.id===entry.id))throw new Error('ghi xong đọc lại không thấy');
+    NHAP.entries=NHAP.entries.concat([entry]);
+    if(cloudOn())apiPost({action:'nhaphoan',rows:[entry]},15000).catch(e=>log('Chưa đưa được lượt nhập hàng hoàn lên máy chủ (đã lưu ở thư mục, lần mở sau sẽ đẩy lại): '+(e.message||e.name)));
+  });
+  nhapChain=run.catch(()=>{});
+  return run;
+}
+/* kiện đã về mà chưa có "sản phẩm của đơn" trong file tình trạng: chép từ danh sách kiện hoàn vào, để khi đơn rời danh sách vẫn biết cần nhập gì */
+async function hoanNeedSnap(){
+  if(!canStore()||HOAN.err)return;
+  const todo=HOAN.rows.filter(x=>x.arrived&&x.r&&Array.isArray(x.r.items)&&x.r.items.some(i=>i.sku)&&!Array.isArray(x.mark.need)).slice(0,300);
+  for(const x of todo){
+    try{await hoanMarkSave(x.key,{need:x.r.items.filter(i=>i.sku).map(i=>({sku:norm(i.sku),name:((i.name||'')+' '+(i.detail||'')).trim(),quantity:Math.max(1,+i.quantity||1)})),code:norm(x.r.id)});}
+    catch(e){log('Chưa ghi được sản phẩm của kiện hoàn '+x.r.id+': '+(e.message||e.name));break;}
+  }
+}
+/* bảng cần nhập / đã nhập / không nhập / còn thiếu theo từng mã sản phẩm */
+function nhapRows(marks,entries){
+  const m=new Map();
+  const row=sku=>{let r=m.get(sku);if(!r){r={sku,name:'',need:0,nhap:0,bo:0,kien:new Set(),last:0};m.set(sku,r);}return r;};
+  for(const k of Object.keys(marks||{})){
+    const mk=marks[k];if(!mk)continue;
+    if(Array.isArray(mk.items)&&mk.items.length){for(const u of mk.items){if(!u||!u.code)continue;const r=row(toSku(u.code));r.need++;r.kien.add(k);if(!r.name&&u.name)r.name=u.name;}}
+    else if(Array.isArray(mk.need))for(const u of mk.need){if(!u||!u.sku)continue;const r=row(norm(u.sku));r.need+=Math.max(1,+u.quantity||1);r.kien.add(k);if(!r.name&&u.name)r.name=u.name;}
+  }
+  /* tên đầy đủ lấy theo sản phẩm của đơn (tên lúc quét chỉ có màu, size) */
+  for(const k of Object.keys(marks||{}))for(const u of (marks[k]&&Array.isArray(marks[k].need)?marks[k].need:[])){const r=u&&u.sku&&u.name?m.get(norm(u.sku)):null;if(r)r.name=u.name;}
+  for(const e of entries||[]){if(!e||!e.sku)continue;const r=row(norm(e.sku));if(e.kind==='bo')r.bo+=+e.qty||0;else r.nhap+=+e.qty||0;r.last=Math.max(r.last,e.at||0);}
+  for(const r of m.values()){r.thieu=Math.max(0,r.need-r.nhap-r.bo);r.thua=Math.max(0,r.nhap+r.bo-r.need);}
+  return [...m.values()];
+}
+async function nhapOpen(){
+  if(NHAP.busy)return;
+  NHAP.err='';
+  if(!canStore()){$('nhapInfo').textContent='Chưa mở thư mục video.';return;}
+  NHAP.busy=true;$('nhapInfo').textContent='Đang đọc danh sách hàng hoàn cần nhập…';
+  try{
+    await hoanOpen();
+    if(HOAN.err)NHAP.err=HOAN.err;
+    else{
+      await hoanNeedSnap();
+      try{NHAP.entries=await nhapLoad();}catch(e){NHAP.err='Không đọc được sổ nhập hàng hoàn ('+(e.message||e.name)+'). Chưa sửa gì; thử "Tải lại" sau khi Drive đồng bộ xong.';}
+    }
+  }finally{NHAP.busy=false;}
+  renderNhap();$('nScan').focus();
+}
+function renderNhap(){
+  const tb=$('tbNhap'),cards=$('nhapCards'),lg=$('tbNhapLog');tb.textContent='';cards.textContent='';lg.textContent='';
+  if(NHAP.err){$('nhapInfo').textContent=NHAP.err;NHAP.rows=[];return;}
+  const rows=nhapRows(HOAN.marks,NHAP.entries);NHAP.rows=rows;
+  const kien=new Set();for(const r of rows)for(const k of r.kien)kien.add(k);
+  $('nhapInfo').textContent='Danh sách lấy từ sản phẩm của '+kien.size+' kiện hoàn đã về kho. Kiện có quét sản phẩm lúc mở thì tính theo số quét, kiện không quét thì tính theo đơn (đơn hoàn một phần vẫn tính cả đơn). Sổ này là của mình, không đổi tồn trên Pancake.'
+    +(HOAN.data?'':' CHƯA TẢI DANH SÁCH KIỆN HOÀN trên máy này: bấm "Tải lại" để lấy đủ sản phẩm của các kiện không quét.')
+    +(NHAP.cloudErr?' CHƯA LẤY ĐƯỢC LƯỢT NHẬP CỦA MÁY KHÁC ('+NHAP.cloudErr+'): số "Đã nhập" có thể thiếu.':'');
+  const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
+  const sum=f=>rows.reduce((s,r)=>s+r[f],0);
+  kpi('Cần nhập',sum('need'));kpi('Đã nhập kho',sum('nhap'));kpi('Không nhập (hỏng, mất)',sum('bo'));
+  kpi('CÒN THIẾU',sum('thieu'),sum('thieu')?'amber':'');kpi('Nhập thừa hoặc ngoài danh sách',sum('thua'),sum('thua')?'amber':'');
+  const only=$('nOnly').checked;
+  for(const r of rows.slice().sort((a,b)=>(b.thieu>0)-(a.thieu>0)||(b.thua>0)-(a.thua>0)||b.last-a.last||a.sku.localeCompare(b.sku))){
+    if(only&&!r.thieu&&!r.thua)continue;
+    const row=tb.insertRow();row.className=r.thua?'out':'';
+    const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    cell(r.sku,'code');cell(r.name||(r.need?'':'(ngoài danh sách)')).style.whiteSpace='normal';
+    cell(r.need,'num');cell(r.nhap,'num');cell(r.bo||'','num');
+    cell(r.thua?'thừa '+r.thua:r.thieu,'num'+(r.thieu||r.thua?' warn':''));cell(r.kien.size||'','num');
+    const a=row.insertCell();
+    const b1=document.createElement('button');b1.textContent='Nhập tay';
+    b1.onclick=()=>{const q=nhapAsk('Nhập vào kho bao nhiêu cái '+r.sku+'?',r.thieu||1);if(q)nhapScan(r.sku,q,'nhap','');};
+    const b2=document.createElement('button');b2.textContent='Không nhập';
+    b2.onclick=()=>{
+      const q=nhapAsk('Bao nhiêu cái '+r.sku+' KHÔNG nhập lại kho (hỏng, mất, thiếu trong kiện)?',r.thieu||1);if(!q)return;
+      const why=(prompt('Lý do không nhập (bắt buộc):','')||'').trim();if(!why){banner('Chưa ghi: cần lý do không nhập.','warn');return;}
+      nhapScan(r.sku,q,'bo',why);
+    };
+    a.append(b1,b2);
+  }
+  if(!tb.rows.length){const row=tb.insertRow(),c=row.insertCell();c.colSpan=8;c.textContent=rows.length?'Không còn mã nào thiếu. Bỏ dấu "Chỉ hiện mã còn thiếu" để xem tất cả.':'Chưa có kiện hoàn nào về kho nên chưa có gì cần nhập.';}
+  const undone=new Set(NHAP.entries.filter(e=>/^HUY:/.test(e.note||'')).map(e=>e.note.slice(4)));
+  for(const e of NHAP.entries.filter(e=>!/^HUY:/.test(e.note||'')).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,15)){
+    const row=lg.insertRow(),off=undone.has(e.id);
+    const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    cell(vnTime(e.at).slice(0,16));cell(e.sku,'code');cell((e.kind==='bo'?'Không nhập ':'Nhập ')+e.qty,'num');
+    cell(off?'ĐÃ HỦY':(e.note||'')).style.whiteSpace='normal';
+    const a=row.insertCell();
+    if(!off){const b=document.createElement('button');b.textContent='Hủy lượt này';
+      b.onclick=()=>{if(confirm('Hủy lượt '+(e.kind==='bo'?'không nhập ':'nhập ')+e.qty+' cái '+e.sku+'?'))nhapWrite({sku:e.sku,code:e.code||'',qty:-e.qty,kind:e.kind,note:'HUY:'+e.id}).then(ok=>{if(ok){banner('Đã hủy lượt '+e.sku+'.','ok');renderNhap();}});};
+      a.append(b);}
+  }
+}
+function nhapAsk(msg,def){
+  const s=prompt(msg,String(def));if(s==null)return 0;
+  const q=parseInt(s,10);
+  if(!(q>=1&&q<=999)){banner('Số lượng phải từ 1 đến 999.','warn');return 0;}
+  return q;
+}
+async function nhapWrite(p){
+  if(!canStore()){banner('Chưa mở thư mục video nên chưa ghi được.','err');return false;}
+  const may=await mayId();
+  const entry=Object.assign({id:may+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),at:Date.now(),may},p);
+  try{await nhapAdd(entry);return true;}
+  catch(e){banner('CHƯA GHI ĐƯỢC lượt nhập '+p.sku+': '+(e.message||e.name)+'. Quét lại.','err');beep('err');return false;}
+}
+/* một lượt nhập (quét hoặc gõ tay). kind 'bo' = ghi "không nhập" để trừ khỏi số còn thiếu */
+async function nhapScan(raw,qty,kind,note){
+  const code=norm(raw);if(!code)return;
+  if(NHAP.err){banner('Chưa đọc được sổ nhập hàng hoàn nên chưa ghi. Bấm "Tải lại".','err');beep('err');return;}
+  const sku=toSku(code),before=NHAP.rows.find(r=>r.sku===sku)||null;
+  if(!before&&!prodLike(code)&&!prodLike(sku)){banner('Mã '+code+' không phải mã sản phẩm. Không ghi.','err');beep('err');bigAlert('KHÔNG PHẢI MÃ SẢN PHẨM',code);return;}
+  if(!(await nhapWrite({sku,code,qty,kind,note:note||''})))return;
+  renderNhap();
+  const r=NHAP.rows.find(x=>x.sku===sku);
+  if(kind==='bo'){banner('Đã ghi KHÔNG NHẬP '+qty+' cái '+sku+'. Còn thiếu '+r.thieu+'.','ok');beep('ok');}
+  else if(!r.need){banner('NGOÀI DANH SÁCH: '+sku+' không có trong hàng hoàn cần nhập. Vẫn ghi nhập '+qty+' cái.','warn');beep('warn');}
+  else if(r.thua){banner('THỪA: '+sku+' đã nhập quá số cần nhập '+r.thua+' cái. Vẫn ghi.','warn');beep('warn');}
+  else{banner('Đã nhập '+qty+' cái '+sku+(r.name?' ('+r.name+')':'')+'. Còn thiếu '+r.thieu+'.','ok');beep(r.thieu?'start':'ok');}
+}
+function nhapCsv(){
+  const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
+  const lines=[['Mã sản phẩm','Tên','Cần nhập','Đã nhập','Không nhập','Còn thiếu','Thừa','Số kiện'].map(esc).join(',')];
+  for(const r of NHAP.rows)lines.push([r.sku,r.name,r.need,r.nhap,r.bo,r.thieu,r.thua,r.kien.size].map(esc).join(','));
+  downloadBlob(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv'}),'nhap-hang-hoan-'+dayStr(new Date())+'.csv');
+}
+function nhapWire(){
+  const fire=()=>{const v=$('nScan').value,q=Math.min(999,Math.max(1,parseInt($('nQty').value,10)||1));$('nScan').value='';$('nQty').value=1;nhapScan(v,q,'nhap','').then(()=>$('nScan').focus());};
+  $('nScan').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();fire();}});
+  $('btnNhap').onclick=fire;$('nOnly').onchange=renderNhap;$('btnNhapCsv').onclick=nhapCsv;
+  $('btnNhapReload').onclick=async()=>{$('nhapInfo').textContent='Đang tải danh sách kiện hoàn… (có thể mất 20–40 giây)';await hoanLoad();nhapOpen();};
 }
 
 /* ---------- Soát đơn: danh sách đơn chuẩn bị (chị Hiền dán) ↔ đơn đã đóng (có video). Lưu trong thư mục video: soat-don/NGÀY.json ---------- */
@@ -2647,7 +2840,7 @@ async function saveSettings(){
   if(S.settings.camera2Id&&S.settings.camera2Id===S.settings.cameraId){S.settings=old;banner('Camera quay và camera tem phải là hai camera khác nhau.','err');return;}
   await kvSet('settings',S.settings);
   $('dlgSet').close();
-  if(old.apiUrl!==S.settings.apiUrl||old.apiKey!==S.settings.apiKey){await tx('kv','readwrite',s=>s.delete('catalog'));S.catalog=new Set();loadCatalog();}
+  if(old.apiUrl!==S.settings.apiUrl||old.apiKey!==S.settings.apiKey){await tx('kv','readwrite',s=>s.delete('catalog'));S.catalog=new Set();S.pair=new Map();loadCatalog();}
   if(S.started&&(old.quality!==S.settings.quality||old.cameraId!==S.settings.cameraId)){
     if(S.rec)stopRec();
     try{await startCamera();}catch(e){cameraLost(camErr(e));}
@@ -2739,7 +2932,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 $('xKenh').onchange=renderXuat;$('xNhom').onchange=renderXuat;$('xGap').onchange=renderXuat;
 $('btnXuatTem').onclick=()=>xuatTem(XUAT.sel,'các đơn đang chọn');$('xTem').onchange=temModeChange;
 $('btnSoatClear').onclick=soatClear;$('btnNgoaiClear').onclick=ngoaiClear;
-$('btnHoanLoad').onclick=hoanLoad;$('hFrom').onchange=async()=>{S.settings=Object.assign({},S.settings,{hoanFrom:$('hFrom').value});try{await kvSet('settings',S.settings);}catch(e){}renderHoan();};$('hKenh').onchange=renderHoan;$('hOnly').onchange=renderHoan;$('btnHoanCsv').onclick=hoanCsv;
+$('btnHoanLoad').onclick=hoanLoad;nhapWire();$('hFrom').onchange=async()=>{S.settings=Object.assign({},S.settings,{hoanFrom:$('hFrom').value});try{await kvSet('settings',S.settings);}catch(e){}renderHoan();};$('hKenh').onchange=renderHoan;$('hOnly').onchange=renderHoan;$('btnHoanCsv').onclick=hoanCsv;
 $('btnXuatSoat').onclick=xuatToSoat;$('btnXuatPrint').onclick=()=>{if(!XUAT.sel.length){banner('Chưa có đơn nào để in.','warn');return;}window.print();};
 $('sDay').onchange=()=>soatReload(false);$('btnSoatReload').onclick=()=>soatReload(true);$('sOnlyBad').onchange=renderSoat;$('btnSoatCsv').onclick=soatCsv;
 $('btnSoatPaste').onclick=()=>{if(SOAT.err){banner(SOAT.err,'err');return;}PASTE.target='soat';PASTE.fromFile=false;const d=SOAT.day;$('pasteTitle').textContent='Dán danh sách đơn chuẩn bị ngày '+d.slice(8)+'/'+d.slice(5,7);$('pasteInfo').textContent='';$('dlgPaste').showModal();$('pasteBox').focus();};
@@ -2785,7 +2978,7 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.altKey||e.metaKey||document.querySelector('dialog[open]')||!S.started)return;
   const a=document.activeElement,edit=a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
   if(S.view==='home'||S.view==='soat'||S.view==='xuat'||S.view==='hoan')return;
-  if(!edit&&(e.key.length===1||e.key==='Enter')){if(a&&a.blur)a.blur();$(S.view==='list'?'q2':'scan').focus();if(e.key==='Enter')e.preventDefault();}
+  if(!edit&&(e.key.length===1||e.key==='Enter')){if(a&&a.blur)a.blur();$(S.view==='list'?'q2':S.view==='nhap'?'nScan':'scan').focus();if(e.key==='Enter')e.preventDefault();}
 },true);
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('button');if(b&&!b.closest('dialog'))b.blur();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.started)wake();});
