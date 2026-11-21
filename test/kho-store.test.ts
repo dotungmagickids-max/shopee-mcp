@@ -1,7 +1,7 @@
 /** Dữ liệu vận hành của kho trên Supabase: lọc mã, ghi chú, dòng sổ video. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cacheFresh, cleanCodes, cleanMark, cleanNote, lechEntry, nhapEntry, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
+import { cacheFresh, cleanCodes, cleanMark, cleanNote, kiemEntry, lechEntry, nhapEntry, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
 
 describe("kho-store", () => {
   it("lọc mã đơn: viết hoa, bỏ khoảng trắng, bỏ trùng và thứ không phải mã", () => {
@@ -33,6 +33,12 @@ describe("kho-store", () => {
   it("lấy hàng lệch: cần mã đơn, mã thật lấy và mã bị thay", () => {
     assert.deepEqual(lechEntry({ id: "may-ab12-17-x1", don: "261121abc", sku: "qd26001den170", code: "1924-12", thay: "QD26001DEN160", lyDo: "Hết size", at: 3, may: "m", la: 1 }), { id: "may-ab12-17-x1", don: "261121ABC", sku: "QD26001DEN170", code: "1924-12", thay: "QD26001DEN160", lyDo: "Hết size", at: 3, may: "m" });
     for (const bad of [{ id: "may-ab12-17-x1", don: "", sku: "A1", thay: "B1" }, { id: "may-ab12-17-x1", don: "D1", sku: "", thay: "B1" }, { id: "may-ab12-17-x1", don: "D1", sku: "A1", thay: "" }, { id: "x", don: "D1", sku: "A1", thay: "B1" }]) assert.equal(lechEntry(bad), null);
+  });
+
+  it("lượt đếm tổng kiểm kho: cần mã và số lượng khác 0", () => {
+    assert.deepEqual(kiemEntry({ id: "may-ab12-17-x1", sku: "qd26001den170", code: "1924-12", qty: 24, ke: "A3", note: "", at: 3, may: "m", la: 1 }), { id: "may-ab12-17-x1", sku: "QD26001DEN170", code: "1924-12", qty: 24, ke: "A3", note: "", at: 3, may: "m" });
+    assert.equal(kiemEntry({ id: "may-ab12-17-x1", sku: "A1", qty: -24 })?.qty, -24);
+    for (const bad of [{ id: "may-ab12-17-x1", sku: "A1", qty: 0 }, { id: "may-ab12-17-x1", sku: "", qty: 2 }, { id: "may-ab12-17-x1", sku: "A1", qty: 10000 }, { id: "x", sku: "A1", qty: 1 }]) assert.equal(kiemEntry(bad), null);
   });
 
   it("lượt nhập hàng hoàn: cần mã, số lượng khác 0; số âm là lượt hủy", () => {

@@ -92,6 +92,26 @@ export function lechEntry(v: any): LayLech | null {
   return { id, don, sku, code: normSku(str(v?.code, 60)), thay, lyDo: str(v?.lyDo, 100), at: num(v?.at) || Date.now(), may: str(v?.may, 40) };
 }
 
+export interface KiemKe {
+  id: string;
+  sku: string;
+  code: string;
+  qty: number;
+  ke: string;
+  note: string;
+  at: number;
+  may: string;
+}
+
+/** Một lượt đếm khi tổng kiểm kho: đếm được `qty` cái mã `sku` ở kệ `ke`. qty âm là lượt hủy. */
+export function kiemEntry(v: any): KiemKe | null {
+  const id = str(v?.id, 80);
+  const sku = normSku(str(v?.sku, 60));
+  const qty = Math.round(num(v?.qty));
+  if (!/^[\w.-]{6,80}$/.test(id) || !sku || !qty || Math.abs(qty) > 9999) return null;
+  return { id, sku, code: normSku(str(v?.code, 60)), qty, ke: str(v?.ke, 40), note: str(v?.note, 200), at: num(v?.at) || Date.now(), may: str(v?.may, 40) };
+}
+
 export interface VideoRow {
   file: string;
   ma: string;
@@ -234,6 +254,10 @@ async function logList<T extends { id: string }>(phamVi: string, days: number): 
 /** Sổ nhập hàng hoàn (lượt hủy là một dòng số âm), 180 ngày gần nhất. */
 export const nhapAdd = (rows: unknown) => logAdd("nhap-hoan", rows, nhapEntry);
 export const nhapList = () => logList<NhapHoan>("nhap-hoan", 180);
+
+/** Sổ đếm của một đợt tổng kiểm kho (đợt đặt theo ngày bắt đầu, YYYY-MM-DD). */
+export const kiemAdd = (dot: string, rows: unknown) => logAdd(`kiem-ke:${dot}`, rows, kiemEntry);
+export const kiemList = (dot: string) => logList<KiemKe>(`kiem-ke:${dot}`, 365);
 
 /** Sổ lấy hàng lệch khi đóng, 90 ngày gần nhất. */
 export const lechAdd = (rows: unknown) => logAdd("lay-lech", rows, lechEntry);
