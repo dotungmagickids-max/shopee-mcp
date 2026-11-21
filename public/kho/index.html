@@ -749,11 +749,19 @@ function rot(d){
   for(let y=0;y<h;y++){const row=y*w,col=h-1-y;for(let x=0;x<w;x++)out[x*h+col]=src[row+x];}
   return {lum:out,w:h,h:w};
 }
+/* làm nét: tăng chênh lệch giữa mỗi điểm và 4 điểm quanh nó */
+function sharp(d){
+  const w=d.w,h=d.h,s=d.lum,o=new Uint8ClampedArray(s.length);
+  for(let y=1;y<h-1;y++)for(let x=1,i=y*w+1;x<w-1;x++,i++)o[i]=3*s[i]-(s[i-1]+s[i+1]+s[i-w]+s[i+w])/2;
+  return {lum:o,w,h};
+}
 function decode(d){
   init();if(!zx)return null;
   const Z=zx.Z,bmp=s=>new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(s.lum,s.w,s.h)));
   let qr=null;
   try{qr=zx.qr.decode(bmp(d),zx.h1).getText();}catch(e){}
+  /* QR trên tem Viettel Post nhỏ, hình hơi mờ là đọc trượt: làm nét rồi đọc lại */
+  if(!qr)try{qr=zx.qr.decode(bmp(sharp(d)),zx.h1).getText();}catch(e){}
   if(qr&&sure(qr))return {t:'code',text:qr,fmt:'QR'};
   /* tem Viettel Post có cả QR và mã vạch: QR không chắc là mã đơn thì ưu tiên mã vạch, không đọc được mã vạch mới dùng QR */
   try{return {t:'code',text:zx.bar.decode(bmp(d),zx.h2).getText(),fmt:'Mã vạch'};}catch(e){}
