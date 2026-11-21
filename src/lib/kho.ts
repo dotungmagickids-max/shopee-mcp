@@ -809,17 +809,21 @@ async function shopeeReturns(now: number, errors: string[]): Promise<HoanRow[]> 
     shops().map(async (shop) => {
       const out = new Map<string, HoanRow>();
       try {
-        for (const [from, to] of [[sec - 15 * 86400, sec], [sec - 30 * 86400, sec - 15 * 86400 - 1], [sec - 45 * 86400, sec - 30 * 86400 - 1]]) {
-          for (let page = 0; page < 20; page++) {
-            const res = await callShopee(shop.shopId, "returns.get_return_list", { page_no: page, page_size: 100, create_time_from: from, create_time_to: to });
-            const list: any[] = res.response?.return ?? [];
-            for (const r of list) {
-              const row = shapeShopeeReturn(r, shop.name);
-              if (row) out.set(row.key, row);
+        // Ba khoảng 15 ngày chạy song song (trước đây chạy nối tiếp, mất gần 1 phút).
+        const windows = [[sec - 15 * 86400, sec], [sec - 30 * 86400, sec - 15 * 86400 - 1], [sec - 45 * 86400, sec - 30 * 86400 - 1]];
+        await Promise.all(
+          windows.map(async ([from, to]) => {
+            for (let page = 0; page < 20; page++) {
+              const res = await callShopee(shop.shopId, "returns.get_return_list", { page_no: page, page_size: 100, create_time_from: from, create_time_to: to });
+              const list: any[] = res.response?.return ?? [];
+              for (const r of list) {
+                const row = shapeShopeeReturn(r, shop.name);
+                if (row) out.set(row.key, row);
+              }
+              if (!res.response?.more || !list.length) break;
             }
-            if (!res.response?.more || !list.length) break;
-          }
-        }
+          })
+        );
       } catch (err) {
         errors.push(`Shopee ${shop.name}: ${err instanceof Error ? err.message : String(err)}`);
       }
