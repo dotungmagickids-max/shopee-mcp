@@ -261,7 +261,7 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
     <label>Ngày <input type="date" id="sDay"></label>
     <button id="btnSoatPaste" class="primary">Dán danh sách đơn chuẩn bị</button>
     <button id="btnSoatReload">Tải lại</button>
-    <label><input type="checkbox" id="sOnlyBad"> Chỉ hiện đơn lệch</label>
+    <label><input type="checkbox" id="sAll"> Hiện cả đơn đã đóng</label>
     <button id="btnSoatCsv">Xuất CSV</button>
     <button id="btnSoatClear" class="danger">Xóa danh sách ngày này</button>
   </div>
@@ -275,7 +275,8 @@ details.log div{max-height:120px;overflow:auto;font-family:Consolas,monospace}
     <table class="t"><thead><tr><th class="num">STT</th><th>Mã đơn</th><th>Kênh</th><th>Trạng thái trên Pancake</th><th>Sản phẩm</th><th>Lý do chưa đóng</th><th>Xử lý</th></tr></thead><tbody id="tbChua"></tbody></table>
     <datalist id="dlLyDo"><option value="Hết hàng, thiếu hàng"><option value="Chờ hàng về (đặt trước)"><option value="Không tìm thấy hàng trên kệ"><option value="Hàng lỗi"><option value="Chờ khách xác nhận"><option value="Khách hẹn giao sau"><option value="Khách hủy"><option value="Chưa in tem"><option value="Chưa kịp đóng"></datalist>
   </div>
-  <table class="t"><thead><tr><th class="num">STT</th><th>Mã đơn chuẩn bị</th><th>Mã đã đóng (kho quét)</th><th>Giờ đóng</th><th>Soát sản phẩm</th><th>Kết quả</th><th>Lý do</th><th>Xử lý</th><th></th></tr></thead><tbody id="tbSoat"></tbody></table>
+  <h3 id="soatHead" style="margin:14px 0 6px;font-size:15px"></h3>
+  <table class="t" id="tSoat"><thead><tr><th class="num">STT</th><th>Mã đơn chuẩn bị</th><th>Mã đã đóng (kho quét)</th><th>Giờ đóng</th><th>Soát sản phẩm</th><th>Kết quả</th><th>Lý do</th><th>Xử lý</th><th></th></tr></thead><tbody id="tbSoat"></tbody></table>
   <div id="lechBox" hidden>
     <h3 style="margin:18px 0 6px;font-size:15px">Lấy hàng lệch trong ngày (kho lấy mã khác với đơn: sale cần sửa đơn)</h3>
     <table class="t"><thead><tr><th>Giờ</th><th>Đơn</th><th>Mã đơn đặt</th><th>Mã kho lấy thật</th><th>Lý do</th></tr></thead><tbody id="tbLech"></tbody></table>
@@ -2845,9 +2846,13 @@ function renderSoat(){
   if(LECH.err){const c=tl.insertRow().insertCell();c.colSpan=5;c.className='warn';c.textContent='Chưa đọc được sổ lấy hàng lệch: '+LECH.err+'. Bấm "Tải lại".';}
   for(const e of lech){const row=tl.insertRow();for(const [x,cls] of [[vnTime(e.at).slice(11,16),''],[e.don,'code'],[e.thay,'code'],[e.sku,'code'],[e.lyDo||'','']]){const c=row.insertCell();c.textContent=x;c.className=cls;}}
   const tb=$('tbSoat');tb.textContent='';
-  const only=$('sOnlyBad').checked;let i=0;
+  /* mặc định ẩn đơn đã đóng cho dễ nhìn; đơn chưa đóng đã nằm ở khung phía trên nên không lặp lại ở đây */
+  const only=!$('sAll').checked;let i=0;
+  const shown=rows.filter(r=>!only||(r.st!=='Đã đóng'&&r.st!=='CHƯA ĐÓNG')).length;
+  $('tSoat').hidden=!shown;$('soatHead').hidden=!shown;
+  $('soatHead').textContent=only?'Đơn đóng khác danh sách ('+shown+')':'Tất cả đơn ('+shown+')';
   for(const r of rows){
-    i++;if(only&&r.st==='Đã đóng')continue;
+    i++;if(only&&(r.st==='Đã đóng'||r.st==='CHƯA ĐÓNG'))continue;
     const row=tb.insertRow();row.className=r.cls;
     const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
     cell(i,'num');cell(r.c||'–','code');cell(r.v?r.v.code:'','code');
@@ -3157,7 +3162,7 @@ $('btnXuatTem').onclick=()=>xuatTem(XUAT.sel,'các đơn đang chọn');$('xTem'
 $('btnSoatClear').onclick=soatClear;$('btnNgoaiClear').onclick=ngoaiClear;
 $('btnHoanLoad').onclick=hoanLoad;nhapWire();$('hFrom').onchange=async()=>{S.settings=Object.assign({},S.settings,{hoanFrom:$('hFrom').value});try{await kvSet('settings',S.settings);}catch(e){}renderHoan();};$('hKenh').onchange=renderHoan;$('hOnly').onchange=renderHoan;$('btnHoanCsv').onclick=hoanCsv;
 $('btnXuatSoat').onclick=xuatToSoat;$('btnXuatPrint').onclick=()=>{if(!XUAT.sel.length){banner('Chưa có đơn nào để in.','warn');return;}window.print();};
-$('sDay').onchange=()=>soatReload(false);$('btnSoatReload').onclick=()=>soatReload(true);$('sOnlyBad').onchange=renderSoat;$('btnSoatCsv').onclick=soatCsv;$('btnChuaCopy').onclick=chuaCopy;$('btnChuaCsv').onclick=chuaCsv;
+$('sDay').onchange=()=>soatReload(false);$('btnSoatReload').onclick=()=>soatReload(true);$('sAll').onchange=renderSoat;$('btnSoatCsv').onclick=soatCsv;$('btnChuaCopy').onclick=chuaCopy;$('btnChuaCsv').onclick=chuaCsv;
 $('btnSoatPaste').onclick=()=>{if(SOAT.err){banner(SOAT.err,'err');return;}PASTE.target='soat';PASTE.fromFile=false;const d=SOAT.day;$('pasteTitle').textContent='Dán danh sách đơn chuẩn bị ngày '+d.slice(8)+'/'+d.slice(5,7);$('pasteInfo').textContent='';$('dlgPaste').showModal();$('pasteBox').focus();};
 $('btnPasteAdd').onclick=()=>PASTE.target==='ngoai'?ngoaiPaste(false):soatPaste(false);$('btnPasteReplace').onclick=()=>PASTE.target==='ngoai'?ngoaiPaste(true):soatPaste(true);
 $('btnNgoai').onclick=()=>{if(!canStore()){banner('Chưa mở thư mục video nên chưa lưu được danh sách.','err');return;}PASTE.target='ngoai';PASTE.fromFile=false;const d=dayStr(new Date());$('pasteTitle').textContent='Nhập đơn cần đóng ngày '+d.slice(8)+'/'+d.slice(5,7);$('pasteInfo').textContent='Chọn file PDF tem chị Hiền gửi (phần mềm tự đọc mã đơn từng trang), hoặc dán mã đơn / mã vận đơn, mỗi mã một dòng.';$('dlgPaste').showModal();$('pasteBox').focus();};
