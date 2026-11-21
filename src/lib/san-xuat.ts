@@ -1,7 +1,7 @@
 /**
  * Sổ hàng xưởng: phép tính tiến độ từ dữ liệu thô (lô cắt, lần hàng về, phiếu đặt).
  * Hàm thuần, không gọi mạng: trang /san-xuat, script nạp số đầu và test dùng chung.
- * Cùng công thức với view `sx_tien_do`, `sx_tien_do_lo` (supabase/migrations/0024_san_xuat.sql):
+ * Cùng công thức với view `sx_tien_do`, `sx_tien_do_lo` (supabase/migrations/0025_san_xuat.sql):
  *   còn nợ = số cắt − số KHO ĐẾM (không phải số xưởng giao).
  */
 

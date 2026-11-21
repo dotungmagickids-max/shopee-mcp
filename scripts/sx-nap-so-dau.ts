@@ -5,7 +5,7 @@
  *      (Tệp → Tải xuống → CSV), hoặc lưu kết quả Sheets API ({ values: [[…]] }) thành .json.
  *   2. Chạy thử (mặc định, KHÔNG ghi gì, không cần khóa Supabase):
  *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv
- *   3. Sau khi anh duyệt migration 0024 và duyệt số chạy thử, mới nạp thật:
+ *   3. Sau khi anh duyệt migration 0025 và duyệt số chạy thử, mới nạp thật:
  *        npx tsx scripts/sx-nap-so-dau.ts --lo-cat lo-cat.csv --hang-ve hang-ve.csv --ghi
  *
  * Nạp thật gọi các hàm mk_sx_* (cùng đường với công cụ MCP), nên mọi luật kiểm tra và nhật ký vẫn chạy.

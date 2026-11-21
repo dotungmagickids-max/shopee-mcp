@@ -284,7 +284,7 @@ describe("công cụ MCP mk_sx_*", () => {
     await goi(t, "mk_sx_lot_reschedule", { ma_hang: "ADT26001", lo: "L1", hen_moi: "2026-11-25", ly_do: "xưởng báo", nguon: "zalo 1" });
     await goi(t, "mk_sx_arrival_save", { nguon: "phiếu 1", ma_hang: "ADT26001", lo: "L1", ngay: "2026-11-20", lines: [{ mau: "Đỏ", size: "130", kho_dem: 1 }] });
     assert.equal(rpcCalls.length, 7);
-    const sql = fs.readFileSync("supabase/migrations/0024_san_xuat.sql", "utf8");
+    const sql = fs.readFileSync("supabase/migrations/0025_san_xuat.sql", "utf8");
     for (const c of rpcCalls) {
       const m = sql.match(new RegExp(`create or replace function public\\.${c.fn}\\(([^)]*)\\)`));
       assert.ok(m, `migration thiếu hàm ${c.fn}`);

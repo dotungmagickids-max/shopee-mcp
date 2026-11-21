@@ -7,7 +7,7 @@ import { loiDongTrung, loiHangVe } from "./san-xuat";
 
 /**
  * Sổ hàng xưởng (mục Sản xuất): công cụ cho phòng Thu Hà ghi phiếu đặt, lô cắt, ngày hẹn, lần hàng về.
- * Mỗi công cụ gọi một hàm Postgres `public.mk_sx_*` (supabase/migrations/0024_san_xuat.sql), hàm đó ghi nhật ký.
+ * Mỗi công cụ gọi một hàm Postgres `public.mk_sx_*` (supabase/migrations/0025_san_xuat.sql), hàm đó ghi nhật ký.
  * Không công cụ nào ở đây ghi sang Pancake, Shopee hay Meta: số phiếu Pancake chỉ là số tham chiếu.
  */
 

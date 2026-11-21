@@ -168,7 +168,7 @@ export default async function SanXuatPage({ searchParams }: { searchParams: Prom
           <a className="badge" href="/admin">Quản trị</a>
         </header>
         <div className="empty">
-          Chưa đọc được sổ. Thường là do migration <b>0024_san_xuat.sql</b> chưa được chạy trên Supabase.
+          Chưa đọc được sổ. Thường là do migration <b>0025_san_xuat.sql</b> chưa được chạy trên Supabase.
           <br />
           Chi tiết: {err instanceof Error ? err.message : String(err)}
         </div>
