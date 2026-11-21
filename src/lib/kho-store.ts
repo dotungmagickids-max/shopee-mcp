@@ -71,6 +71,27 @@ export function nhapEntry(v: any): NhapHoan | null {
   return { id, sku, code: normSku(str(v?.code, 60)), qty, kind: v?.kind === "bo" ? "bo" : "nhap", note: str(v?.note, 200), at: num(v?.at) || Date.now(), may: str(v?.may, 40) };
 }
 
+export interface LayLech {
+  id: string;
+  don: string;
+  sku: string;
+  code: string;
+  thay: string;
+  lyDo: string;
+  at: number;
+  may: string;
+}
+
+/** Một lần lấy hàng lệch khi đóng: lấy mã `sku` thay cho mã `thay` của đơn `don`. null nếu thiếu mã. */
+export function lechEntry(v: any): LayLech | null {
+  const id = str(v?.id, 80);
+  const sku = normSku(str(v?.sku, 60));
+  const thay = normSku(str(v?.thay, 60));
+  const don = normSku(str(v?.don, 60));
+  if (!/^[\w.-]{6,80}$/.test(id) || !sku || !thay || !don) return null;
+  return { id, don, sku, code: normSku(str(v?.code, 60)), thay, lyDo: str(v?.lyDo, 100), at: num(v?.at) || Date.now(), may: str(v?.may, 40) };
+}
+
 export interface VideoRow {
   file: string;
   ma: string;
@@ -188,28 +209,35 @@ export async function markSet(khoa: string, duLieu: unknown): Promise<void> {
   await notesMerge("hoan", { [khoa]: duLieu }, cleanMark);
 }
 
-/** Sổ nhập hàng hoàn: mỗi lượt một dòng, chỉ thêm, không sửa (lượt hủy là một dòng số âm). Dòng đã có thì bỏ qua. */
-export async function nhapAdd(rows: unknown): Promise<{ saved: number; skipped: number }> {
+/** Sổ chỉ thêm (mỗi lượt một dòng, không sửa; dòng đã có thì bỏ qua) lưu trong kho_ghi_chu theo phạm vi. */
+async function logAdd<T extends { id: string }>(phamVi: string, rows: unknown, clean: (v: any) => T | null): Promise<{ saved: number; skipped: number }> {
   const list = Array.isArray(rows) ? rows.slice(0, 500) : [];
-  const good = new Map<string, NhapHoan>();
+  const good = new Map<string, T>();
   for (const v of list) {
-    const e = nhapEntry(v);
+    const e = clean(v);
     if (e) good.set(e.id, e);
   }
   if (good.size) {
     const now = new Date().toISOString();
-    const up = [...good.values()].map(({ id, ...d }) => ({ pham_vi: "nhap-hoan", khoa: id, du_lieu: d, cap_nhat: now }));
+    const up = [...good.values()].map(({ id, ...d }) => ({ pham_vi: phamVi, khoa: id, du_lieu: d, cap_nhat: now }));
     fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert(up, { onConflict: "pham_vi,khoa", ignoreDuplicates: true })).error);
   }
   return { saved: good.size, skipped: list.length - good.size };
 }
 
-/** Các lượt nhập hàng hoàn của 180 ngày gần nhất. */
-export async function nhapList(): Promise<{ entries: NhapHoan[] }> {
-  const since = new Date(Date.now() - 180 * 86400_000).toISOString();
-  const rows = await allRows<{ khoa: string; du_lieu: Omit<NhapHoan, "id"> }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", "nhap-hoan").gte("cap_nhat", since).order("khoa"));
-  return { entries: rows.map((r) => ({ id: r.khoa, ...r.du_lieu })) };
+async function logList<T extends { id: string }>(phamVi: string, days: number): Promise<{ entries: T[] }> {
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  const rows = await allRows<{ khoa: string; du_lieu: Omit<T, "id"> }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", phamVi).gte("cap_nhat", since).order("khoa"));
+  return { entries: rows.map((r) => ({ id: r.khoa, ...r.du_lieu }) as T) };
 }
+
+/** Sổ nhập hàng hoàn (lượt hủy là một dòng số âm), 180 ngày gần nhất. */
+export const nhapAdd = (rows: unknown) => logAdd("nhap-hoan", rows, nhapEntry);
+export const nhapList = () => logList<NhapHoan>("nhap-hoan", 180);
+
+/** Sổ lấy hàng lệch khi đóng, 90 ngày gần nhất. */
+export const lechAdd = (rows: unknown) => logAdd("lay-lech", rows, lechEntry);
+export const lechList = () => logList<LayLech>("lay-lech", 90);
 
 export async function videoUpsert(rows: unknown, may: unknown): Promise<{ saved: number; skipped: number }> {
   const list = Array.isArray(rows) ? rows.slice(0, 500) : [];
