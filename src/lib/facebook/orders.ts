@@ -49,9 +49,9 @@ export async function ordersByAd(day: string): Promise<Map<string, AdOrders>> {
   return groupByAd(await fetchAdOrders(day, day));
 }
 
-/** FB Magic Tool: đơn tạo từ ngày `since` đến hết ngày `until` (giờ VN), chỉ bỏ đơn trạng thái 6 (hủy), theo đặc tả. */
+/** FB Magic Tool: đơn tạo từ ngày `since` đến hết ngày `until` (giờ VN), bỏ đơn trạng thái 6 (hủy) và 7 (đã xóa), giống báo sáng. */
 export async function ordersByAdRange(since: string, until: string): Promise<Map<string, AdOrders>> {
-  return groupByAd(await fetchAdOrders(since, until), new Set([6]));
+  return groupByAd(await fetchAdOrders(since, until));
 }
 
 async function fetchAdOrders(since: string, until: string): Promise<any[]> {

@@ -109,7 +109,7 @@ export default async function FbPage({ searchParams }: { searchParams: Promise<S
         </div>
         <p className="sub" style={{ marginTop: 8 }}>
           {fmt(since)}{since !== until ? ` → ${fmt(until)}` : ""} · Chi thật = chi Meta × 1,111 · Đơn/doanh thu: Pancake shop 608127 theo ad_id, bỏ đơn
-          trạng thái 6 · Màu theo <a href="/fb/tran">bảng trần</a> từng mã
+          trạng thái 6, 7 · Màu theo <a href="/fb/tran">bảng trần</a> từng mã
         </p>
         {data.errors.length ? <p className="error">Không đọc được: {data.errors.join("; ").slice(0, 600)}</p> : null}
       </div>

@@ -76,13 +76,12 @@ describe("FB Magic Tool", () => {
     assert.deepEqual(rangeOf("7", "2026-11-21", addDays), { since: "2026-11-15", until: "2026-11-21" });
   });
 
-  it("đơn Pancake: chỉ bỏ trạng thái 6 khi FB Magic Tool truyền vào", () => {
+  it("đơn Pancake: bỏ trạng thái 6 và 7", () => {
     const rows = [
       { ad_id: "x", status: 3, total_price: 100 },
       { ad_id: "x", status: 6, total_price: 200 },
       { ad_id: "x", status: 7, total_price: 300 },
     ];
-    assert.equal(groupByAd(rows, new Set([6])).get("x")!.revenue, 400);
     assert.equal(groupByAd(rows).get("x")!.revenue, 100);
   });
 });
