@@ -1784,7 +1784,7 @@ function renderXuat(){
   sn.value=groups.includes(keep)?keep:'';
   const sel=inK.filter(o=>(!sn.value||o.group===sn.value)&&(!gapOnly||o.urgent));
   XUAT.sel=sel;
-  $('xuatInfo').textContent='Đơn cần đóng hôm nay theo danh sách chị Hiền gửi: '+okGo.length+' đơn'+(ng.pending?' (đang tra sản phẩm '+ng.pending+' mã…)':'')+'.'
+  $('xuatInfo').textContent='Đơn cần đóng hôm nay theo danh sách chị Hiền gửi: '+okGo.length+' đơn'+(ng.pending?(ngoaiFail()&&!NGOAI.busy?' (CHƯA TRA ĐƯỢC '+ng.pending+' mã)':' (đang tra sản phẩm '+ng.pending+' mã…)'):'')+'.'+(ngoaiFail()&&ng.pending?' '+ngoaiFail():'')
     +(ng.miss.length?' KHÔNG TRA ĐƯỢC '+ng.miss.length+' mã: '+ng.miss.slice(0,20).join(', ')+(ng.miss.length>20?'…':'')+'.':'')
     +(ng.warn.length?' CẢNH BÁO: '+ng.warn.length+' đơn trong danh sách bị dữ liệu sàn báo chưa có hàng: '+ng.warn.slice(0,20).join(', ')+(ng.warn.length>20?'…':'')+'.':'')
     +(NGOAI.err?' '+NGOAI.err:'')
@@ -1892,18 +1892,29 @@ async function ngoaiSync(){
   catch(e){NGOAI.err='Không đọc được danh sách đơn Viettel hôm nay ('+(e.message||e.name)+').';}
   ngoaiResolve();
 }
+const NO_KEY_MSG='CHƯA NHẬP MÃ TRUY CẬP DỊCH VỤ nên chưa tra được đơn và chưa đưa được danh sách lên máy chủ. Vào Cài đặt, dán mã truy cập, rồi tải lại trang (F5).';
+const ngoaiFail=()=>!checkOn()?NO_KEY_MSG:(NGOAI.fail||'');
 async function ngoaiResolve(){
-  if(NGOAI.busy||!checkOn())return;
+  if(NGOAI.busy)return;
+  /* chưa có mã truy cập thì không tra được: phải nói rõ, không để màn hình ghi "đang tra" mãi */
+  if(!checkOn()){NGOAI.fail=NO_KEY_MSG;return;}
+  NGOAI.fail='';
   const now=Date.now();
   const todo=NGOAI.codes.filter(c=>{const r=NGOAI.cache[c];return !r||now-r.at>(r.found?60:10)*60000;});
   if(!todo.length)return;
   NGOAI.busy=true;
   try{
-    let i=0;
+    let i=0,bad=0,stop=false;
     const run=async()=>{
-      while(i<todo.length){
+      while(i<todo.length&&!stop){
         const c=todo[i++];
-        try{const d=await api({ma:c},15000);NGOAI.cache[c]=d&&d.found?{at:Date.now(),found:true,order:d.order,items:d.items}:{at:Date.now(),found:false};}catch(e){}
+        try{const d=await api({ma:c},15000);NGOAI.cache[c]=d&&d.found?{at:Date.now(),found:true,order:d.order,items:d.items}:{at:Date.now(),found:false};}
+        catch(e){
+          bad++;
+          const m=String(e&&(e.message||e.name)||'');
+          if(/HTTP 40[13]/.test(m)){stop=true;NGOAI.fail='MÃ TRUY CẬP DỊCH VỤ KHÔNG ĐÚNG nên không tra được đơn. Vào Cài đặt, dán lại mã truy cập, rồi tải lại trang (F5).';}
+          else if(!NGOAI.fail)NGOAI.fail='Chưa tra được '+'một số mã vì không gọi được máy chủ ('+m+'). Kiểm tra mạng rồi bấm lại mục Đơn cần đóng.';
+        }
         if(i%8===0&&S.view==='xuat')renderXuat();
       }
     };
