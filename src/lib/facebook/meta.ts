@@ -220,3 +220,80 @@ export async function adInsights(accountId: string, day: string): Promise<MetaAd
     }))
     .filter((r) => r.spend > 0 || r.purchases > 0);
 }
+
+/** Loại hành động "bắt đầu cuộc trò chuyện" (quảng cáo tin nhắn / CTX). */
+export const MESSAGE_ACTION = "onsite_conversion.messaging_conversation_started_7d";
+
+export type MetaRangeRow = {
+  account_id: string;
+  ad_id: string;
+  ad_name: string | null;
+  adset_id: string | null;
+  adset_name: string | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  spend: number;
+  messages: number;
+};
+
+/** Số theo từng quảng cáo của một tài khoản, cộng dồn cả khoảng ngày (giờ theo múi giờ tài khoản). Chỉ đọc. */
+export async function adInsightsRange(accountId: string, since: string, until: string): Promise<MetaRangeRow[]> {
+  const rows = await getAll(`act_${accountId}/insights`, {
+    level: "ad",
+    fields: "ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,actions",
+    time_range: JSON.stringify({ since, until }),
+    limit: "500",
+  });
+  return rows
+    .map((r) => ({
+      account_id: accountId,
+      ad_id: String(r.ad_id),
+      ad_name: r.ad_name ?? null,
+      adset_id: r.adset_id ? String(r.adset_id) : null,
+      adset_name: r.adset_name ?? null,
+      campaign_id: r.campaign_id ? String(r.campaign_id) : null,
+      campaign_name: r.campaign_name ?? null,
+      spend: Math.round(Number(r.spend ?? 0)),
+      messages: Number((r.actions ?? []).find((a: any) => a?.action_type === MESSAGE_ACTION)?.value ?? 0) || 0,
+    }))
+    .filter((r) => r.spend > 0 || r.messages > 0);
+}
+
+export type AdInfo = {
+  ad_id: string;
+  status: string; // effective_status của quảng cáo
+  adset_status: string;
+  campaign_status: string;
+  adset_daily: number | null;
+  campaign_daily: number | null;
+  page_id: string | null;
+};
+
+/** Trạng thái, ngân sách ngày (nhóm / chiến dịch) và page của các quảng cáo, gọi theo lô 50 id. Chỉ đọc. */
+export async function adsInfo(ids: string[]): Promise<Map<string, AdInfo>> {
+  const out = new Map<string, AdInfo>();
+  const fields =
+    "effective_status,adset{effective_status,daily_budget},campaign{effective_status,daily_budget},creative{effective_object_story_id,object_story_spec{page_id}}";
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
+  await Promise.all(
+    batches.map(async (b) => {
+      const body = await get("", { ids: b.join(","), fields });
+      for (const id of b) {
+        const r = body?.[id];
+        if (!r) continue;
+        const story = String(r.creative?.effective_object_story_id ?? "");
+        out.set(id, {
+          ad_id: id,
+          status: String(r.effective_status ?? ""),
+          adset_status: String(r.adset?.effective_status ?? ""),
+          campaign_status: String(r.campaign?.effective_status ?? ""),
+          adset_daily: numOrNull(r.adset?.daily_budget),
+          campaign_daily: numOrNull(r.campaign?.daily_budget),
+          page_id: r.creative?.object_story_spec?.page_id ? String(r.creative.object_story_spec.page_id) : story.includes("_") ? story.split("_")[0] : null,
+        });
+      }
+    })
+  );
+  return out;
+}
