@@ -1431,6 +1431,8 @@ function sealCheck(id,warn){
   /* mã đơn tra ra từ mã kho quét (ví dụ quét SPXVN… ra 261119N12G44SH): dùng để đối soát với danh sách đơn chuẩn bị */
   if(c.order&&c.order.id){meta.orderId=String(c.order.id);meta.sysId=c.order.system_id==null?'':String(c.order.system_id);meta.source=c.order.source||'';}
   if(c.order&&c.order.cancelled){meta.check='Đơn đã hủy';return;}
+  /* mở kiện hoàn mà không quét sản phẩm nào là bình thường: không báo thiếu */
+  if(hh&&!c.ret.length){meta.check='Không quét sản phẩm';return;}
   const n=checkCount(c);
   meta.check=(n.got===n.need?'Đủ ':'Thiếu ')+n.got+'/'+n.need+(c.wrong?' · quét sai '+c.wrong+' lần':'');
   if(warn&&n.got<n.need){
