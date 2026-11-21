@@ -209,8 +209,50 @@ export async function vtpMailGet(): Promise<{ docs: Record<string, VtpMailDoc>; 
 }
 
 export async function vtpMailSave(ngay: string, docs: Record<string, VtpMailDoc>): Promise<void> {
+  await cacheDrop("hoan");
   const now = new Date().toISOString();
   const rows = Object.entries(docs).map(([khoa, du_lieu]) => ({ pham_vi: "hoan-vtp", khoa, du_lieu, cap_nhat: now }));
   if (rows.length) fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert(rows)).error);
   fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert({ pham_vi: "hoan-vtp-meta", khoa: "last", du_lieu: { ngay, at: Date.now(), n: rows.length }, cap_nhat: now })).error);
+}
+
+/* Bộ nhớ đệm cho các lời gọi chậm (hàng hoàn ~1 phút, danh mục sản phẩm ~6 giây): lưu kết quả vào kho_ghi_chu. */
+
+/** Bản đã lưu còn dùng được không: có giờ lưu, chưa quá hạn, không nằm ở tương lai. */
+export function cacheFresh(at: unknown, ttlMs: number, now: number): boolean {
+  const t = Number(at);
+  return Number.isFinite(t) && t > 0 && t <= now && now - t < ttlMs;
+}
+
+/**
+ * Trả bản đã lưu nếu còn hạn; không thì chạy fn, lưu lại rồi trả. Lỗi đọc/ghi bộ nhớ đệm không làm hỏng lời gọi.
+ * keep: chỉ lưu kết quả đạt (ví dụ không có lỗi nguồn).  force: bỏ qua bản đã lưu.
+ */
+export async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>, keep: (v: T) => boolean = () => true, force = false): Promise<T> {
+  if (!force) {
+    try {
+      const r = await db().from("kho_ghi_chu").select("du_lieu").eq("pham_vi", "cache").eq("khoa", key).maybeSingle();
+      const d = r.data?.du_lieu as any;
+      if (!r.error && d && cacheFresh(d.at, ttlMs, Date.now())) return d.v as T;
+    } catch {
+      /* đọc không được thì tính lại */
+    }
+  }
+  const v = await fn();
+  if (keep(v)) {
+    try {
+      await db().from("kho_ghi_chu").upsert({ pham_vi: "cache", khoa: key, du_lieu: { at: Date.now(), v }, cap_nhat: new Date().toISOString() });
+    } catch {
+      /* ghi không được thì lần sau tính lại */
+    }
+  }
+  return v;
+}
+
+export async function cacheDrop(key: string): Promise<void> {
+  try {
+    await db().from("kho_ghi_chu").delete().eq("pham_vi", "cache").eq("khoa", key);
+  } catch {
+    /* bỏ qua */
+  }
 }

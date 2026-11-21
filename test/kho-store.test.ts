@@ -1,7 +1,7 @@
 /** Dữ liệu vận hành của kho trên Supabase: lọc mã, ghi chú, dòng sổ video. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cleanCodes, cleanNote, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
+import { cacheFresh, cleanCodes, cleanNote, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
 
 describe("kho-store", () => {
   it("lọc mã đơn: viết hoa, bỏ khoảng trắng, bỏ trùng và thứ không phải mã", () => {
@@ -28,6 +28,13 @@ describe("kho-store", () => {
       { ma: "PKE1574103822", status: "Đã trả", reason: "Không có nhu cầu nhận hàng" },
     ]);
     assert.deepEqual(cleanVtpRows("PKE1"), []);
+  });
+  it("bản đã lưu: còn hạn thì dùng, quá hạn / thiếu giờ / giờ ở tương lai thì tính lại", () => {
+    const now = 1_000_000_000;
+    assert.equal(cacheFresh(now - 5 * 60_000, 10 * 60_000, now), true);
+    assert.equal(cacheFresh(now - 10 * 60_000, 10 * 60_000, now), false);
+    assert.equal(cacheFresh(now + 1, 10 * 60_000, now), false);
+    for (const x of [0, null, undefined, "x"]) assert.equal(cacheFresh(x, 10 * 60_000, now), false, String(x));
   });
   it("dòng sổ video: nhận dòng đủ thông tin, bỏ dòng thiếu", () => {
     const now = new Date("2026-11-20T08:00:00Z");

@@ -1,5 +1,5 @@
 import { checkKhoKey, lookupOrder, ordersToPack, productCodes, returnsExpected, shopeeArrange, shopeeLabels, vtpMailPush } from "@/lib/kho";
-import { dayGet, dayWrite, markSet, marksGet, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
+import { cached, dayGet, dayWrite, markSet, marksGet, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +26,7 @@ export function OPTIONS() {
  *   GET /api/kho/don?ngay=YYYY-MM-DD                     → { codes[], notes{}, resetAt, updatedAt } danh sách đơn cần đóng / soát đơn của ngày (lưu trên Supabase)
  *   GET /api/kho/don?video=<số ngày>                     → { rows[] } sổ video (không có nội dung video)
  *   GET /api/kho/don?hoanmarks=1                         → { marks{} } tình trạng kiện hoàn
+ *   Thêm &moi=1 vào ?danhmuc=1 hoặc ?hoan=1 để bỏ qua bản đã lưu (danh mục lưu 6 giờ, hàng hoàn 10 phút).
  *   GET /api/kho/don?danhmuc=1                           → { codes[] } mọi mã vạch + mã phân loại
  */
 export async function GET(request: Request) {
@@ -34,9 +35,11 @@ export async function GET(request: Request) {
   if (auth === "bad") return json({ error: "unauthorized" }, 401);
   const sp = new URL(request.url).searchParams;
   try {
-    if (sp.get("danhmuc")) return json({ codes: await productCodes() });
+    // Hai lời gọi chậm dùng bản đã lưu (danh mục 6 giờ, hàng hoàn 10 phút); thêm &moi=1 để lấy mới ngay.
+    const moi = !!sp.get("moi");
+    if (sp.get("danhmuc")) return json({ codes: await cached("danhmuc", 6 * 3600_000, productCodes, (v) => v.length > 0, moi) });
     if (sp.get("xuat")) return json(await ordersToPack());
-    if (sp.get("hoan")) return json(await returnsExpected());
+    if (sp.get("hoan")) return json(await cached("hoan", 10 * 60_000, returnsExpected, (v) => !v.errors.length, moi));
     const ngay = sp.get("ngay");
     if (ngay != null) return validDay(ngay) ? json(await dayGet(ngay)) : json({ error: "ngay phải có dạng YYYY-MM-DD" }, 400);
     if (sp.get("video")) return json(await videoList(Number(sp.get("video")) || 30));
