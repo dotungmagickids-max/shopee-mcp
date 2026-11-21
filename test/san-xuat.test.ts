@@ -142,7 +142,7 @@ describe("tóm tắt, phiếu chờ cắt, nhật ký", () => {
   ];
   const hangVe = [
     ve(1, "2026-11-20", [{ mau: "Đỏ", size: "130", xuong_giao: 5, kho_dem: null }]),
-    ve(2, HOM_NAY, [{ mau: "Đỏ", size: "130", xuong_giao: 4, kho_dem: 4 }, { mau: "Trắng", size: "130", xuong_giao: 8, kho_dem: 8 }], { so_phieu_pancake: "24678", nguoi_ky: "Anh Khánh" }),
+    ve(2, HOM_NAY, [{ mau: "Đỏ", size: "130", xuong_giao: 4, kho_dem: 4 }, { mau: "Trắng", size: "130", xuong_giao: 8, kho_dem: 8 }], { so_phieu_pancake: "1002", nguoi_ky: "Kho A" }),
     ve(3, HOM_NAY, [{ mau: "Đỏ", size: "140", xuong_giao: 6, kho_dem: 6 }], { khong_nhap_pancake: true }),
   ];
   const phieu: PhieuDat[] = [
@@ -164,7 +164,7 @@ describe("tóm tắt, phiếu chờ cắt, nhật ký", () => {
     const n = nhatKy(hangVe, los);
     assert.deepEqual(n.map((d) => [d.ngay, d.khoDem, d.choKhoDem, d.lan.length]), [[HOM_NAY, 18, 0, 2], ["2026-11-20", 0, 5, 1]]);
     assert.equal(moTaLanVe(hangVe[1]), "Đỏ 130: 4 · Trắng 130: 8");
-    assert.equal(nhanPancake(hangVe[1]), "Pancake #24678");
+    assert.equal(nhanPancake(hangVe[1]), "Pancake #1002");
     assert.equal(nhanPancake(hangVe[2]), "Không nhập Pancake");
     assert.equal(nhanPancake(hangVe[0]), "Chưa nhập Pancake");
   });
@@ -172,16 +172,16 @@ describe("tóm tắt, phiếu chờ cắt, nhật ký", () => {
 
 describe("kiểm tra đầu vào công cụ ghi", () => {
   const dong = [{ mau: "Đỏ", size: "130", xuong_giao: 4, kho_dem: 4 }];
-  const moi = { ma_hang: "ADT26001", lo: "L1", ngay: HOM_NAY, lines: dong, nguoi_ky: "Anh Khánh" };
+  const moi = { ma_hang: "ADT26001", lo: "L1", ngay: HOM_NAY, lines: dong, nguoi_ky: "Kho A" };
   it("lần hàng về hợp lệ", () => {
-    assert.equal(loiHangVe({ ...moi, pancake: "24678" }, HOM_NAY), null);
-    assert.equal(loiHangVe({ id: 5, pancake: "24678" }, HOM_NAY), null, "sửa theo id: database kiểm lại trên số đã lưu");
+    assert.equal(loiHangVe({ ...moi, pancake: "1002" }, HOM_NAY), null);
+    assert.equal(loiHangVe({ id: 5, pancake: "1002" }, HOM_NAY), null, "sửa theo id: database kiểm lại trên số đã lưu");
   });
   it("không nhập Pancake trước khi kho thực nhận", () => {
     const chuaDem = [{ mau: "Đỏ", size: "130", xuong_giao: 4, kho_dem: null }];
-    assert.match(loiHangVe({ ...moi, lines: chuaDem, pancake: "24678" }, HOM_NAY)!, /Kho chưa đếm đủ/);
+    assert.match(loiHangVe({ ...moi, lines: chuaDem, pancake: "1002" }, HOM_NAY)!, /Kho chưa đếm đủ/);
     assert.equal(loiHangVe({ ...moi, lines: chuaDem }, HOM_NAY), null, "chưa đếm vẫn ghi được, miễn không có số Pancake");
-    assert.match(loiHangVe({ ...moi, nguoi_ky: " ", pancake: "24678" }, HOM_NAY)!, /Thiếu người của kho ký nhận/);
+    assert.match(loiHangVe({ ...moi, nguoi_ky: " ", pancake: "1002" }, HOM_NAY)!, /Thiếu người của kho ký nhận/);
   });
   it("thiếu lô, ngày tương lai, trùng dòng, dòng không số, vừa có phiếu vừa 'không nhập'", () => {
     assert.match(loiHangVe({ ...moi, lo: undefined }, HOM_NAY)!, /cần mã hàng, lô, ngày/);
@@ -195,7 +195,7 @@ describe("kiểm tra đầu vào công cụ ghi", () => {
   it("bắt buộc có nguồn", () => {
     assert.equal(ve1.safeParse({ ...moi }).success, false);
     assert.equal(ve1.safeParse({ ...moi, nguon: "  " }).success, false);
-    assert.equal(ve1.safeParse({ ...moi, nguon: "zalo:FOB msg 8841" }).success, true);
+    assert.equal(ve1.safeParse({ ...moi, nguon: "zalo:nhóm xưởng msg 2" }).success, true);
     assert.equal(z.object(lotSaveInput).safeParse({ ma_hang: "ADT26001", lo: "L1" }).success, false);
     assert.equal(z.object(rescheduleInput).safeParse({ ma_hang: "ADT26001", lo: "L1", hen_moi: "2026-11-25", ly_do: "xưởng báo" }).success, false);
   });
@@ -255,18 +255,18 @@ describe("công cụ MCP mk_sx_*", () => {
 
   it("đổi ngày hẹn gọi đúng hàm, kèm người ghi và nguồn", async () => {
     const r = await goi(tools("read_write"), "mk_sx_lot_reschedule", {
-      ma_hang: "ADT26001", lo: "L1", hen_moi: "2026-11-25", ly_do: "Chị Hiền QLSX báo dời", nguon: "zalo:FOB 18/11 14h30",
+      ma_hang: "ADT26001", lo: "L1", hen_moi: "2026-11-25", ly_do: "QLSX xưởng báo dời", nguon: "zalo:nhóm xưởng msg 1",
     });
     assert.ok(!r.isError);
     assert.deepEqual(rpcCalls, [{
       fn: "mk_sx_lot_reschedule",
-      args: { p_agent: "Thu Hà", p_ma_hang: "ADT26001", p_lo: "L1", p_hen_moi: "2026-11-25", p_ly_do: "Chị Hiền QLSX báo dời", p_nguon: "zalo:FOB 18/11 14h30" },
+      args: { p_agent: "Thu Hà", p_ma_hang: "ADT26001", p_lo: "L1", p_hen_moi: "2026-11-25", p_ly_do: "QLSX xưởng báo dời", p_nguon: "zalo:nhóm xưởng msg 1" },
     }]);
   });
 
   it("ghi số Pancake khi kho chưa đếm: báo lỗi, không gọi database", async () => {
     const r = await goi(tools("read_write"), "mk_sx_arrival_save", {
-      nguon: "phiếu xưởng 20/11", ma_hang: "ADT26001", lo: "L1", ngay: "2026-11-20", nguoi_ky: "Anh Khánh", pancake: "24673",
+      nguon: "phiếu xưởng 20/11", ma_hang: "ADT26001", lo: "L1", ngay: "2026-11-20", nguoi_ky: "Kho A", pancake: "1001",
       lines: [{ mau: "Đỏ", size: "130", xuong_giao: 1 }],
     });
     assert.equal(r.isError, true);
@@ -279,7 +279,7 @@ describe("công cụ MCP mk_sx_*", () => {
     await goi(t, "mk_sx_progress", {});
     await goi(t, "mk_sx_arrivals", {});
     await goi(t, "mk_sx_orders", {});
-    await goi(t, "mk_sx_order_save", { ma_hang: "ADT26002", dot: "L2", nguon: "PĐH-261117-02", lines: [{ mau: "Đỏ", size: "", so_luong: 500 }] });
+    await goi(t, "mk_sx_order_save", { ma_hang: "ADT26002", dot: "L2", nguon: "PĐH-THỬ-01", lines: [{ mau: "Đỏ", size: "", so_luong: 500 }] });
     await goi(t, "mk_sx_lot_save", { ma_hang: "ADT26001", lo: "L1", nguon: "sổ cắt xưởng", lines: [{ mau: "Đỏ", size: "130", so_cat: 16 }] });
     await goi(t, "mk_sx_lot_reschedule", { ma_hang: "ADT26001", lo: "L1", hen_moi: "2026-11-25", ly_do: "xưởng báo", nguon: "zalo 1" });
     await goi(t, "mk_sx_arrival_save", { nguon: "phiếu 1", ma_hang: "ADT26001", lo: "L1", ngay: "2026-11-20", lines: [{ mau: "Đỏ", size: "130", kho_dem: 1 }] });
@@ -318,13 +318,13 @@ describe("script nạp số đầu", () => {
   ];
   const HANG_VE = [
     ["Ngày giao", "Mã hàng", "Lô", "Màu", "Size", "SL xưởng giao", "SL kho đếm", "Số tính về kho (tự tính)", "Lệch", "Kho nhận", "Xưởng xác nhận", "Ghi chú"],
-    ["20/11/2026", "ADT26001", "L1", "Đỏ", "130", "5", "", "5", "", "", "Chị Hiền QLSX", "Phiếu xuất xưởng 20/11. Pancake #24673. Chờ kho đếm"],
-    ["21/11/2026", "ADT26001", "L1", "Đỏ", "130", "4", "4", "4", "0", "Anh Khánh", "Chị Oanh", "Phiếu xưởng 21/11 Lần 2. Pancake #24678"],
-    ["21/11/2026", "ADT26001", "L1", "Trắng", "130", "8", "8", "8", "0", "Anh Khánh", "Chị Oanh", ""],
-    ["21/11/2026", "ADT26001", "L1", "Đỏ", "130", "2", "2", "", "", "Anh Khánh", "Chị Oanh", ""],
+    ["20/11/2026", "ADT26001", "L1", "Đỏ", "130", "5", "", "5", "", "", "QLSX xưởng", "Phiếu xuất xưởng 20/11. Pancake #1001. Chờ kho đếm"],
+    ["21/11/2026", "ADT26001", "L1", "Đỏ", "130", "4", "4", "4", "0", "Kho A", "Xưởng B", "Phiếu xưởng 21/11 Lần 2. Pancake #1002"],
+    ["21/11/2026", "ADT26001", "L1", "Trắng", "130", "8", "8", "8", "0", "Kho A", "Xưởng B", ""],
+    ["21/11/2026", "ADT26001", "L1", "Đỏ", "130", "2", "2", "", "", "Kho A", "Xưởng B", ""],
     ["07/10/2026", "QD26002", "L2", "Đen", "140", "66", "", "", "", "", "Sổ cắt xưởng", ""],
     ["", "QD26002", "L2", "Đen", "140", "5", "", "", "", "", "Sổ cắt xưởng", "ngày sai"],
-    ["21/11/2026", "BD26011", "L2", "Xanh than", "140", "44", "44", "44", "0", "Anh Khánh", "Chị Oanh", "Pancake #24676"],
+    ["21/11/2026", "BD26011", "L2", "Xanh than", "140", "44", "44", "44", "0", "Kho A", "Xưởng B", "Pancake #1003"],
   ];
   const kh = lapKeHoach(LO_CAT, HANG_VE);
 
@@ -348,11 +348,11 @@ describe("script nạp số đầu", () => {
     const adt = kh.hangVe.filter((v) => v.ma_hang === "ADT26001");
     assert.deepEqual(adt.map((v) => [v.ngay, v.lines.length, v.pancake, v.nguoi_ky]), [
       ["2026-11-20", 1, null, null],
-      ["2026-11-21", 2, "24678", "Anh Khánh"],
-      ["2026-11-21", 1, null, "Anh Khánh"],
+      ["2026-11-21", 2, "1002", "Kho A"],
+      ["2026-11-21", 1, null, "Kho A"],
     ]);
     assert.match(adt[1].nguon, /tab "Giao hàng về kho", dòng 3, 4/);
-    assert.ok(kh.canhBao.some((x) => /#24673 nhưng kho chưa đếm đủ/.test(x)));
+    assert.ok(kh.canhBao.some((x) => /#1001 nhưng kho chưa đếm đủ/.test(x)));
     assert.ok(kh.canhBao.some((x) => /dòng 5: .*cột "Số tính về kho" trống/.test(x)));
   });
 

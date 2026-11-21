@@ -27,7 +27,7 @@ export const nguon = z
   .trim()
   .min(3)
   .max(500)
-  .describe("Bắt buộc. Nguồn của số: msgId Zalo, số phiếu xưởng, ảnh chữ ký kho… vd 'zalo:FOB msg 8841' hoặc 'phiếu xưởng 21/11 lần 2'");
+  .describe("Bắt buộc. Nguồn của số: msgId Zalo, số phiếu xưởng, ảnh chữ ký kho… vd 'zalo:<nhóm> msg <id>' hoặc 'phiếu xưởng 21/11 lần 2'");
 
 export const dongDat = z.array(z.object({ mau, size, so_luong: soNguyen })).min(1).max(300);
 export const dongCat = z.array(z.object({ mau, size, so_cat: soNguyen })).min(1).max(300);
