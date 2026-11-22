@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Magickids – Quản lý kho</title>
+<style>
+:root{--accent:#0f6e4a;--ink:#1c2430;--mut:#667085;--line:#d9dee5;--red:#c62828;--amber:#b26a00}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.4 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:#f4f6f8}
+button{font:inherit;padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+input,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--accent);color:#fff;flex-wrap:wrap}
+header h1{font-size:18px;margin:0 8px 0 0}
+header a{color:#fff;font-size:14px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;font-size:14px}
+.chip{background:rgba(0,0,0,.22);padding:4px 10px;border-radius:999px;white-space:nowrap}
+.chip.bad{background:var(--red)}
+.banner{padding:12px 16px;font-size:20px;font-weight:700;cursor:pointer}
+.banner.ok{background:#d9f2e3;color:#0b5c37}
+.banner.warn{background:#ffe6b3;color:#6b3f00}
+.banner.err{background:var(--red);color:#fff}
+main{max-width:1200px;margin:12px auto;padding:0 12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+h2{margin:0 0 10px;font-size:20px}
+h3{margin:18px 0 6px;font-size:15px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.hint{color:var(--mut);font-size:13px;margin:8px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:10px 0 14px}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi b{display:block;font-size:24px}
+.kpi span{color:var(--mut);font-size:13px}
+.kpi.bad b{color:var(--red)}
+.kpi.amber b{color:var(--amber)}
+.pend{margin-top:12px;padding:10px 12px;border:2px solid var(--amber);border-radius:10px;background:#fff8e6}
+.pend b{display:block;margin-bottom:8px;font-size:18px}
+.tw{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{color:var(--mut);font-size:12px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.code{font-family:Consolas,monospace;font-weight:700}
+td.warn{color:var(--red);font-weight:700}
+td.wrap{white-space:normal}
+tr.bad td{background:#fdeaea}
+tr.out td{background:#fff4d6}
+table button{padding:4px 9px;font-size:13px}
+.tabs{display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap}
+.tabs button{font-weight:700}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+tr.grp{cursor:pointer}
+tr.grp:hover td{background:#f4f6f8}
+tr.sub td{background:#fafbfc;font-size:13px}
+tr.sub td.code{font-weight:400;padding-left:22px}
+.tag{display:inline-block;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;background:#eef0f3;color:var(--mut);margin-left:6px}
+.tag.late{background:#fdeaea;color:var(--red)}
+.tag.warn{background:#fff4d6;color:var(--amber)}
+td.z{color:#b6bcc6}
+@media (max-width:700px){header{padding:8px 10px}header h1{font-size:16px}.chips{margin-left:0}main{padding:0 8px}.card{padding:10px}.banner{font-size:15px}}
+#gate{max-width:460px;margin:60px auto;text-align:center}
+#gate input{width:100%;margin:10px 0}
+#big{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:99;pointer-events:none;background:var(--red);color:#fff;border:4px solid #fff;border-radius:16px;box-shadow:0 0 0 3px var(--red),0 12px 36px rgba(0,0,0,.45);padding:16px 28px;text-align:center;max-width:92vw}
+#big div:first-child{font-size:clamp(28px,4vw,54px);font-weight:900;line-height:1.1}
+#big div:last-child{font-size:18px;font-weight:600;margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Magickids · Quản lý kho</h1>
+  <a href="/kho">Sang trang quay đóng hàng</a>
+  <div class="chips"><span class="chip" id="cNet">…</span><span class="chip" id="cQueue" hidden></span></div>
+</header>
+<div id="banner" class="banner" hidden></div>
+<div id="big" hidden><div></div><div></div></div>
+
+<section id="gate" class="card" hidden>
+  <h2>Quản lý kho</h2>
+  <div class="hint">Dán mã truy cập dịch vụ (cùng mã với trang quay đóng hàng). Mã chỉ lưu trong trình duyệt của máy này.</div>
+  <input id="gKey" type="password" autocomplete="off" placeholder="Mã truy cập dịch vụ">
+  <button id="btnGate" class="primary">Vào</button>
+  <div class="hint" id="gMsg"></div>
+</section>
+
+<main id="app" hidden>
+<div class="tabs"><button data-tab="ton">Tồn kho</button><button data-tab="kiem">Tổng kiểm kho</button></div>
+<section class="card" id="secTon" hidden>
+  <h2>Tồn kho và hàng sắp về</h2>
+  <div class="filters">
+    <select id="tLoc">
+      <option value="">Còn hàng hoặc sắp về</option>
+      <option value="con">Chỉ mã còn hàng</option>
+      <option value="ve">Chỉ mã sắp về, chờ cắt</option>
+      <option value="het">Hết hàng, đang chờ về</option>
+      <option value="cho">Có đơn đang chờ hàng</option>
+      <option value="am">Có phân loại tồn âm</option>
+    </select>
+    <input type="search" id="tTim" placeholder="Tìm mã hàng, mã phân loại, tên">
+    <button id="btnTonReload">Tải lại</button>
+    <button id="btnTonCsv">Xuất CSV</button>
+  </div>
+  <div class="hint" id="tInfo"></div>
+  <div class="cards" id="tCards"></div>
+  <div class="tw"><table><thead><tr><th>Mã hàng</th><th class="num">Tồn thực</th><th class="num">Đơn đang chờ</th><th class="num">Sắp về</th><th>Lô đang về</th><th class="num">Đặt, chưa cắt</th></tr></thead><tbody id="tbTon"></tbody></table></div>
+</section>
+<section class="card" id="secKiem" hidden>
+  <h2>Tổng kiểm kho</h2>
+  <div class="filters">
+    <label>Đợt kiểm (ngày bắt đầu) <input type="date" id="kDot"></label>
+    <label>Kệ / khu <input id="kKe" autocomplete="off" placeholder="ví dụ A3" style="width:110px"></label>
+    <input id="kScan" autocomplete="off" spellcheck="false" placeholder="Quét mã vạch, rồi gõ số lượng và Enter" style="min-width:300px;flex:1">
+    <button id="btnGhi" class="primary">Ghi</button>
+  </div>
+  <div id="kPend" class="pend" hidden></div>
+  <div class="hint" id="kInfo"></div>
+  <div class="cards" id="kCards"></div>
+  <div class="filters">
+    <select id="kLoc"><option value="">Mã vừa đếm trước</option><option value="lech">Chỉ mã lệch với Pancake</option><option value="chua">Pancake có tồn, chưa đếm</option></select>
+    <input type="search" id="kTim" placeholder="Tìm mã sản phẩm">
+    <button id="btnReload">Tải lại</button>
+    <button id="btnCsv">Xuất CSV</button>
+  </div>
+  <div class="tw"><table><thead><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Đã đếm</th><th class="num">Tồn Pancake</th><th class="num">Lệch</th><th>Kệ</th></tr></thead><tbody id="tb"></tbody></table></div>
+  <h3>Các lượt vừa đếm</h3>
+  <div class="tw"><table><tbody id="tbLog"></tbody></table></div>
+</section>
+</main>
+
+<script>
+'use strict';
+/* Magickids – Quản lý kho. Trang riêng, tách khỏi trang quay đóng hàng (/kho) nhưng dùng chung dịch vụ /api/kho/don và mã truy cập.
+   Số liệu gốc nằm trên máy chủ (Supabase). Mỗi lượt ghi được cất vào trình duyệt trước, lên máy chủ xong mới bỏ: mất mạng không mất số đếm.
+   Chỉ đọc Pancake để so, KHÔNG chỉnh tồn trên Pancake. Không có khóa, mật khẩu nào trong mã nguồn. */
+const TEST=new URLSearchParams(location.search).has('thu');
+const $=id=>document.getElementById(id);
+const norm=c=>String(c==null?'':c).toUpperCase().replace(/\s+/g,'');
+const p2=n=>String(n).padStart(2,'0');
+const dayStr=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
+const vnTime=t=>{const d=new Date(t);return p2(d.getDate())+'/'+p2(d.getMonth()+1)+'/'+d.getFullYear()+' '+p2(d.getHours())+':'+p2(d.getMinutes());};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){localStorage.setItem(k,JSON.stringify(v));}};
+const K=TEST?'mkKhoThu:':'mkKho:';
+const S={key:'',catalog:new Set(),pair:new Map(),stock:null,stockAt:0,stockErr:'',sx:null,sxErr:'',tab:'ton',open:new Set(),ton:[],dot:'',server:[],queue:[],err:'',pend:null,rows:[],online:true};
+
+function banner(msg,kind){const b=$('banner');b.textContent=msg;b.className='banner '+(kind||'ok');b.hidden=false;}
+function bigAlert(a,b){const el=$('big');el.children[0].textContent=a;el.children[1].textContent=b||'';el.hidden=false;clearTimeout(bigAlert.t);bigAlert.t=setTimeout(()=>{el.hidden=true;},5000);}
+let actx=null;
+function beep(kind){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    const f={ok:[880,1320],start:[660],warn:[440,440],err:[220,180,220]}[kind]||[660];
+    f.forEach((hz,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=hz;o.type=kind==='err'?'square':'sine';g.gain.value=.15;o.connect(g);g.connect(actx.destination);o.start(actx.currentTime+i*.14);o.stop(actx.currentTime+i*.14+.12);});
+  }catch(e){}
+}
+function downloadBlob(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}
+
+/* ---------- dịch vụ ---------- */
+const MOCK={
+  get sv(){return LS.get('mkKhoThuSv',{});},
+  get(p){
+    if(p.danhmuc)return {codes:['1893-10','ADT25002TRANG170','2001-05','QD26036DEN150','9999-01'],pairs:[['1893-10','ADT25002TRANG170'],['2001-05','QD26036DEN150']]};
+    if(p.tonpancake)return {at:Date.now(),stock:[['ADT25002TRANG170',5,'Áo dài tay phối kẻ ADT25002','ADT25002',0],['ADT25002XANHTHAN150',0,'Áo dài tay phối kẻ ADT25002','ADT25002',4],['QD26036DEN150',12,'QD26036','QD26036',2],['QD26036GHI140',-1,'QD26036','QD26036',0],['BD26011GHI140',3,'Bộ đồ BD26011','BD26011',0],['AK24001DO120',0,'Áo khoác cũ','AK24001',0]]};
+    if(p.sanxuat)return {at:Date.now(),homNay:dayStr(new Date()),los:[
+      {ma:'QD26036',lo:'L1',conNo:30,choVe:true,henTra:'2026-11-20',nhan:{k:'late',t:'Trễ 2 ngày'},maTran:{sizes:['140','150'],hang:[{mau:'Đen',o:[10,15]},{mau:'Ghi',o:[5,null]}]},theoMau:[]},
+      {ma:'ADT25003',lo:'Tái 23/10',conNo:7,choVe:true,henTra:null,nhan:{k:'warn',t:'Về một phần · chưa hẹn'},maTran:null,theoMau:[{mau:'Xanh than',conNo:4},{mau:'Ghi',conNo:3}]},
+      {ma:'BD26011',lo:'L1',conNo:0,choVe:false,henTra:null,nhan:{k:'ok',t:'Đủ lô'},maTran:null,theoMau:[]}],
+      phieu:[{ma:'ADT25002',dot:'Lô 2',conCho:1400,soDat:1400},{ma:'BD24066',dot:'',conCho:338,soDat:338}]};
+    if(p.kiemke)return {entries:this.sv[p.kiemke]||[]};
+    return {error:'không có'};
+  },
+  post(b){
+    if(window.__mkOffline)throw new Error('mất mạng (giả)');
+    const s=this.sv,l=s[b.dot]=s[b.dot]||[];for(const e of b.rows||[])if(!l.some(x=>x.id===e.id))l.push(e);LS.set('mkKhoThuSv',s);return {saved:(b.rows||[]).length,skipped:0};
+  }
+};
+async function api(params,timeout){
+  if(TEST){await sleep(150);return MOCK.get(params);}
+  const u=new URL('/api/kho/don',location.origin);for(const k in params)u.searchParams.set(k,params[k]);
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),timeout||20000);
+  try{
+    const r=await fetch(u,{headers:{'x-mk-key':S.key},signal:ctl.signal,cache:'no-store'});
+    if(r.status===401)throw new Error('sai mã truy cập');
+    let d=null;try{d=await r.json();}catch(e){}
+    if(!r.ok||!d||d.error)throw new Error(d&&d.error||('HTTP '+r.status));
+    return d;
+  }catch(e){if(e.name==='AbortError')throw new Error('quá thời gian chờ');throw e;}
+  finally{clearTimeout(t);}
+}
+async function apiPost(body,timeout){
+  if(TEST){await sleep(100);return MOCK.post(body);}
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),timeout||20000);
+  try{
+    const r=await fetch('/api/kho/don',{method:'POST',headers:{'x-mk-key':S.key,'content-type':'application/json'},body:JSON.stringify(body),signal:ctl.signal});
+    let d=null;try{d=await r.json();}catch(e){}
+    if(!r.ok||!d||d.error)throw new Error(d&&d.error||('HTTP '+r.status));
+    return d;
+  }catch(e){if(e.name==='AbortError')throw new Error('quá thời gian chờ');throw e;}
+  finally{clearTimeout(t);}
+}
+/* mã truy cập: lấy lại mã máy này đã nhập ở trang quay đóng hàng (cùng trình duyệt), không có thì hỏi */
+async function keyFromPackingPage(){
+  try{
+    if(!indexedDB.databases)return '';
+    if(!(await indexedDB.databases()).some(d=>d.name==='mk-quay-dong-hang'))return '';   /* không tự tạo kho dữ liệu của trang kia */
+    const db=await new Promise((ok,no)=>{const r=indexedDB.open('mk-quay-dong-hang');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);});
+    try{
+      if(!db.objectStoreNames.contains('kv'))return '';
+      const v=await new Promise((ok,no)=>{const q=db.transaction('kv').objectStore('kv').get('settings');q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error);});
+      return v&&v.apiKey||'';
+    }finally{db.close();}
+  }catch(e){return '';}
+}
+
+/* ---------- danh mục và tồn Pancake ---------- */
+const PROD_SHAPE=/^(\d{3,5}-\d{1,3}|[A-Z]{2,4}\d{5}[A-Z]+\d{2,3})$/;
+const prodLike=c=>S.catalog.has(c)||PROD_SHAPE.test(c);
+const toSku=code=>{const c=norm(code);return S.pair.get(c)||c;};
+async function loadCatalog(){
+  const c=LS.get(K+'catalog',null);
+  if(c&&c.codes){S.catalog=new Set(c.codes);S.pair=new Map(c.pairs||[]);}
+  if(c&&Date.now()-c.at<6*3600000)return;
+  const d=await api({danhmuc:1},60000);
+  const codes=(d.codes||[]).map(norm).filter(Boolean),pairs=(d.pairs||[]).map(p=>[norm(p[0]),norm(p[1])]).filter(p=>p[0]&&p[1]);
+  S.catalog=new Set(codes);S.pair=new Map(pairs);
+  try{LS.set(K+'catalog',{at:Date.now(),codes,pairs});}catch(e){}
+}
+let stockP=null;
+function loadStock(force){                        /* hai mục cùng cần tồn Pancake: đang lấy dở thì dùng chung một lần gọi */
+  if(!stockP)stockP=loadStock1(force).finally(()=>{stockP=null;});
+  return stockP;
+}
+async function loadStock1(force){
+  if(!force&&S.stock&&Date.now()-S.stockAt<10*60000)return;
+  try{
+    const d=await api({tonpancake:1},90000);if(!Array.isArray(d.stock))throw new Error('máy chủ trả sai dạng');
+    S.stock=new Map(d.stock.map(x=>[norm(x[0]),[+x[1]||0,x[2]||'',norm(x[3]),+x[4]||0]]));S.stockAt=d.at||Date.now();S.stockErr='';
+  }catch(e){S.stockErr=e.message||e.name;}
+}
+
+/* ---------- Tồn kho (SỐ TẠM, chỉ đọc): tồn thực Pancake + hàng sắp về theo sổ sản xuất. Sau tổng kiểm sẽ thay bằng số đếm ---------- */
+async function loadSx(){
+  try{const d=await api({sanxuat:1},30000);if(!Array.isArray(d.los))throw new Error('máy chủ trả sai dạng');S.sx=d;S.sxErr='';}
+  catch(e){S.sxErr=e.message||e.name;}
+}
+const plainVN=x=>String(x==null?'':x).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'D').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const maOf=(sku,ma)=>ma||((/^([A-Z]{2,4}\d{5})/.exec(sku)||[])[1])||sku;
+/* gom theo mã hàng. stock = Map mã phân loại → [tồn thực, tên, mã hàng, đơn đang chờ]; sx = sổ sản xuất. Cả hai có thể null */
+function tonRows(stock,sx){
+  const g=new Map();
+  const grp=ma=>{let r=g.get(ma);if(!r){r={ma,name:'',ton:0,am:0,cho:0,ve:0,cat:0,lo:[],le:[],vs:new Map()};g.set(ma,r);}return r;};
+  if(stock)for(const [sku,v] of stock){
+    const r=grp(maOf(sku,v[2])),q=v[0],w=v[3]||0;
+    r.vs.set(sku,{sku,ton:q,cho:w,ve:0});
+    if(q>0)r.ton+=q;else if(q<0)r.am++;
+    r.cho+=w;if(!r.name&&v[1]&&norm(v[1])!==r.ma)r.name=v[1];
+  }
+  if(sx){
+    for(const l of sx.los||[]){
+      if(!l||!l.choVe||!(l.conNo>0))continue;
+      const ma=norm(l.ma),r=grp(ma);r.ve+=l.conNo;
+      r.lo.push({lo:l.lo||'',conNo:l.conNo,hen:l.henTra||'',t:l.nhan&&l.nhan.t||'',k:l.nhan&&l.nhan.k||''});
+      const mt=l.maTran;
+      if(mt)for(const h of mt.hang||[])(h.o||[]).forEach((n,i)=>{
+        if(!(n>0))return;
+        const v=r.vs.get(ma+plainVN(h.mau)+plainVN(mt.sizes[i]));
+        if(v)v.ve+=n;else r.le.push(h.mau+' '+mt.sizes[i]+': '+n);        /* không khớp mã phân loại nào trên Pancake: vẫn hiện, không bỏ */
+      });
+      else for(const x of l.theoMau||[])if(x.conNo>0)r.le.push(x.mau+': '+x.conNo);
+    }
+    for(const p of sx.phieu||[])if(p&&p.conCho>0)grp(norm(p.ma)).cat+=p.conCho;
+  }
+  return [...g.values()];
+}
+const dm=d=>d?d.slice(8)+'/'+d.slice(5,7):'';
+function renderTon(){
+  const tb=$('tbTon'),cards=$('tCards');tb.textContent='';cards.textContent='';
+  const rows=tonRows(S.stock,S.sx);S.ton=rows;
+  const fmt=x=>Math.round(x).toLocaleString('vi-VN');
+  $('tInfo').textContent='SỐ TẠM, chỉ để xem: tồn thực lấy từ Pancake'+(S.stock?' lúc '+vnTime(S.stockAt).slice(11):'')+', hàng sắp về lấy từ sổ sản xuất. Chưa phải số kiểm đếm; sau đợt tổng kiểm sẽ thay bằng số đếm thật. Bấm vào một mã hàng để xem từng màu, size.'
+    +(S.stock?'':' CHƯA LẤY ĐƯỢC TỒN PANCAKE'+(S.stockErr?' ('+S.stockErr+')':'')+': bấm "Tải lại".')
+    +(S.sx?'':' CHƯA LẤY ĐƯỢC SỔ SẢN XUẤT'+(S.sxErr?' ('+S.sxErr+')':'')+': cột sắp về đang trống, bấm "Tải lại".');
+  const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
+  const con=rows.filter(r=>r.ton>0),ve=rows.filter(r=>r.ve>0),cat=rows.filter(r=>r.cat>0),am=rows.reduce((s,r)=>s+r.am,0);
+  kpi('Mã hàng còn tồn',S.stock?fmt(con.length):'?');
+  kpi('Tổng tồn thực (cái)',S.stock?fmt(con.reduce((s,r)=>s+r.ton,0)):'?');
+  kpi('Phân loại còn tồn',S.stock?fmt(rows.reduce((s,r)=>s+[...r.vs.values()].filter(v=>v.ton>0).length,0)):'?');
+  kpi('Sắp về (xưởng còn nợ)',S.sx?fmt(ve.reduce((s,r)=>s+r.ve,0))+' cái · '+ve.length+' mã':'?');
+  kpi('Đã đặt, chưa cắt',S.sx?fmt(cat.reduce((s,r)=>s+r.cat,0))+' cái · '+cat.length+' mã':'?');
+  kpi('Đơn đang chờ hàng (cái)',S.stock?fmt(rows.reduce((s,r)=>s+r.cho,0)):'?');
+  if(am)kpi('Phân loại tồn âm',fmt(am),'bad');
+  const loc=$('tLoc').value,tim=norm($('tTim').value);
+  let list=rows.filter(r=>{
+    if(tim&&!(r.ma.includes(tim)||norm(r.name).includes(tim)||[...r.vs.keys()].some(k=>k.includes(tim))))return false;
+    if(loc==='con')return r.ton>0;
+    if(loc==='ve')return r.ve>0||r.cat>0;
+    if(loc==='het')return r.ton<=0&&(r.ve>0||r.cat>0);
+    if(loc==='cho')return r.cho>0;
+    if(loc==='am')return r.am>0;
+    return tim?true:(r.ton>0||r.ve>0||r.cat>0);
+  });
+  list.sort((a,b)=>b.ton-a.ton||b.ve-a.ve||b.cat-a.cat||a.ma.localeCompare(b.ma));
+  const total=list.length;list=list.slice(0,400);
+  for(const r of list){
+    const row=tb.insertRow();row.className='grp';const open=S.open.has(r.ma);
+    const cell=(txt,cls,to)=>{const c=(to||row).insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    const c0=cell((open?'▾ ':'▸ ')+r.ma,'code');
+    if(r.name){const n=document.createElement('div');n.className='hint';n.style.margin='0';n.style.fontWeight='400';n.style.fontFamily='inherit';n.textContent=r.name;c0.append(n);}
+    cell(S.stock?fmt(r.ton):'?','num'+(r.ton>0?'':' z'));
+    cell(r.cho?fmt(r.cho):'','num'+(r.cho>r.ton?' warn':''));
+    cell(r.ve?fmt(r.ve):'','num');
+    const cl=row.insertCell();cl.className='wrap';
+    r.lo.sort((a,b)=>(a.hen||'9').localeCompare(b.hen||'9')).forEach(l=>{
+      const d=document.createElement('div');d.textContent=(l.lo||'Lô')+': '+fmt(l.conNo)+(l.hen?' · hẹn '+dm(l.hen):'');
+      if(l.t){const t=document.createElement('span');t.className='tag '+(l.k==='late'?'late':l.k==='warn'?'warn':'');t.textContent=l.t;d.append(t);}
+      cl.append(d);
+    });
+    cell(r.cat?fmt(r.cat):'','num');
+    row.onclick=()=>{if(S.open.has(r.ma))S.open.delete(r.ma);else S.open.add(r.ma);renderTon();};
+    if(!open)continue;
+    const vs=[...r.vs.values()].filter(v=>v.ton||v.ve||v.cho).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true}));
+    for(const v of vs){
+      const sr=tb.insertRow();sr.className='sub';
+      cell(v.sku,'code',sr);cell(fmt(v.ton),'num'+(v.ton<0?' warn':v.ton>0?'':' z'),sr);cell(v.cho?fmt(v.cho):'','num'+(v.cho>v.ton?' warn':''),sr);cell(v.ve?fmt(v.ve):'','num',sr);cell('','',sr);cell('','',sr);
+    }
+    if(r.le.length){const sr=tb.insertRow();sr.className='sub';const c=sr.insertCell();c.colSpan=6;c.className='wrap';c.textContent='Sắp về chưa xếp được vào mã phân loại nào (xưởng chưa chia size, hoặc tên màu khác Pancake): '+r.le.join(' · ');}
+    if(!vs.length&&!r.le.length){const sr=tb.insertRow();sr.className='sub';const c=sr.insertCell();c.colSpan=6;c.textContent=S.stock?'Chưa có phân loại nào còn tồn hoặc sắp về.':'Chưa lấy được tồn Pancake nên chưa có chi tiết màu, size.';}
+  }
+  if(!list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent=S.stock||S.sx?'Không có mã nào khớp bộ lọc.':'Chưa lấy được số liệu. Bấm "Tải lại".';}
+  else if(total>list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent='Đang hiện 400 trên '+total+' mã hàng. Dùng ô tìm hoặc Xuất CSV để xem hết.';}
+}
+function tonCsv(){
+  const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
+  const lines=[['Mã hàng','Mã phân loại','Tên','Tồn thực Pancake','Đơn đang chờ hàng','Sắp về','Lô đang về','Đặt, chưa cắt','Ghi chú'].map(esc).join(',')];
+  for(const r of S.ton.slice().sort((a,b)=>a.ma.localeCompare(b.ma))){
+    const lo=r.lo.map(l=>(l.lo||'Lô')+': '+l.conNo+(l.hen?' hẹn '+dm(l.hen):'')+(l.t?' ('+l.t+')':'')).join('; ');
+    if(r.ton>0||r.ve>0||r.cat>0||r.cho>0||r.am>0)lines.push([r.ma,'(cả mã)',r.name,r.ton,r.cho,r.ve,lo,r.cat,r.le.length?'Sắp về chưa xếp được vào mã phân loại: '+r.le.join(' · '):''].map(esc).join(','));
+    for(const v of [...r.vs.values()].filter(v=>v.ton||v.ve||v.cho).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true})))lines.push([r.ma,v.sku,r.name,v.ton,v.cho,v.ve,'','',''].map(esc).join(','));
+  }
+  downloadBlob(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv'}),'ton-kho-tam-'+dayStr(new Date())+'.csv');
+}
+async function openTon(force){
+  if(force||!S.stock||!S.sx)$('tInfo').textContent='Đang lấy tồn Pancake và sổ sản xuất (lần đầu có thể mất gần một phút)…';
+  await Promise.all([loadStock(force),force||!S.sx?loadSx():null]);
+  if(S.tab==='ton')renderTon();
+}
+function setTab(t){
+  S.tab=t==='kiem'?'kiem':'ton';try{LS.set(K+'tab',S.tab);}catch(e){}
+  $('secTon').hidden=S.tab!=='ton';$('secKiem').hidden=S.tab!=='kiem';
+  for(const b of document.querySelectorAll('.tabs button'))b.classList.toggle('on',b.dataset.tab===S.tab);
+  if(S.tab==='ton')openTon(false);else{render();$('kScan').focus();}
+}
+
+/* ---------- sổ đếm: máy chủ là số gốc; lượt chưa lên máy chủ nằm trong hàng chờ ở trình duyệt ---------- */
+const qKey=()=>K+'queue';
+function queueSave(){LS.set(qKey(),S.queue);}
+function entries(){const have=new Set(S.server.map(e=>e.id));return S.server.concat(S.queue.filter(e=>e.dot===S.dot&&!have.has(e.id)));}
+function mayId(){let m=LS.get(K+'may','');if(!m){m='kho-'+Math.random().toString(36).slice(2,6);LS.set(K+'may',m);}return m;}
+function chips(){
+  const n=S.queue.length;
+  $('cNet').textContent=S.online?'Máy chủ: ✓':'MẤT KẾT NỐI MÁY CHỦ';$('cNet').className='chip'+(S.online?'':' bad');
+  $('cQueue').hidden=!n;$('cQueue').className='chip bad';$('cQueue').textContent='Chưa lên máy chủ: '+n+' lượt (đang giữ ở máy này)';
+}
+let flushing=null;
+function flush(){
+  if(flushing)return flushing;
+  flushing=(async()=>{
+    try{
+      while(S.queue.length){
+        const dot=S.queue[0].dot,batch=S.queue.filter(e=>e.dot===dot).slice(0,200);
+        await apiPost({action:'kiemke',dot,rows:batch.map(({dot,...e})=>e)},20000);
+        const done=new Set(batch.map(e=>e.id));
+        if(dot===S.dot){const have=new Set(S.server.map(e=>e.id));for(const e of batch)if(!have.has(e.id)){const {dot:_,...x}=e;S.server.push(x);}}
+        S.queue=S.queue.filter(e=>!done.has(e.id));queueSave();
+      }
+      S.online=true;
+    }catch(e){S.online=false;}
+    chips();
+  })().finally(()=>{flushing=null;});
+  return flushing;
+}
+function addEntry(p){
+  const at=Date.now(),e=Object.assign({id:mayId()+'-'+at+'-'+Math.random().toString(36).slice(2,6),at,may:mayId(),note:'',dot:S.dot},p);
+  S.queue.push(e);
+  try{queueSave();}catch(x){S.queue.pop();throw new Error('trình duyệt không lưu được ('+(x.name||x.message)+')');}
+  chips();flush();
+}
+async function loadServer(){
+  S.err='';
+  try{const d=await api({kiemke:S.dot},30000);if(!Array.isArray(d.entries))throw new Error('máy chủ trả sai dạng');S.server=d.entries;S.online=true;}
+  catch(e){S.online=false;S.err=e.message||e.name;}
+  chips();
+}
+
+/* bảng theo mã: đã đếm, tồn Pancake, lệch. stock = Map mã → [tồn, tên], hoặc null nếu chưa lấy được */
+function kiemRows(list,stock){
+  const m=new Map();
+  const row=sku=>{let r=m.get(sku);if(!r){r={sku,name:'',dem:0,pos:null,ke:new Set(),last:0,n:0};m.set(sku,r);}return r;};
+  for(const e of list||[]){if(!e||!e.sku)continue;const r=row(norm(e.sku));r.dem+=+e.qty||0;r.n++;r.last=Math.max(r.last,e.at||0);if(e.ke)r.ke.add(e.ke);}
+  if(stock)for(const [sku,v] of stock){
+    if(!m.has(sku)&&!v[0])continue;                 /* mã Pancake tồn 0 và không đếm thấy thì không cần hiện */
+    const r=row(sku);r.pos=v[0];r.name=v[1]||'';
+  }
+  for(const r of m.values()){if(stock&&r.pos==null)r.pos=0;r.lech=r.pos==null?null:r.dem-r.pos;r.counted=r.n>0;}
+  return [...m.values()];
+}
+function render(){
+  const tb=$('tb'),cards=$('kCards'),lg=$('tbLog');tb.textContent='';cards.textContent='';lg.textContent='';
+  renderPend();
+  const all=entries(),rows=kiemRows(all,S.stock);S.rows=rows;
+  $('kInfo').textContent='Đợt kiểm bắt đầu '+S.dot.slice(8)+'/'+S.dot.slice(5,7)+'. Cách đếm: quét mã vạch một sản phẩm, đếm cả chồng cùng mã, gõ số lượng rồi Enter (quét luôn mã tiếp theo thì mã trước tính 1 cái). Trong lúc tổng kiểm phải NGỪNG đóng hàng và nhập hàng, nếu không số so với Pancake sẽ sai. Sổ này là của mình, không chỉnh tồn trên Pancake.'
+    +(S.stock?' Tồn Pancake lấy lúc '+vnTime(S.stockAt).slice(11)+'.':' CHƯA LẤY ĐƯỢC TỒN PANCAKE'+(S.stockErr?' ('+S.stockErr+')':'')+': vẫn đếm được, chưa so được.')
+    +(S.err?' CHƯA ĐỌC ĐƯỢC SỐ ĐẾM TRÊN MÁY CHỦ ('+S.err+'): đang chỉ thấy các lượt của máy này chưa gửi đi. Bấm "Tải lại".':'');
+  const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
+  const cnt=rows.filter(r=>r.counted),fmt=x=>Math.round(x).toLocaleString('vi-VN');
+  const lech=S.stock?cnt.filter(r=>r.lech!==0):[],chua=S.stock?rows.filter(r=>!r.counted&&r.pos>0):[];
+  kpi('Mã đã đếm',fmt(cnt.length));kpi('Tổng số cái đã đếm',fmt(cnt.reduce((s,r)=>s+r.dem,0)));
+  kpi('Tồn Pancake của các mã đã đếm',S.stock?fmt(cnt.reduce((s,r)=>s+r.pos,0)):'?');
+  kpi('Mã đã đếm LỆCH với Pancake',S.stock?fmt(lech.length):'?',lech.length?'bad':'');
+  kpi('Pancake có tồn, CHƯA ĐẾM',S.stock?fmt(chua.length)+' mã · '+fmt(chua.reduce((s,r)=>s+r.pos,0))+' cái':'?',chua.length?'amber':'');
+  const loc=$('kLoc').value,tim=norm($('kTim').value);
+  let list=rows.filter(r=>(!tim||r.sku.includes(tim))&&(loc==='lech'?r.counted&&r.lech!==0&&r.lech!=null:loc==='chua'?!r.counted&&r.pos>0:(tim?true:r.counted)));
+  list.sort(loc==='lech'?(a,b)=>Math.abs(b.lech)-Math.abs(a.lech):loc==='chua'?(a,b)=>b.pos-a.pos:(a,b)=>b.last-a.last||a.sku.localeCompare(b.sku));
+  const total=list.length;list=list.slice(0,300);
+  for(const r of list){
+    const row=tb.insertRow();row.className=r.counted&&r.lech?'bad':(!r.counted?'out':'');
+    const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    cell(r.sku,'code');cell(r.name,'wrap');cell(r.counted?r.dem:'chưa đếm','num');cell(r.pos==null?'?':r.pos,'num');
+    cell(r.lech==null||!r.counted?'':(r.lech>0?'+':'')+r.lech,'num'+(r.counted&&r.lech?' warn':''));cell([...r.ke].join(', '));
+  }
+  if(!list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent=all.length||loc||tim?'Không có mã nào khớp bộ lọc.':'Chưa đếm mã nào trong đợt này. Quét mã vạch sản phẩm đầu tiên để bắt đầu.';}
+  else if(total>list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent='Đang hiện 300 trên '+total+' mã. Dùng ô tìm hoặc Xuất CSV để xem hết.';}
+  const undone=new Set(all.filter(e=>/^HUY:/.test(e.note||'')).map(e=>e.note.slice(4))),wait=new Set(S.queue.map(e=>e.id));
+  for(const e of all.filter(e=>!/^HUY:/.test(e.note||'')).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,15)){
+    const row=lg.insertRow(),off=undone.has(e.id);
+    const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    cell(vnTime(e.at));cell(e.sku,'code');cell(e.qty+' cái','num');cell(e.ke||'');cell(off?'ĐÃ HỦY':wait.has(e.id)?'chưa lên máy chủ':'',wait.has(e.id)&&!off?'warn':'');
+    const a=row.insertCell();
+    if(!off){const b=document.createElement('button');b.textContent='Hủy lượt này';
+      b.onclick=()=>{if(!confirm('Hủy lượt đếm '+e.qty+' cái '+e.sku+'?'))return;
+        try{addEntry({sku:e.sku,code:e.code||'',qty:-e.qty,ke:e.ke||'',note:'HUY:'+e.id});banner('Đã hủy lượt đếm '+e.sku+'.','ok');render();}
+        catch(x){banner('CHƯA HỦY ĐƯỢC: '+x.message,'err');beep('err');}};
+      a.append(b);}
+  }
+}
+function renderPend(){
+  const box=$('kPend'),p=S.pend;box.textContent='';box.hidden=!p;if(!p)return;
+  const st=S.stock&&S.stock.get(p.sku),had=entries().filter(e=>e.sku===p.sku).reduce((s,e)=>s+(+e.qty||0),0);
+  const b=document.createElement('b');
+  b.textContent='ĐANG ĐẾM: '+p.sku+(st&&st[1]?' · '+st[1]:'')+'. Gõ số lượng rồi Enter (Enter trống hoặc quét mã tiếp theo = 1 cái).'+(had?' Mã này đã đếm '+had+' cái ở lượt trước, lượt này sẽ CỘNG THÊM.':'');
+  const x=document.createElement('button');x.textContent='Bỏ, không ghi mã này';x.onclick=()=>{S.pend=null;renderPend();$('kScan').focus();};
+  box.append(b,x);
+}
+function flushPend(qty){
+  const p=S.pend;if(!p)return true;
+  try{addEntry({sku:p.sku,code:p.code,qty,ke:$('kKe').value.trim().slice(0,40)});}
+  catch(e){banner('CHƯA GHI ĐƯỢC lượt đếm '+p.sku+': '+e.message+'. Đếm lại mã này.','err');beep('err');bigAlert('CHƯA GHI ĐƯỢC',p.sku+': đếm lại mã này');return false;}
+  S.pend=null;
+  const tot=entries().filter(e=>e.sku===p.sku).reduce((s,e)=>s+(+e.qty||0),0);
+  banner('Đã ghi '+qty+' cái '+p.sku+'. Tổng mã này: '+tot+' cái.','ok');
+  return true;
+}
+/* một lần Enter ở ô quét: mã sản phẩm, hoặc số lượng của mã đang đếm */
+function scan(raw){
+  const v=norm(raw);
+  if(!v||/^\d{1,4}$/.test(v)){
+    if(!S.pend){if(v){banner('Quét mã sản phẩm trước rồi mới gõ số lượng.','warn');beep('warn');}return;}
+    const q=v?parseInt(v,10):1;
+    if(!q){S.pend=null;banner('Số lượng 0: không ghi mã này.','warn');render();return;}
+    if(flushPend(q)){beep('ok');render();}
+    return;
+  }
+  const sku=toSku(v);
+  if(!prodLike(v)&&!prodLike(sku)&&!(S.stock&&S.stock.has(sku))){banner('Mã '+v+' không phải mã sản phẩm. Không ghi.','err');beep('err');bigAlert('KHÔNG PHẢI MÃ SẢN PHẨM',v);return;}
+  if(S.pend&&!flushPend(1))return;
+  S.pend={sku,code:v};$('banner').hidden=true;beep('start');render();
+}
+function csv(){
+  const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
+  const lines=[['Mã sản phẩm','Tên','Đã đếm','Tồn Pancake','Lệch (đếm trừ Pancake)','Đã đếm chưa','Kệ'].map(esc).join(',')];
+  for(const r of S.rows.slice().sort((a,b)=>a.sku.localeCompare(b.sku)))lines.push([r.sku,r.name,r.dem,r.pos==null?'':r.pos,r.lech==null?'':r.lech,r.counted?'Đã đếm':'CHƯA ĐẾM',[...r.ke].join(' ')].map(esc).join(','));
+  downloadBlob(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv'}),'tong-kiem-kho-'+S.dot+'.csv');
+}
+async function openDot(force){
+  S.dot=$('kDot').value;S.pend=null;S.server=[];
+  $('kInfo').textContent='Đang đọc số đếm của đợt kiểm…';
+  await Promise.all([loadServer(),loadStock(force)]);
+  render();flush();if(S.tab==='kiem')$('kScan').focus();
+}
+async function start(){
+  $('gate').hidden=true;$('app').hidden=false;
+  S.queue=LS.get(qKey(),[]);chips();
+  $('kDot').value=LS.get(K+'dot','')||dayStr(new Date());
+  loadCatalog().catch(e=>banner('Chưa tải được danh mục mã sản phẩm ('+(e.message||e.name)+'). Vẫn đếm được mã đúng dạng.','warn'));
+  setTab(LS.get(K+'tab','ton'));
+  await openDot(false);
+}
+async function boot(){
+  if(TEST){S.key='thu';window.__mk=S;return start();}
+  S.key=LS.get(K+'key','')||await keyFromPackingPage();
+  if(S.key){try{await api({kiemke:dayStr(new Date())},20000);LS.set(K+'key',S.key);return start();}catch(e){if(e.message!=='sai mã truy cập'){return start();}S.key='';}}
+  $('gate').hidden=false;$('gKey').focus();
+}
+$('btnGate').onclick=async()=>{
+  const k=$('gKey').value.trim();if(!k)return;
+  S.key=k;$('gMsg').textContent='Đang kiểm tra mã…';
+  try{await api({kiemke:dayStr(new Date())},20000);LS.set(K+'key',k);$('gKey').value='';start();}
+  catch(e){S.key='';$('gMsg').textContent='Chưa vào được: '+(e.message||e.name);}
+};
+$('gKey').addEventListener('keydown',e=>{if(e.key==='Enter')$('btnGate').click();});
+const fire=()=>{const v=$('kScan').value;$('kScan').value='';scan(v);$('kScan').focus();};
+$('kScan').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();fire();}});
+$('btnGhi').onclick=fire;$('kLoc').onchange=render;$('kTim').oninput=render;$('btnCsv').onclick=csv;
+$('kKe').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('kScan').focus();}});
+$('btnReload').onclick=()=>openDot(true);
+for(const b of document.querySelectorAll('.tabs button'))b.onclick=()=>setTab(b.dataset.tab);
+$('btnTonReload').onclick=()=>openTon(true);$('btnTonCsv').onclick=tonCsv;$('tLoc').onchange=renderTon;$('tTim').oninput=renderTon;
+$('kDot').onchange=()=>{
+  if(S.pend&&!confirm('Mã '+S.pend.sku+' đang đếm dở sẽ không được ghi. Đổi đợt kiểm?')){$('kDot').value=S.dot;return;}
+  LS.set(K+'dot',$('kDot').value);openDot(false);
+};
+$('banner').onclick=()=>{$('banner').hidden=true;};
+/* máy quét gõ như bàn phím: con trỏ không ở ô nhập nào thì đưa về ô quét */
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.altKey||e.metaKey||$('app').hidden||S.tab!=='kiem')return;
+  const a=document.activeElement,edit=a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
+  if(!edit&&(e.key.length===1||e.key==='Enter')){$('kScan').focus();if(e.key==='Enter')e.preventDefault();}
+},true);
+window.addEventListener('beforeunload',e=>{if(S.pend){e.preventDefault();e.returnValue='';}});
+/* đẩy lại các lượt chưa lên máy chủ, và lấy số đếm của máy khác */
+setInterval(()=>{if(!$('app').hidden&&S.queue.length)flush().then(render);},15000);
+setInterval(async()=>{if($('app').hidden||S.pend||document.hidden)return;await loadServer();render();},60000);
+boot();
+</script>
+</body>
+</html>

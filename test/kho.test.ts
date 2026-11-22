@@ -307,3 +307,17 @@ describe("đơn Viettel Post đã gửi hàng chỉ vào đợt đóng khi có h
     assert.equal(waiting.eligible, true); // đơn chưa đẩy không thuộc phần chia này
   });
 });
+
+describe("tồn Pancake cho trang Quản lý kho", () => {
+  it("trả mã hàng và số cái đơn đang chờ, không có giá", async () => {
+    const { stockRow } = await import("../src/lib/kho");
+    const v = {
+      retail_price: 169000,
+      last_imported_price: 67000,
+      product: { name: "Quần gió QD26036", display_id: "qd26036" },
+      variations_warehouses: [{ actual_remain_quantity: 0, waiting_quantity: 2 }, { actual_remain_quantity: 5, waiting_quantity: 1 }],
+    };
+    assert.deepEqual(stockRow("QD26036DEN140", 5, v), ["QD26036DEN140", 5, "Quần gió QD26036", "QD26036", 3]);
+    assert.deepEqual(stockRow("X", NaN, {}), ["X", 0, "", "", 0]);
+  });
+});

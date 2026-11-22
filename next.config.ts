@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       { source: "/kho", destination: "/kho/index.html" },
+      // Trang Quản lý kho: đặt ngoài /kho để không dính bộ lưu sẵn (service worker) của trang quay đóng hàng.
+      { source: "/quan-ly-kho", destination: "/quan-ly-kho/index.html" },
       { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/metadata" },
       { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/metadata" },
       { source: "/.well-known/openid-configuration", destination: "/api/oauth/metadata" },
