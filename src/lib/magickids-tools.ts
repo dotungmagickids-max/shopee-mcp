@@ -14,11 +14,11 @@ import { db } from "./supabase";
 const ro = { readOnlyHint: true, openWorldHint: false } as const;
 const MAX_CHARS = 100_000;
 
-function agentOf(ctx: ApiKeyContext): string {
+export function agentOf(ctx: ApiKeyContext): string {
   return ctx.label?.trim() || `key:${ctx.id.slice(0, 8)}`;
 }
 
-async function call(fn: string, args: Record<string, unknown>): Promise<CallToolResult> {
+export async function call(fn: string, args: Record<string, unknown>): Promise<CallToolResult> {
   try {
     const { data, error } = await db().rpc(fn, args);
     if (error) throw new Error(error.message);

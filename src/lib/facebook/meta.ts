@@ -23,8 +23,8 @@ export function scrub(s: string): string {
     .replace(/\bEAA[A-Za-z0-9]{10,}/g, "EAA***");
 }
 
-function authParams(): Record<string, string> {
-  const t = token();
+function authParams(pageToken?: string): Record<string, string> {
+  const t = pageToken ?? token();
   const secret = process.env.META_APP_SECRET?.trim();
   return secret ? { access_token: t, appsecret_proof: appSecretProof(t, secret) } : { access_token: t };
 }
@@ -56,13 +56,13 @@ function token(): string {
   return t;
 }
 
-async function get(pathOrUrl: string, params: Record<string, string> = {}): Promise<any> {
+async function get(pathOrUrl: string, params: Record<string, string> = {}, pageToken?: string): Promise<any> {
   const url = pathOrUrl.startsWith("http")
     ? new URL(pathOrUrl)
     : new URL(`${GRAPH}/${pathOrUrl.replace(/^\//, "")}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   // Trang tiếp (paging.next) đã kèm token; vẫn đặt lại để chắc có appsecret_proof.
-  for (const [k, v] of Object.entries(authParams())) url.searchParams.set(k, v);
+  for (const [k, v] of Object.entries(authParams(pageToken))) url.searchParams.set(k, v);
   return send(url, { method: "GET", headers: { Accept: "application/json" } });
 }
 
@@ -219,4 +219,142 @@ export async function adInsights(accountId: string, day: string): Promise<MetaAd
       purchase_value: Math.round(pickPurchase(r.action_values)),
     }))
     .filter((r) => r.spend > 0 || r.purchases > 0);
+}
+
+/** Loại hành động "bắt đầu cuộc trò chuyện" (quảng cáo tin nhắn / CTX). */
+export const MESSAGE_ACTION = "onsite_conversion.messaging_conversation_started_7d";
+
+export type MetaRangeRow = {
+  account_id: string;
+  ad_id: string;
+  ad_name: string | null;
+  adset_id: string | null;
+  adset_name: string | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  spend: number;
+  messages: number;
+};
+
+/** Số theo từng quảng cáo của một tài khoản, cộng dồn cả khoảng ngày (giờ theo múi giờ tài khoản). Chỉ đọc. */
+export async function adInsightsRange(accountId: string, since: string, until: string): Promise<MetaRangeRow[]> {
+  const rows = await getAll(`act_${accountId}/insights`, {
+    level: "ad",
+    fields: "ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,actions",
+    time_range: JSON.stringify({ since, until }),
+    limit: "500",
+  });
+  return rows
+    .map((r) => ({
+      account_id: accountId,
+      ad_id: String(r.ad_id),
+      ad_name: r.ad_name ?? null,
+      adset_id: r.adset_id ? String(r.adset_id) : null,
+      adset_name: r.adset_name ?? null,
+      campaign_id: r.campaign_id ? String(r.campaign_id) : null,
+      campaign_name: r.campaign_name ?? null,
+      spend: Math.round(Number(r.spend ?? 0)),
+      messages: Number((r.actions ?? []).find((a: any) => a?.action_type === MESSAGE_ACTION)?.value ?? 0) || 0,
+    }))
+    .filter((r) => r.spend > 0 || r.messages > 0);
+}
+
+export type AdInfo = {
+  ad_id: string;
+  status: string; // effective_status của quảng cáo
+  adset_status: string;
+  campaign_status: string;
+  adset_daily: number | null;
+  campaign_daily: number | null;
+  page_id: string | null;
+  /** Bài gốc của quảng cáo, dạng `pageId_postId`. */
+  story_id: string | null;
+};
+
+/**
+ * Trạng thái, ngân sách ngày (nhóm / chiến dịch) và page của các quảng cáo. Chỉ đọc.
+ * Meta bỏ tham số `?ids=` từ v26, nên gom 50 lệnh đọc vào một lần gọi Batch API (POST nhưng bên trong toàn GET).
+ */
+export async function adsInfo(ids: string[]): Promise<Map<string, AdInfo>> {
+  const out = new Map<string, AdInfo>();
+  const fields =
+    "effective_status,adset{effective_status,daily_budget},campaign{effective_status,daily_budget},creative{effective_object_story_id,object_story_spec{page_id}}";
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
+  await Promise.all(
+    batches.map(async (b) => {
+      const res = await post("", {
+        batch: JSON.stringify(b.map((id) => ({ method: "GET", relative_url: `${id}?fields=${encodeURIComponent(fields)}` }))),
+        include_headers: "false",
+      });
+      (Array.isArray(res) ? res : []).forEach((item, i) => {
+        const id = b[i];
+        if (!item || Number(item.code) !== 200) return; // quảng cáo đã xóa hoặc không đọc được: bỏ qua
+        let r: any = null;
+        try {
+          r = JSON.parse(String(item.body));
+        } catch {
+          return;
+        }
+        if (!r || r.error) return;
+        const story = String(r.creative?.effective_object_story_id ?? "");
+        out.set(id, {
+          ad_id: id,
+          status: String(r.effective_status ?? ""),
+          adset_status: String(r.adset?.effective_status ?? ""),
+          campaign_status: String(r.campaign?.effective_status ?? ""),
+          adset_daily: numOrNull(r.adset?.daily_budget),
+          campaign_daily: numOrNull(r.campaign?.daily_budget),
+          story_id: story || null,
+          page_id: r.creative?.object_story_spec?.page_id ? String(r.creative.object_story_spec.page_id) : story.includes("_") ? story.split("_")[0] : null,
+        });
+      });
+    })
+  );
+  return out;
+}
+
+export type PagePost = {
+  id: string; // pageId_postId
+  message: string;
+  created_time: string;
+  picture: string | null;
+  permalink: string | null;
+  kind: string; // added_video, added_photos, ...
+};
+
+/** Bài và reel đã đăng của page trong `days` ngày gần nhất (đọc bằng token của page). Chỉ đọc. */
+export async function pagePosts(pageId: string, days = 30): Promise<PagePost[]> {
+  const page = await get(pageId, { fields: "access_token" });
+  const pageToken = page?.access_token ? String(page.access_token) : undefined;
+  if (!pageToken) throw new MetaError("Token hệ thống chưa được gán quyền page này");
+  const out: PagePost[] = [];
+  let body = await get(
+    `${pageId}/published_posts`,
+    { fields: "id,message,created_time,full_picture,permalink_url,status_type", since: String(Math.floor(Date.now() / 1000) - days * 86_400), limit: "100" },
+    pageToken
+  );
+  for (let i = 0; i < 10; i++) {
+    for (const r of body?.data ?? []) {
+      out.push({
+        id: String(r.id),
+        message: String(r.message ?? ""),
+        created_time: String(r.created_time ?? ""),
+        picture: r.full_picture ?? null,
+        permalink: r.permalink_url ?? null,
+        kind: String(r.status_type ?? ""),
+      });
+    }
+    const next = body?.paging?.next;
+    if (!next) break;
+    body = await get(next, {}, pageToken);
+  }
+  return out;
+}
+
+/** Lệnh tạo trên Meta (chỉ FB Magic Tool gọi, sau khi anh bấm xác nhận). Không tự thử lại. Trả id đối tượng mới. */
+export async function createObject(accountId: string, edge: "campaigns" | "adsets" | "adcreatives" | "ads", params: Record<string, string>): Promise<string> {
+  const r = await post(`act_${accountId}/${edge}`, params);
+  if (!r?.id) throw new MetaError(`Meta không trả id khi tạo ${edge}`);
+  return String(r.id);
 }

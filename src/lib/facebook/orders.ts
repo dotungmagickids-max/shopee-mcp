@@ -18,11 +18,11 @@ export type AdOrders = {
 };
 
 /** Gom đơn theo ad_id: đơn không hủy, doanh thu = total_price (tiền hàng, chưa gồm ship). Hàm thuần để test. */
-export function groupByAd(rows: any[]): Map<string, AdOrders> {
+export function groupByAd(rows: any[], canceled: Set<number> = CANCELED): Map<string, AdOrders> {
   const m = new Map<string, AdOrders & { qty: Map<string, number> }>();
   for (const o of rows) {
     const ad = o?.ad_id ? String(o.ad_id) : "";
-    if (!ad || CANCELED.has(Number(o?.status))) continue;
+    if (!ad || canceled.has(Number(o?.status))) continue;
     const s = m.get(ad) ?? { orders: 0, revenue: 0, cogs: 0, product_code: null, qty: new Map<string, number>() };
     s.orders += 1;
     s.revenue += Number(o?.total_price ?? 0) || 0;
@@ -46,11 +46,20 @@ export function groupByAd(rows: any[]): Map<string, AdOrders> {
 
 /** Đơn tạo trong ngày (giờ VN) có gắn quảng cáo, gom theo ad_id. */
 export async function ordersByAd(day: string): Promise<Map<string, AdOrders>> {
+  return groupByAd(await fetchAdOrders(day, day));
+}
+
+/** FB Magic Tool: đơn tạo từ ngày `since` đến hết ngày `until` (giờ VN), bỏ đơn trạng thái 6 (hủy) và 7 (đã xóa), giống báo sáng. */
+export async function ordersByAdRange(since: string, until: string): Promise<Map<string, AdOrders>> {
+  return groupByAd(await fetchAdOrders(since, until));
+}
+
+async function fetchAdOrders(since: string, until: string): Promise<any[]> {
   const key = process.env.PANCAKE_API_KEY?.trim();
   if (!key) throw new Error("Chưa đặt PANCAKE_API_KEY");
   const shopId = process.env.PANCAKE_SHOP_ID?.trim() || "608127";
-  const start = vnDayStartUnix(day);
-  const end = start + 86_400 - 1;
+  const start = vnDayStartUnix(since);
+  const end = vnDayStartUnix(until) + 86_400 - 1;
   const rows: any[] = [];
   for (let page = 1; page <= 100; page++) {
     const q = new URLSearchParams({
@@ -85,5 +94,5 @@ export async function ordersByAd(day: string): Promise<Map<string, AdOrders>> {
     const total = Number(body?.total_pages ?? 0);
     if (!body?.data?.length || (total && page >= total)) break;
   }
-  return groupByAd(rows);
+  return rows;
 }

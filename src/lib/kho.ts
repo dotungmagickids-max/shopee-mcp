@@ -163,14 +163,21 @@ async function eachVariation(fn: (v: any) => void): Promise<void> {
  * Tồn thực trên Pancake theo mã phân loại, để so với số đếm khi tổng kiểm kho. Chỉ đọc.
  * Dùng actual_remain_quantity (hàng đang nằm trong kho), không dùng remain_quantity (đã trừ đơn chờ hàng).
  */
-export async function pancakeStock(): Promise<{ at: number; stock: Array<[string, number, string]> }> {
-  const m = new Map<string, [string, number, string]>();
+/** [mã phân loại, tồn thực, tên sản phẩm, mã hàng, số cái đơn đang chờ hàng]. Không có giá. */
+export type StockRow = [string, number, string, string, number];
+export function stockRow(sku: string, qty: number, v: any): StockRow {
+  const wh: any[] = v?.variations_warehouses ?? [];
+  const wait = wh.reduce((s, w) => s + Number(w?.waiting_quantity ?? 0), 0);
+  return [sku, Number.isFinite(qty) ? qty : 0, String(v?.product?.name ?? "").slice(0, 120), normSku(v?.product?.display_id), Number.isFinite(wait) ? wait : 0];
+}
+export async function pancakeStock(): Promise<{ at: number; stock: StockRow[] }> {
+  const m = new Map<string, StockRow>();
   await eachVariation((v) => {
     const sku = normSku(v?.display_id);
     if (!sku) return;
     const wh: any[] = v?.variations_warehouses ?? [];
     const qty = wh.length ? wh.reduce((s, w) => s + Number(w?.actual_remain_quantity ?? 0), 0) : Number(v?.remain_quantity ?? 0);
-    m.set(sku, [sku, Number.isFinite(qty) ? qty : 0, String(v?.product?.name ?? "").slice(0, 120)]);
+    m.set(sku, stockRow(sku, qty, v));
   });
   return { at: Date.now(), stock: [...m.values()] };
 }

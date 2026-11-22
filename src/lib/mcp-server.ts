@@ -5,6 +5,7 @@ import type { ApiKeyContext } from "./api-keys";
 import { catalog } from "./catalog.generated";
 import type { CatalogEntry, CatalogParam } from "./catalog-types";
 import { registerMagickidsTools } from "./magickids-tools";
+import { registerSanXuatTools } from "./san-xuat-tools";
 import { registerShopeeVideoTools } from "./video/mcp-tools";
 import {
   assertImage,
@@ -711,6 +712,7 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
   }
 
   registerMagickidsTools(server, ctx);
+  registerSanXuatTools(server, ctx);
   registerShopeeVideoTools(server, ctx);
 
   return server;

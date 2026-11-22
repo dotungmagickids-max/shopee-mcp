@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Magickids Ads Autopilot",
+  title: "Web quản trị Magickids",
   robots: { index: false, follow: false },
 };
 

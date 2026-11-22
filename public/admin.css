@@ -49,3 +49,36 @@ td.neg { color: var(--error); font-weight: 600; }
 .tag.cls-xa_kho { background: #fdecea; color: #b3261e; }
 .tag.cls-moi { background: #e8f0fe; color: #1a56c4; }
 .tag.cls-thuong { background: var(--border); }
+/* Web quản trị: menu chung và trang "Hôm nay". Ưu tiên điện thoại (một cột), máy tính hai cột. */
+.admin .menu { display: flex; gap: 6px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 4px 0 10px; white-space: nowrap; }
+.admin .menu a, .admin .menu .off { display: inline-flex; align-items: baseline; gap: 5px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); text-decoration: none; font-weight: 600; font-size: 14px; color: var(--fg); }
+.admin .menu a:hover { border-color: var(--accent); color: var(--accent); }
+.admin .menu .off { opacity: .55; cursor: default; }
+.admin .menu small { font-weight: 400; font-size: 11px; color: var(--muted); }
+.admin .menu form { margin: 0 0 0 auto; }
+.admin .menu button { padding: 6px 12px; font-size: 14px; white-space: nowrap; }
+.admin h1 .muted { font-weight: 400; margin-left: 6px; }
+.hn-luoi { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 16px; align-items: start; }
+@media (min-width: 960px) { .hn-luoi { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.hn-khoi > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; margin-bottom: 4px; }
+.hn-khoi h2 { margin: 0; }
+.hn-khoi h3 { font-size: 15px; margin: 14px 0 4px; }
+.hn-khoi .kpi .value { font-size: 22px; }
+.hn-khoi table.data td.l, .hn-khoi table.data th.l { min-width: 110px; }
+.thieu, td.thieu, .kpi.thieu .value { color: var(--muted); font-style: italic; font-weight: 400; }
+.kpi.thieu .value { font-size: 16px; }
+.hn-ghichu { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.hn-ghichu.canh-bao { background: var(--warn-bg); border-radius: 8px; padding: 8px 12px 8px 28px; color: var(--fg); }
+.hn-tran { font-size: 22px; margin-top: 4px; }
+.hn-tran b { font-size: 28px; }
+.hn-bar { height: 12px; border-radius: 999px; background: var(--border); overflow: hidden; margin: 6px 0; }
+.hn-bar i { display: block; height: 100%; background: #1a7f37; border-radius: 999px; }
+.hn-bar.gan i { background: #c77700; }
+.hn-bar.vuot i { background: var(--error); }
+@media (min-width: 720px) { .admin .menu { flex-wrap: wrap; overflow: visible; } }
+.hn-khoi table.data td small { display: block; font-size: 11px; }
+@media (max-width: 640px) {
+  .hn-khoi table.data { font-size: 13px; }
+  .hn-khoi table.data th, .hn-khoi table.data td { padding: 6px 5px; }
+  .hn-khoi table.data td.l, .hn-khoi table.data th.l { min-width: 84px; }
+}

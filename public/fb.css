@@ -1,0 +1,24 @@
+.container:has(.fb) { max-width: 1680px; }
+.fb .filters form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; }
+.fb input, .fb select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; font-size: 14px; }
+.fb button { padding: 6px 12px; font-size: 14px; }
+.fb table.data { font-size: 13px; }
+.fb table.data td.l { min-width: 260px; max-width: 420px; }
+.fb table.data th.sort { cursor: pointer; user-select: none; }
+.fb .sub { color: var(--muted); font-size: 12px; }
+.fb tr.c-green td.ratio { background: #e7f6ec; color: #1a7f37; font-weight: 700; }
+.fb tr.c-yellow td.ratio { background: #fff4d6; color: #8a5a00; font-weight: 700; }
+.fb tr.c-red td.ratio { background: #fdecea; color: #b42318; font-weight: 700; }
+.fb .sg { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.fb .sg-pause, .fb .sg-reduce { background: #fdecea; color: #b42318; }
+.fb .sg-scale { background: #e7f6ec; color: #1a7f37; }
+.fb .sg-keep { background: var(--border); color: var(--fg); }
+.fb .acts { display: flex; gap: 4px; flex-wrap: nowrap; }
+.fb .acts button { padding: 2px 7px; font-size: 12px; }
+.fb .totals td { font-weight: 700; background: var(--code-bg); }
+.fb dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--fg); padding: 20px; max-width: 480px; }
+.fb dialog::backdrop { background: rgba(0,0,0,.4); }
+.fb .change { font-size: 18px; margin: 10px 0; }
+.fb .warnbox { background: var(--warn-bg); padding: 8px 12px; border-radius: 8px; font-size: 14px; }
+.fb .st-ACTIVE { color: #1a7f37; font-weight: 600; }
+.fb .low { color: var(--error); font-weight: 700; }
