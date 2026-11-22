@@ -159,6 +159,18 @@ export function adsetParams(cfg: LaunchConfig, campaignId: string, a: PlannedCam
 
 export const creativeParams = (postId: string, name: string): Record<string, string> => ({ name, object_story_id: postId });
 
+/**
+ * Bài chưa có nút "Gửi tin nhắn" thì Meta từ chối gắn vào chiến dịch tin nhắn
+ * ("creative is incompatible with the objective"). Bản này gắn thêm nút nhắn tin Messenger vào creative.
+ */
+export const creativeParamsWithCta = (postId: string, name: string): Record<string, string> => ({
+  ...creativeParams(postId, name),
+  call_to_action: JSON.stringify({ type: "MESSAGE_PAGE", value: { app_destination: "MESSENGER" } }),
+});
+
+/** Lỗi Meta báo bài không hợp mục tiêu tin nhắn (thường do bài thiếu nút nhắn tin). */
+export const isCreativeIncompatible = (message: string): boolean => /creative is incompatible with the objective/i.test(message);
+
 export const adParams = (name: string, adsetId: string, creativeId: string): Record<string, string> => ({
   name,
   adset_id: adsetId,
