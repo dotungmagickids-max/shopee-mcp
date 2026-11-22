@@ -1431,6 +1431,8 @@ async function api(params,timeout){
   }finally{clearTimeout(t);}
 }
 const checkOn=()=>TEST||!!(S.settings.apiUrl&&S.settings.apiKey);
+/* mã truy cập giữ thêm một bản ở localStorage: có điện thoại không giữ được bộ nhớ chính (IndexedDB) giữa các lần mở */
+const keyLS={get(){try{return localStorage.getItem('mkKhoKey')||'';}catch(e){return '';}},set(v){try{if(v)localStorage.setItem('mkKhoKey',v);else localStorage.removeItem('mkKhoKey');}catch(e){}}};
 async function loadCatalog(){
   if(!checkOn())return;
   try{
@@ -2433,16 +2435,23 @@ async function startRemote(){
     if(!checkOn()){
       const k=prompt('Dán mã truy cập dịch vụ để xem từ xa:');
       if(!k||!k.trim())return;
-      S.settings=Object.assign({},S.settings,{apiKey:k.trim()});await kvSet('settings',S.settings);
+      S.settings=Object.assign({},S.settings,{apiKey:k.trim()});
+      try{await kvSet('settings',S.settings);}catch(e){}
     }
     msg.textContent='Đang tải sổ video từ máy chủ…';
     S.remote=true;
     try{await remoteVideos();}catch(e){S.remote=false;throw e;}
     S.viewOnly=true;S.dirOK=false;
+    keyLS.set(S.settings.apiKey||'');
+    try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});}catch(e){}
     $('gate').hidden=true;$('gate').style.display='none';
     chips();go(location.hash==='#sx'?'sxlo':S.lite||innerWidth<700?'tien':'home');
     banner('Đang XEM TỪ XA: số liệu lấy từ máy chủ, tự làm mới 2 phút một lần. Không mở được video (video nằm ở máy kho).','ok');
-  }catch(e){msg.textContent='Chưa xem từ xa được: '+(e.message==='HTTP 401'?'sai mã truy cập':(e.message||e.name));}
+  }catch(e){
+    msg.textContent='Chưa xem từ xa được: '+(e.message==='HTTP 401'?'sai mã truy cập. Bấm lại nút trên để dán mã khác.':(e.message||e.name));
+    /* mã sai thì bỏ mã đã nhớ ở máy chỉ xem, để lần bấm sau hỏi lại (máy quầy sửa mã trong Cài đặt) */
+    if(e.message==='HTTP 401'&&S.lite){S.settings=Object.assign({},S.settings,{apiKey:''});keyLS.set('');try{await kvSet('settings',S.settings);}catch(e2){}}
+  }
 }
 
 /* ---------- Soát hàng hoàn: kiện hoàn đang chờ về (Shopee + Viettel Post, qua dịch vụ) ↔ video mở hàng hoàn. Tình trạng kiện lưu trong thư mục video: soat-hoan/kien-hoan.json ---------- */
@@ -3471,15 +3480,18 @@ async function init(){
   if(miss.length||new URLSearchParams(location.search).has('dt')){
     /* điện thoại, hoặc mở với ?dt=1: không quay video được nhưng vẫn xem số liệu từ máy chủ */
     try{S.settings=Object.assign({},DEFAULTS,await kvGet('settings')||{});}
-    catch(e){$('gateInfo').textContent='Không mở được bộ nhớ của trình duyệt: '+(e.message||e.name);return;}
+    catch(e){S.settings=Object.assign({},DEFAULTS);}                /* bộ nhớ chính không mở được: vẫn cho xem, mã lấy ở localStorage */
+    if(!S.settings.apiKey&&keyLS.get())S.settings.apiKey=keyLS.get();
     S.lite=true;
     $('gateInfo').textContent='Máy này chỉ xem số liệu, không quay video'+(miss.length?' (trình duyệt thiếu: '+miss.join(', ')+')':'')+'. Muốn quay thì mở bằng Google Chrome trên máy tính ở quầy.';
     $('btnStart').hidden=true;$('btnView').hidden=true;$('gate').querySelector('.hint').hidden=true;
     $('btnRemote').textContent='Xem tiến độ đóng hàng';$('btnRemote').className='primary';$('btnRemote').disabled=false;
+    if(checkOn())startRemote();                                    /* máy đã nhớ mã: vào thẳng, không phải bấm */
     return;
   }
   try{
     S.settings=Object.assign({},DEFAULTS,await kvGet('settings')||{});
+    if(!S.settings.apiKey&&keyLS.get())S.settings.apiKey=keyLS.get();
     S.dir=TEST?await navigator.storage.getDirectory():(await kvGet('dir')||null);
     S.videos=await tx('videos','readonly',s=>s.getAll())||[];
     await countPending();
