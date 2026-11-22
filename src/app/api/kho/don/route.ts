@@ -1,4 +1,7 @@
 import { checkKhoKey, lookupOrder, ordersToPack, productCatalog, returnsExpected, shopeeArrange, shopeeLabels, vtpMailPush } from "@/lib/kho";
+import { soChoKho } from "@/lib/kho-san-xuat";
+import { homNayVN } from "@/lib/san-xuat";
+import { docSoSanXuat } from "@/lib/san-xuat-data";
 import { cached, dayGet, dayWrite, lechAdd, lechList, markSet, marksGet, nhapAdd, nhapList, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
 
 export const runtime = "nodejs";
@@ -30,6 +33,7 @@ export function OPTIONS() {
  *   GET /api/kho/don?danhmuc=1                           → { codes[], pairs[[mã vạch, mã phân loại]] } mọi mã vạch + mã phân loại
  *   GET /api/kho/don?nhaphoan=1                          → { entries[] } các lượt nhập hàng hoàn vào kho
  *   GET /api/kho/don?laylech=1                           → { entries[] } các lần lấy hàng lệch khi đóng
+ *   GET /api/kho/don?sanxuat=1                           → { at, homNay, tomTat, los[], ngay[], phieu[] } sổ hàng xưởng, chỉ đọc, đã bỏ giá
  */
 export async function GET(request: Request) {
   const auth = checkKhoKey(request);
@@ -48,6 +52,7 @@ export async function GET(request: Request) {
     if (sp.get("hoanmarks")) return json(await marksGet());
     if (sp.get("nhaphoan")) return json(await nhapList());
     if (sp.get("laylech")) return json(await lechList());
+    if (sp.get("sanxuat")) return json(soChoKho(await docSoSanXuat(), homNayVN()));
     const ma = (sp.get("ma") ?? "").replace(/\s+/g, "").toUpperCase();
     if (!/^[A-Z0-9_-]{4,40}$/.test(ma)) return json({ error: "Mã không hợp lệ" }, 400);
     return json(await lookupOrder(ma));
