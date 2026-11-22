@@ -4,6 +4,11 @@ const nextConfig: NextConfig = {
   // The SDK uses Node APIs (Buffer, node-fetch fallback); keep it out of the bundle.
   serverExternalPackages: ["@congminh1254/shopee-sdk"],
 
+  // Trang Sổ hàng xưởng cũ đã chuyển vào app quầy kho (nhóm Sản xuất).
+  async redirects() {
+    return [{ source: "/san-xuat", destination: "/kho#sx", permanent: false }];
+  },
+
   // OAuth discovery documents live under /.well-known; serve them from API routes.
   // Clients may append the resource path (e.g. /.well-known/oauth-protected-resource/api/mcp).
   async rewrites() {

@@ -52,7 +52,7 @@ describe("soChoKho", () => {
     assert.equal(r.los[0].doiHen[0].lyDo, "");
     assert.equal(r.phieu[0].ghiChu, "PĐH-THỬ-03 · 730.");
   });
-  it("số tiến độ giống trang /san-xuat: còn nợ = cắt − kho đếm", () => {
+  it("số tiến độ: còn nợ = cắt − kho đếm", () => {
     assert.deepEqual(r.tomTat, { loTre: 1, conNo: 35, veHomNay: 0, phieuHomNay: 0, choCat: 730, choKhoDem: 69 });
     const [a, b] = r.los;
     assert.deepEqual([a.ma, a.lo, a.soCat, a.khoDem, a.choKhoDem, a.conNo, a.ngayTre, a.choVe], ["ADT26001", "L1", 40, 5, 3, 35, 3, true]);

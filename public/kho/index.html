@@ -2440,7 +2440,7 @@ async function startRemote(){
     try{await remoteVideos();}catch(e){S.remote=false;throw e;}
     S.viewOnly=true;S.dirOK=false;
     $('gate').hidden=true;$('gate').style.display='none';
-    chips();go(S.lite||innerWidth<700?'tien':'home');
+    chips();go(location.hash==='#sx'?'sxlo':S.lite||innerWidth<700?'tien':'home');
     banner('Đang XEM TỪ XA: số liệu lấy từ máy chủ, tự làm mới 2 phút một lần. Không mở được video (video nằm ở máy kho).','ok');
   }catch(e){msg.textContent='Chưa xem từ xa được: '+(e.message==='HTTP 401'?'sai mã truy cập':(e.message||e.name));}
 }
@@ -3449,7 +3449,7 @@ async function startView(){
     if(!await checkDir(true)){msg.textContent='Chưa mở được thư mục "'+(S.dir.name||'')+'". Bấm lại và chọn "Cho phép".';return;}
     S.viewOnly=true;$('gate').hidden=true;$('gate').style.display='none';
     await rescan();cloudBackfill();
-    go('home');
+    go(location.hash==='#sx'?'sxlo':'home');
   }catch(e){msg.textContent='Lỗi: '+(e.message||e.name);}
 }
 async function wake(){try{if(navigator.wakeLock)S.wl=await navigator.wakeLock.request('screen');}catch(e){}}
