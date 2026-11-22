@@ -320,4 +320,11 @@ describe("tồn Pancake cho trang Quản lý kho", () => {
     assert.deepEqual(stockRow("QD26036DEN140", 5, v), ["QD26036DEN140", 5, "Quần gió QD26036", "QD26036", 3]);
     assert.deepEqual(stockRow("X", NaN, {}), ["X", 0, "", "", 0]);
   });
+  it("ảnh đại diện: ảnh phân loại trước, rồi ảnh sản phẩm; bỏ đường dẫn không phải https", async () => {
+    const { variationImage } = await import("../src/lib/kho");
+    assert.equal(variationImage({ images: ["https://a.test/1.jpg"], product: { image: "https://a.test/p.jpg" } }), "https://a.test/1.jpg");
+    assert.equal(variationImage({ images: [], product: { image: "https://a.test/p.jpg" } }), "https://a.test/p.jpg");
+    assert.equal(variationImage({ images: ["javascript:alert(1)", null], product: { image: null } }), "");
+    assert.equal(variationImage({}), "");
+  });
 });

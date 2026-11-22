@@ -58,6 +58,8 @@ tr.sub td.code{font-weight:400;padding-left:22px}
 .tag.late{background:#fdeaea;color:var(--red)}
 .tag.warn{background:#fff4d6;color:var(--amber)}
 td.z{color:#b6bcc6}
+td.img{width:56px;padding:4px 6px}
+td.img img{width:48px;height:48px;object-fit:cover;border-radius:6px;background:#e5e7eb;display:block}
 @media (max-width:700px){header{padding:8px 10px}header h1{font-size:16px}.chips{margin-left:0}main{padding:0 8px}.card{padding:10px}.banner{font-size:15px}}
 #gate{max-width:460px;margin:60px auto;text-align:center}
 #gate input{width:100%;margin:10px 0}
@@ -89,10 +91,11 @@ td.z{color:#b6bcc6}
   <h2>Tồn kho và hàng sắp về</h2>
   <div class="filters">
     <select id="tLoc">
-      <option value="">Còn hàng hoặc sắp về</option>
+      <option value="">Còn hàng, sắp về hoặc có hàng hoàn</option>
       <option value="con">Chỉ mã còn hàng</option>
       <option value="ve">Chỉ mã sắp về, chờ cắt</option>
       <option value="het">Hết hàng, đang chờ về</option>
+      <option value="hoan">Có hàng hoàn (chờ nhập hoặc đang về)</option>
       <option value="cho">Có đơn đang chờ hàng</option>
       <option value="am">Có phân loại tồn âm</option>
     </select>
@@ -102,7 +105,7 @@ td.z{color:#b6bcc6}
   </div>
   <div class="hint" id="tInfo"></div>
   <div class="cards" id="tCards"></div>
-  <div class="tw"><table><thead><tr><th>Mã hàng</th><th class="num">Tồn thực</th><th class="num">Đơn đang chờ</th><th class="num">Sắp về</th><th>Lô đang về</th><th class="num">Đặt, chưa cắt</th></tr></thead><tbody id="tbTon"></tbody></table></div>
+  <div class="tw"><table><thead><tr><th></th><th>Mã hàng</th><th class="num">Tồn thực</th><th class="num">Hoàn chờ nhập</th><th class="num">Hoàn đang về</th><th class="num">Đơn đang chờ</th><th class="num">Sắp về</th><th>Lô đang về</th><th class="num">Đặt, chưa cắt</th></tr></thead><tbody id="tbTon"></tbody></table></div>
 </section>
 <section class="card" id="secKiem" hidden>
   <h2>Tổng kiểm kho</h2>
@@ -141,7 +144,7 @@ const vnTime=t=>{const d=new Date(t);return p2(d.getDate())+'/'+p2(d.getMonth()+
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){localStorage.setItem(k,JSON.stringify(v));}};
 const K=TEST?'mkKhoThu:':'mkKho:';
-const S={key:'',catalog:new Set(),pair:new Map(),stock:null,stockAt:0,stockErr:'',sx:null,sxErr:'',tab:'ton',open:new Set(),ton:[],dot:'',server:[],queue:[],err:'',pend:null,rows:[],online:true};
+const S={key:'',catalog:new Set(),pair:new Map(),stock:null,stockAt:0,stockErr:'',sx:null,sxErr:'',img:new Map(),hoan:null,hoanErr:'',dv:null,dvErr:'',tab:'ton',open:new Set(),ton:[],dot:'',server:[],queue:[],err:'',pend:null,rows:[],online:true};
 
 function banner(msg,kind){const b=$('banner');b.textContent=msg;b.className='banner '+(kind||'ok');b.hidden=false;}
 function bigAlert(a,b){const el=$('big');el.children[0].textContent=a;el.children[1].textContent=b||'';el.hidden=false;clearTimeout(bigAlert.t);bigAlert.t=setTimeout(()=>{el.hidden=true;},5000);}
@@ -160,7 +163,10 @@ const MOCK={
   get sv(){return LS.get('mkKhoThuSv',{});},
   get(p){
     if(p.danhmuc)return {codes:['1893-10','ADT25002TRANG170','2001-05','QD26036DEN150','9999-01'],pairs:[['1893-10','ADT25002TRANG170'],['2001-05','QD26036DEN150']]};
-    if(p.tonpancake)return {at:Date.now(),stock:[['ADT25002TRANG170',5,'Áo dài tay phối kẻ ADT25002','ADT25002',0],['ADT25002XANHTHAN150',0,'Áo dài tay phối kẻ ADT25002','ADT25002',4],['QD26036DEN150',12,'QD26036','QD26036',2],['QD26036GHI140',-1,'QD26036','QD26036',0],['BD26011GHI140',3,'Bộ đồ BD26011','BD26011',0],['AK24001DO120',0,'Áo khoác cũ','AK24001',0]]};
+    if(p.tonpancake)return {at:Date.now(),stock:[['ADT25002TRANG170',5,'Áo dài tay phối kẻ ADT25002','ADT25002',0],['ADT25002XANHTHAN150',0,'Áo dài tay phối kẻ ADT25002','ADT25002',4],['QD26036DEN150',12,'QD26036','QD26036',2],['QD26036GHI140',-1,'QD26036','QD26036',0],['BD26011GHI140',3,'Bộ đồ BD26011','BD26011',0],['AK24001DO120',0,'Áo khoác cũ','AK24001',0]],images:[['QD26036','https://content.pancake.vn/2-2610/2026/10/23/31a6afb2a75a66946b2115ad1adb6c2bf055453c.jpg']]};
+    if(p.hoanmarks)return {marks:{K1:{items:[{code:'1893-10',name:'Trắng 170'},{code:'1893-10'},{code:'QD26036DEN150'}],need:[{sku:'ADT25002TRANG170',name:'Áo dài tay ADT25002 Trắng 170',quantity:2}]},K2:{need:[{sku:'AK24001DO120',name:'Áo khoác cũ đỏ 120',quantity:3}]},K3:{state:'x'}}};
+    if(p.hoan)return {at:Date.now(),errors:[],returns:[{key:'K1',items:[{sku:'ADT25002TRANG170',quantity:5}]},{key:'K9',items:[{sku:'BD26011GHI140',quantity:2},{sku:'QD26036DEN150',quantity:1}]},{key:'K8',items:[{sku:'LA99999X1',quantity:1}]}]};
+    if(p.nhaphoan)return {entries:[{id:'a',sku:'ADT25002TRANG170',qty:1,kind:'nhap',at:1},{id:'b',sku:'AK24001DO120',qty:1,kind:'bo',at:2}]};
     if(p.sanxuat)return {at:Date.now(),homNay:dayStr(new Date()),los:[
       {ma:'QD26036',lo:'L1',conNo:30,choVe:true,henTra:'2026-11-20',nhan:{k:'late',t:'Trễ 2 ngày'},maTran:{sizes:['140','150'],hang:[{mau:'Đen',o:[10,15]},{mau:'Ghi',o:[5,null]}]},theoMau:[]},
       {ma:'ADT25003',lo:'Tái 23/10',conNo:7,choVe:true,henTra:null,nhan:{k:'warn',t:'Về một phần · chưa hẹn'},maTran:null,theoMau:[{mau:'Xanh than',conNo:4},{mau:'Ghi',conNo:3}]},
@@ -234,7 +240,8 @@ async function loadStock1(force){
   if(!force&&S.stock&&Date.now()-S.stockAt<10*60000)return;
   try{
     const d=await api({tonpancake:1},90000);if(!Array.isArray(d.stock))throw new Error('máy chủ trả sai dạng');
-    S.stock=new Map(d.stock.map(x=>[norm(x[0]),[+x[1]||0,x[2]||'',norm(x[3]),+x[4]||0]]));S.stockAt=d.at||Date.now();S.stockErr='';
+    S.stock=new Map(d.stock.map(x=>[norm(x[0]),[+x[1]||0,x[2]||'',norm(x[3]),+x[4]||0]]));
+    S.img=new Map((Array.isArray(d.images)?d.images:[]).filter(x=>x&&/^https:\/\//.test(x[1])).map(x=>[norm(x[0]),x[1]]));S.stockAt=d.at||Date.now();S.stockErr='';
   }catch(e){S.stockErr=e.message||e.name;}
 }
 
@@ -243,17 +250,57 @@ async function loadSx(){
   try{const d=await api({sanxuat:1},30000);if(!Array.isArray(d.los))throw new Error('máy chủ trả sai dạng');S.sx=d;S.sxErr='';}
   catch(e){S.sxErr=e.message||e.name;}
 }
+/* hàng hoàn đã về kho, chờ nhập lại: cùng cách tính với mục "Nhập hàng hoàn" ở trang quay đóng hàng.
+   Kiện có quét sản phẩm lúc mở thì tính theo số quét, không thì theo sản phẩm của đơn; trừ số đã nhập và số bỏ không nhập. Trả Map mã phân loại → số cái */
+function hoanCho(marks,entries){
+  const need=new Map(),done=new Map(),add=(m,k,n)=>m.set(k,(m.get(k)||0)+n);
+  for(const k of Object.keys(marks||{})){
+    const mk=marks[k];if(!mk)continue;
+    if(Array.isArray(mk.items)&&mk.items.length){for(const u of mk.items)if(u&&u.code)add(need,toSku(u.code),1);}
+    else if(Array.isArray(mk.need))for(const u of mk.need)if(u&&u.sku)add(need,norm(u.sku),Math.max(1,+u.quantity||1));
+  }
+  for(const e of entries||[])if(e&&e.sku)add(done,norm(e.sku),+e.qty||0);
+  const out=new Map();
+  for(const [sku,n] of need){const t=n-(done.get(sku)||0);if(t>0)out.set(sku,t);}
+  return out;
+}
+async function loadHoan(){
+  try{
+    const [a,b]=await Promise.all([api({hoanmarks:1},20000),api({nhaphoan:1},20000)]);
+    if(!a||typeof a.marks!=='object'||!Array.isArray(b.entries))throw new Error('máy chủ trả sai dạng');
+    S.hoan={marks:a.marks,entries:b.entries};S.hoanErr='';
+  }catch(e){S.hoanErr=e.message||e.name;}
+}
+/* kiện hoàn đang trên đường về (Shopee, Viettel Post, TikTok), chưa về kho. Bỏ kiện kho đã ghi nhận về (đã tính ở cột chờ nhập) */
+function hoanDangVe(returns,marks){
+  const out=new Map();
+  for(const r of returns||[]){
+    const mk=r&&marks&&marks[r.key];
+    if(!r||(mk&&((Array.isArray(mk.items)&&mk.items.length)||Array.isArray(mk.need))))continue;
+    for(const i of r.items||[])if(i&&i.sku){const k=norm(i.sku);out.set(k,(out.get(k)||0)+Math.max(1,+i.quantity||1));}
+  }
+  return out;
+}
+async function loadDangVe(){
+  try{const d=await api({hoan:1},90000);if(!Array.isArray(d.returns))throw new Error('máy chủ trả sai dạng');S.dv=d;S.dvErr=(d.errors||[]).join('; ');}
+  catch(e){S.dvErr=e.message||e.name;}
+}
 const plainVN=x=>String(x==null?'':x).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'D').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const maOf=(sku,ma)=>ma||((/^([A-Z]{2,4}\d{5})/.exec(sku)||[])[1])||sku;
 /* gom theo mã hàng. stock = Map mã phân loại → [tồn thực, tên, mã hàng, đơn đang chờ]; sx = sổ sản xuất. Cả hai có thể null */
-function tonRows(stock,sx){
+function tonRows(stock,sx,hoan,dv){
   const g=new Map();
-  const grp=ma=>{let r=g.get(ma);if(!r){r={ma,name:'',ton:0,am:0,cho:0,ve:0,cat:0,lo:[],le:[],vs:new Map()};g.set(ma,r);}return r;};
+  const grp=ma=>{let r=g.get(ma);if(!r){r={ma,name:'',ton:0,am:0,cho:0,ve:0,cat:0,hoan:0,dv:0,lo:[],le:[],vs:new Map()};g.set(ma,r);}return r;};
   if(stock)for(const [sku,v] of stock){
     const r=grp(maOf(sku,v[2])),q=v[0],w=v[3]||0;
-    r.vs.set(sku,{sku,ton:q,cho:w,ve:0});
+    r.vs.set(sku,{sku,ton:q,cho:w,ve:0,hoan:0,dv:0});
     if(q>0)r.ton+=q;else if(q<0)r.am++;
     r.cho+=w;if(!r.name&&v[1]&&norm(v[1])!==r.ma)r.name=v[1];
+  }
+  for(const [src,f] of [[hoan,'hoan'],[dv,'dv']])if(src)for(const [sku,n] of src){
+    const st=stock&&stock.get(sku),r=grp(maOf(sku,st?st[2]:''));
+    let v=r.vs.get(sku);if(!v){v={sku,ton:0,cho:0,ve:0,hoan:0,dv:0,la:!!stock};r.vs.set(sku,v);}      /* la: mã hàng hoàn không có trong danh mục Pancake */
+    v[f]+=n;r[f]+=n;
   }
   if(sx){
     for(const l of sx.los||[]){
@@ -275,16 +322,22 @@ function tonRows(stock,sx){
 const dm=d=>d?d.slice(8)+'/'+d.slice(5,7):'';
 function renderTon(){
   const tb=$('tbTon'),cards=$('tCards');tb.textContent='';cards.textContent='';
-  const rows=tonRows(S.stock,S.sx);S.ton=rows;
+  const rows=tonRows(S.stock,S.sx,S.hoan?hoanCho(S.hoan.marks,S.hoan.entries):null,S.dv&&S.hoan?hoanDangVe(S.dv.returns,S.hoan.marks):null);S.ton=rows;   /* tính lại mỗi lần vẽ: bảng đổi mã vạch → mã phân loại có thể về sau */
   const fmt=x=>Math.round(x).toLocaleString('vi-VN');
-  $('tInfo').textContent='SỐ TẠM, chỉ để xem: tồn thực lấy từ Pancake'+(S.stock?' lúc '+vnTime(S.stockAt).slice(11):'')+', hàng sắp về lấy từ sổ sản xuất. Chưa phải số kiểm đếm; sau đợt tổng kiểm sẽ thay bằng số đếm thật. Bấm vào một mã hàng để xem từng màu, size.'
+  $('tInfo').textContent='SỐ TẠM, chỉ để xem: tồn thực lấy từ Pancake'+(S.stock?' lúc '+vnTime(S.stockAt).slice(11):'')+', hàng sắp về lấy từ sổ sản xuất, hàng hoàn chờ nhập lấy từ mục Nhập hàng hoàn (kiện đã về, chưa nhập lại kho; CHƯA cộng vào tồn thực), hàng hoàn đang về lấy từ danh sách kiện hoàn của Shopee, Viettel Post, TikTok (có kiện khách được chấp nhận trả nhưng chưa chắc gửi về, nên là số tối đa). Chưa phải số kiểm đếm; sau đợt tổng kiểm sẽ thay bằng số đếm thật. Bấm vào một mã hàng để xem từng màu, size.'
     +(S.stock?'':' CHƯA LẤY ĐƯỢC TỒN PANCAKE'+(S.stockErr?' ('+S.stockErr+')':'')+': bấm "Tải lại".')
-    +(S.sx?'':' CHƯA LẤY ĐƯỢC SỔ SẢN XUẤT'+(S.sxErr?' ('+S.sxErr+')':'')+': cột sắp về đang trống, bấm "Tải lại".');
+    +(S.sx?'':' CHƯA LẤY ĐƯỢC SỔ SẢN XUẤT'+(S.sxErr?' ('+S.sxErr+')':'')+': cột sắp về đang trống, bấm "Tải lại".')
+    +(S.hoan?'':' CHƯA LẤY ĐƯỢC HÀNG HOÀN CHỜ NHẬP'+(S.hoanErr?' ('+S.hoanErr+')':'')+': cột hoàn chờ nhập đang trống, bấm "Tải lại".')
+    +(S.dv&&!S.dvErr?'':(S.dv?' DANH SÁCH KIỆN HOÀN ĐANG VỀ CÓ THỂ THIẾU ('+S.dvErr+').':' Chưa lấy được kiện hoàn đang về'+(S.dvErr?' ('+S.dvErr+')':' (đang tải)')+'.'));
   const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
   const con=rows.filter(r=>r.ton>0),ve=rows.filter(r=>r.ve>0),cat=rows.filter(r=>r.cat>0),am=rows.reduce((s,r)=>s+r.am,0);
   kpi('Mã hàng còn tồn',S.stock?fmt(con.length):'?');
   kpi('Tổng tồn thực (cái)',S.stock?fmt(con.reduce((s,r)=>s+r.ton,0)):'?');
   kpi('Phân loại còn tồn',S.stock?fmt(rows.reduce((s,r)=>s+[...r.vs.values()].filter(v=>v.ton>0).length,0)):'?');
+  const hoan=rows.filter(r=>r.hoan>0);
+  kpi('Hàng hoàn chờ nhập kho',S.hoan?fmt(hoan.reduce((s,r)=>s+r.hoan,0))+' cái · '+hoan.length+' mã':'?',hoan.length?'amber':'');
+  const dvs=rows.filter(r=>r.dv>0);
+  kpi('Hàng hoàn đang về',S.dv&&S.hoan?fmt(dvs.reduce((s,r)=>s+r.dv,0))+' cái · '+dvs.length+' mã':'?');
   kpi('Sắp về (xưởng còn nợ)',S.sx?fmt(ve.reduce((s,r)=>s+r.ve,0))+' cái · '+ve.length+' mã':'?');
   kpi('Đã đặt, chưa cắt',S.sx?fmt(cat.reduce((s,r)=>s+r.cat,0))+' cái · '+cat.length+' mã':'?');
   kpi('Đơn đang chờ hàng (cái)',S.stock?fmt(rows.reduce((s,r)=>s+r.cho,0)):'?');
@@ -296,17 +349,21 @@ function renderTon(){
     if(loc==='ve')return r.ve>0||r.cat>0;
     if(loc==='het')return r.ton<=0&&(r.ve>0||r.cat>0);
     if(loc==='cho')return r.cho>0;
+    if(loc==='hoan')return r.hoan>0||r.dv>0;
     if(loc==='am')return r.am>0;
-    return tim?true:(r.ton>0||r.ve>0||r.cat>0);
+    return tim?true:(r.ton>0||r.ve>0||r.cat>0||r.hoan>0||r.dv>0);
   });
-  list.sort((a,b)=>b.ton-a.ton||b.ve-a.ve||b.cat-a.cat||a.ma.localeCompare(b.ma));
+  list.sort(loc==='hoan'?(a,b)=>b.hoan-a.hoan||b.dv-a.dv||a.ma.localeCompare(b.ma):(a,b)=>b.ton-a.ton||b.ve-a.ve||b.cat-a.cat||a.ma.localeCompare(b.ma));
   const total=list.length;list=list.slice(0,400);
   for(const r of list){
     const row=tb.insertRow();row.className='grp';const open=S.open.has(r.ma);
     const cell=(txt,cls,to)=>{const c=(to||row).insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    const ci=row.insertCell();ci.className='img';const u=S.img.get(r.ma);
+    if(u){const im=document.createElement('img');im.loading='lazy';im.referrerPolicy='no-referrer';im.alt='';im.src=u;im.onerror=()=>im.remove();ci.append(im);}
     const c0=cell((open?'▾ ':'▸ ')+r.ma,'code');
     if(r.name){const n=document.createElement('div');n.className='hint';n.style.margin='0';n.style.fontWeight='400';n.style.fontFamily='inherit';n.textContent=r.name;c0.append(n);}
     cell(S.stock?fmt(r.ton):'?','num'+(r.ton>0?'':' z'));
+    cell(r.hoan?fmt(r.hoan):'','num');cell(r.dv?fmt(r.dv):'','num');
     cell(r.cho?fmt(r.cho):'','num'+(r.cho>r.ton?' warn':''));
     cell(r.ve?fmt(r.ve):'','num');
     const cl=row.insertCell();cl.className='wrap';
@@ -318,31 +375,32 @@ function renderTon(){
     cell(r.cat?fmt(r.cat):'','num');
     row.onclick=()=>{if(S.open.has(r.ma))S.open.delete(r.ma);else S.open.add(r.ma);renderTon();};
     if(!open)continue;
-    const vs=[...r.vs.values()].filter(v=>v.ton||v.ve||v.cho).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true}));
+    const vs=[...r.vs.values()].filter(v=>v.ton||v.ve||v.cho||v.hoan||v.dv).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true}));
     for(const v of vs){
       const sr=tb.insertRow();sr.className='sub';
-      cell(v.sku,'code',sr);cell(fmt(v.ton),'num'+(v.ton<0?' warn':v.ton>0?'':' z'),sr);cell(v.cho?fmt(v.cho):'','num'+(v.cho>v.ton?' warn':''),sr);cell(v.ve?fmt(v.ve):'','num',sr);cell('','',sr);cell('','',sr);
+      cell('','',sr);cell(v.sku+(v.la?' (không có trên Pancake)':''),'code',sr);cell(fmt(v.ton),'num'+(v.ton<0?' warn':v.ton>0?'':' z'),sr);cell(v.hoan?fmt(v.hoan):'','num',sr);cell(v.dv?fmt(v.dv):'','num',sr);cell(v.cho?fmt(v.cho):'','num'+(v.cho>v.ton?' warn':''),sr);cell(v.ve?fmt(v.ve):'','num',sr);cell('','',sr);cell('','',sr);
     }
-    if(r.le.length){const sr=tb.insertRow();sr.className='sub';const c=sr.insertCell();c.colSpan=6;c.className='wrap';c.textContent='Sắp về chưa xếp được vào mã phân loại nào (xưởng chưa chia size, hoặc tên màu khác Pancake): '+r.le.join(' · ');}
-    if(!vs.length&&!r.le.length){const sr=tb.insertRow();sr.className='sub';const c=sr.insertCell();c.colSpan=6;c.textContent=S.stock?'Chưa có phân loại nào còn tồn hoặc sắp về.':'Chưa lấy được tồn Pancake nên chưa có chi tiết màu, size.';}
+    if(r.le.length){const sr=tb.insertRow();sr.className='sub';const c=sr.insertCell();c.colSpan=9;c.className='wrap';c.textContent='Sắp về chưa xếp được vào mã phân loại nào (xưởng chưa chia size, hoặc tên màu khác Pancake): '+r.le.join(' · ');}
+    if(!vs.length&&!r.le.length){const sr=tb.insertRow();sr.className='sub';const c=sr.insertCell();c.colSpan=9;c.textContent=S.stock?'Chưa có phân loại nào còn tồn hoặc sắp về.':'Chưa lấy được tồn Pancake nên chưa có chi tiết màu, size.';}
   }
-  if(!list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent=S.stock||S.sx?'Không có mã nào khớp bộ lọc.':'Chưa lấy được số liệu. Bấm "Tải lại".';}
-  else if(total>list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent='Đang hiện 400 trên '+total+' mã hàng. Dùng ô tìm hoặc Xuất CSV để xem hết.';}
+  if(!list.length){const c=tb.insertRow().insertCell();c.colSpan=9;c.textContent=S.stock||S.sx?'Không có mã nào khớp bộ lọc.':'Chưa lấy được số liệu. Bấm "Tải lại".';}
+  else if(total>list.length){const c=tb.insertRow().insertCell();c.colSpan=9;c.textContent='Đang hiện 400 trên '+total+' mã hàng. Dùng ô tìm hoặc Xuất CSV để xem hết.';}
 }
 function tonCsv(){
   const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
-  const lines=[['Mã hàng','Mã phân loại','Tên','Tồn thực Pancake','Đơn đang chờ hàng','Sắp về','Lô đang về','Đặt, chưa cắt','Ghi chú'].map(esc).join(',')];
+  const lines=[['Mã hàng','Mã phân loại','Tên','Tồn thực Pancake','Hàng hoàn chờ nhập kho','Hàng hoàn đang về','Đơn đang chờ hàng','Sắp về','Lô đang về','Đặt, chưa cắt','Ghi chú'].map(esc).join(',')];
   for(const r of S.ton.slice().sort((a,b)=>a.ma.localeCompare(b.ma))){
     const lo=r.lo.map(l=>(l.lo||'Lô')+': '+l.conNo+(l.hen?' hẹn '+dm(l.hen):'')+(l.t?' ('+l.t+')':'')).join('; ');
-    if(r.ton>0||r.ve>0||r.cat>0||r.cho>0||r.am>0)lines.push([r.ma,'(cả mã)',r.name,r.ton,r.cho,r.ve,lo,r.cat,r.le.length?'Sắp về chưa xếp được vào mã phân loại: '+r.le.join(' · '):''].map(esc).join(','));
-    for(const v of [...r.vs.values()].filter(v=>v.ton||v.ve||v.cho).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true})))lines.push([r.ma,v.sku,r.name,v.ton,v.cho,v.ve,'','',''].map(esc).join(','));
+    if(r.ton>0||r.ve>0||r.cat>0||r.cho>0||r.am>0||r.hoan>0||r.dv>0)lines.push([r.ma,'(cả mã)',r.name,r.ton,r.hoan,r.dv,r.cho,r.ve,lo,r.cat,r.le.length?'Sắp về chưa xếp được vào mã phân loại: '+r.le.join(' · '):''].map(esc).join(','));
+    for(const v of [...r.vs.values()].filter(v=>v.ton||v.ve||v.cho||v.hoan||v.dv).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true})))lines.push([r.ma,v.sku,r.name,v.ton,v.hoan,v.dv,v.cho,v.ve,'','',''].map(esc).join(','));
   }
   downloadBlob(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv'}),'ton-kho-tam-'+dayStr(new Date())+'.csv');
 }
 async function openTon(force){
   if(force||!S.stock||!S.sx)$('tInfo').textContent='Đang lấy tồn Pancake và sổ sản xuất (lần đầu có thể mất gần một phút)…';
-  await Promise.all([loadStock(force),force||!S.sx?loadSx():null]);
+  await Promise.all([loadStock(force),force||!S.sx?loadSx():null,force||!S.hoan?loadHoan():null]);
   if(S.tab==='ton')renderTon();
+  if(force||!S.dv)loadDangVe().then(()=>{if(S.tab==='ton')renderTon();});
 }
 function setTab(t){
   S.tab=t==='kiem'?'kiem':'ton';try{LS.set(K+'tab',S.tab);}catch(e){}
@@ -491,7 +549,7 @@ async function start(){
   $('gate').hidden=true;$('app').hidden=false;
   S.queue=LS.get(qKey(),[]);chips();
   $('kDot').value=LS.get(K+'dot','')||dayStr(new Date());
-  loadCatalog().catch(e=>banner('Chưa tải được danh mục mã sản phẩm ('+(e.message||e.name)+'). Vẫn đếm được mã đúng dạng.','warn'));
+  loadCatalog().then(()=>{if(S.tab==='ton'&&S.hoan)renderTon();}).catch(e=>banner('Chưa tải được danh mục mã sản phẩm ('+(e.message||e.name)+'). Vẫn đếm được mã đúng dạng.','warn'));
   setTab(LS.get(K+'tab','ton'));
   await openDot(false);
 }
