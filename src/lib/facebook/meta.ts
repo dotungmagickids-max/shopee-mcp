@@ -271,7 +271,10 @@ export type AdInfo = {
   story_id: string | null;
 };
 
-/** Trạng thái, ngân sách ngày (nhóm / chiến dịch) và page của các quảng cáo, gọi theo lô 50 id. Chỉ đọc. */
+/**
+ * Trạng thái, ngân sách ngày (nhóm / chiến dịch) và page của các quảng cáo. Chỉ đọc.
+ * Meta bỏ tham số `?ids=` từ v26, nên gom 50 lệnh đọc vào một lần gọi Batch API (POST nhưng bên trong toàn GET).
+ */
 export async function adsInfo(ids: string[]): Promise<Map<string, AdInfo>> {
   const out = new Map<string, AdInfo>();
   const fields =
@@ -280,10 +283,20 @@ export async function adsInfo(ids: string[]): Promise<Map<string, AdInfo>> {
   for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
   await Promise.all(
     batches.map(async (b) => {
-      const body = await get("", { ids: b.join(","), fields });
-      for (const id of b) {
-        const r = body?.[id];
-        if (!r) continue;
+      const res = await post("", {
+        batch: JSON.stringify(b.map((id) => ({ method: "GET", relative_url: `${id}?fields=${encodeURIComponent(fields)}` }))),
+        include_headers: "false",
+      });
+      (Array.isArray(res) ? res : []).forEach((item, i) => {
+        const id = b[i];
+        if (!item || Number(item.code) !== 200) return; // quảng cáo đã xóa hoặc không đọc được: bỏ qua
+        let r: any = null;
+        try {
+          r = JSON.parse(String(item.body));
+        } catch {
+          return;
+        }
+        if (!r || r.error) return;
         const story = String(r.creative?.effective_object_story_id ?? "");
         out.set(id, {
           ad_id: id,
@@ -295,7 +308,7 @@ export async function adsInfo(ids: string[]): Promise<Map<string, AdInfo>> {
           story_id: story || null,
           page_id: r.creative?.object_story_spec?.page_id ? String(r.creative.object_story_spec.page_id) : story.includes("_") ? story.split("_")[0] : null,
         });
-      }
+      });
     })
   );
   return out;
