@@ -170,16 +170,29 @@ export function stockRow(sku: string, qty: number, v: any): StockRow {
   const wait = wh.reduce((s, w) => s + Number(w?.waiting_quantity ?? 0), 0);
   return [sku, Number.isFinite(qty) ? qty : 0, String(v?.product?.name ?? "").slice(0, 120), normSku(v?.product?.display_id), Number.isFinite(wait) ? wait : 0];
 }
-export async function pancakeStock(): Promise<{ at: number; stock: StockRow[] }> {
+/** Ảnh đại diện của một phân loại: ảnh riêng của phân loại, không có thì ảnh sản phẩm. Chỉ nhận đường dẫn https. */
+export function variationImage(v: any): string {
+  const u = [...(Array.isArray(v?.images) ? v.images : []), v?.product?.image].find((x) => typeof x === "string" && /^https:\/\//.test(x));
+  return u ? String(u).slice(0, 300) : "";
+}
+export async function pancakeStock(): Promise<{ at: number; stock: StockRow[]; images: Array<[string, string]> }> {
   const m = new Map<string, StockRow>();
+  const img = new Map<string, string>();
   await eachVariation((v) => {
     const sku = normSku(v?.display_id);
     if (!sku) return;
     const wh: any[] = v?.variations_warehouses ?? [];
     const qty = wh.length ? wh.reduce((s, w) => s + Number(w?.actual_remain_quantity ?? 0), 0) : Number(v?.remain_quantity ?? 0);
-    m.set(sku, stockRow(sku, qty, v));
+    const row = stockRow(sku, qty, v);
+    m.set(sku, row);
+    // Mỗi mã hàng một ảnh (ảnh của phân loại đầu tiên có ảnh), để trang kho không phải tải 4.700 đường dẫn.
+    const ma = row[3] || sku;
+    if (!img.has(ma)) {
+      const u = variationImage(v);
+      if (u) img.set(ma, u);
+    }
   });
-  return { at: Date.now(), stock: [...m.values()] };
+  return { at: Date.now(), stock: [...m.values()], images: [...img] };
 }
 
 /* ------------------------------------------------------------------------------------------------
