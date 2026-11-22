@@ -99,7 +99,7 @@ td.img img{width:48px;height:48px;object-fit:cover;border-radius:6px;background:
       <option value="cho">Có đơn đang chờ hàng</option>
       <option value="am">Có phân loại tồn âm</option>
     </select>
-    <input type="search" id="tTim" placeholder="Tìm mã hàng, mã phân loại, tên">
+    <input type="search" id="tTim" placeholder="Tìm mã hàng, mã phân loại">
     <button id="btnTonReload">Tải lại</button>
     <button id="btnTonCsv">Xuất CSV</button>
   </div>
@@ -124,7 +124,7 @@ td.img img{width:48px;height:48px;object-fit:cover;border-radius:6px;background:
     <button id="btnReload">Tải lại</button>
     <button id="btnCsv">Xuất CSV</button>
   </div>
-  <div class="tw"><table><thead><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Đã đếm</th><th class="num">Tồn Pancake</th><th class="num">Lệch</th><th>Kệ</th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="tw"><table><thead><tr><th>Mã sản phẩm</th><th class="num">Đã đếm</th><th class="num">Tồn Pancake</th><th class="num">Lệch</th><th>Kệ</th></tr></thead><tbody id="tb"></tbody></table></div>
   <h3>Các lượt vừa đếm</h3>
   <div class="tw"><table><tbody id="tbLog"></tbody></table></div>
 </section>
@@ -295,7 +295,7 @@ function tonRows(stock,sx,hoan,dv){
     const r=grp(maOf(sku,v[2])),q=v[0],w=v[3]||0;
     r.vs.set(sku,{sku,ton:q,cho:w,ve:0,hoan:0,dv:0});
     if(q>0)r.ton+=q;else if(q<0)r.am++;
-    r.cho+=w;if(!r.name&&v[1]&&norm(v[1])!==r.ma)r.name=v[1];
+    r.cho+=w;
   }
   for(const [src,f] of [[hoan,'hoan'],[dv,'dv']])if(src)for(const [sku,n] of src){
     const st=stock&&stock.get(sku),r=grp(maOf(sku,st?st[2]:''));
@@ -344,7 +344,7 @@ function renderTon(){
   if(am)kpi('Phân loại tồn âm',fmt(am),'bad');
   const loc=$('tLoc').value,tim=norm($('tTim').value);
   let list=rows.filter(r=>{
-    if(tim&&!(r.ma.includes(tim)||norm(r.name).includes(tim)||[...r.vs.keys()].some(k=>k.includes(tim))))return false;
+    if(tim&&!(r.ma.includes(tim)||[...r.vs.keys()].some(k=>k.includes(tim))))return false;
     if(loc==='con')return r.ton>0;
     if(loc==='ve')return r.ve>0||r.cat>0;
     if(loc==='het')return r.ton<=0&&(r.ve>0||r.cat>0);
@@ -360,8 +360,7 @@ function renderTon(){
     const cell=(txt,cls,to)=>{const c=(to||row).insertCell();c.textContent=txt;c.className=cls||'';return c;};
     const ci=row.insertCell();ci.className='img';const u=S.img.get(r.ma);
     if(u){const im=document.createElement('img');im.loading='lazy';im.referrerPolicy='no-referrer';im.alt='';im.src=u;im.onerror=()=>im.remove();ci.append(im);}
-    const c0=cell((open?'▾ ':'▸ ')+r.ma,'code');
-    if(r.name){const n=document.createElement('div');n.className='hint';n.style.margin='0';n.style.fontWeight='400';n.style.fontFamily='inherit';n.textContent=r.name;c0.append(n);}
+    cell((open?'▾ ':'▸ ')+r.ma,'code');
     cell(S.stock?fmt(r.ton):'?','num'+(r.ton>0?'':' z'));
     cell(r.hoan?fmt(r.hoan):'','num');cell(r.dv?fmt(r.dv):'','num');
     cell(r.cho?fmt(r.cho):'','num'+(r.cho>r.ton?' warn':''));
@@ -388,11 +387,11 @@ function renderTon(){
 }
 function tonCsv(){
   const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
-  const lines=[['Mã hàng','Mã phân loại','Tên','Tồn thực Pancake','Hàng hoàn chờ nhập kho','Hàng hoàn đang về','Đơn đang chờ hàng','Sắp về','Lô đang về','Đặt, chưa cắt','Ghi chú'].map(esc).join(',')];
+  const lines=[['Mã hàng','Mã phân loại','Tồn thực Pancake','Hàng hoàn chờ nhập kho','Hàng hoàn đang về','Đơn đang chờ hàng','Sắp về','Lô đang về','Đặt, chưa cắt','Ghi chú'].map(esc).join(',')];
   for(const r of S.ton.slice().sort((a,b)=>a.ma.localeCompare(b.ma))){
     const lo=r.lo.map(l=>(l.lo||'Lô')+': '+l.conNo+(l.hen?' hẹn '+dm(l.hen):'')+(l.t?' ('+l.t+')':'')).join('; ');
-    if(r.ton>0||r.ve>0||r.cat>0||r.cho>0||r.am>0||r.hoan>0||r.dv>0)lines.push([r.ma,'(cả mã)',r.name,r.ton,r.hoan,r.dv,r.cho,r.ve,lo,r.cat,r.le.length?'Sắp về chưa xếp được vào mã phân loại: '+r.le.join(' · '):''].map(esc).join(','));
-    for(const v of [...r.vs.values()].filter(v=>v.ton||v.ve||v.cho||v.hoan||v.dv).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true})))lines.push([r.ma,v.sku,r.name,v.ton,v.hoan,v.dv,v.cho,v.ve,'','',''].map(esc).join(','));
+    if(r.ton>0||r.ve>0||r.cat>0||r.cho>0||r.am>0||r.hoan>0||r.dv>0)lines.push([r.ma,'(cả mã)',r.ton,r.hoan,r.dv,r.cho,r.ve,lo,r.cat,r.le.length?'Sắp về chưa xếp được vào mã phân loại: '+r.le.join(' · '):''].map(esc).join(','));
+    for(const v of [...r.vs.values()].filter(v=>v.ton||v.ve||v.cho||v.hoan||v.dv).sort((a,b)=>a.sku.localeCompare(b.sku,undefined,{numeric:true})))lines.push([r.ma,v.sku,v.ton,v.hoan,v.dv,v.cho,v.ve,'','',''].map(esc).join(','));
   }
   downloadBlob(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv'}),'ton-kho-tam-'+dayStr(new Date())+'.csv');
 }
@@ -483,11 +482,11 @@ function render(){
   for(const r of list){
     const row=tb.insertRow();row.className=r.counted&&r.lech?'bad':(!r.counted?'out':'');
     const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
-    cell(r.sku,'code');cell(r.name,'wrap');cell(r.counted?r.dem:'chưa đếm','num');cell(r.pos==null?'?':r.pos,'num');
+    cell(r.sku,'code');cell(r.counted?r.dem:'chưa đếm','num');cell(r.pos==null?'?':r.pos,'num');
     cell(r.lech==null||!r.counted?'':(r.lech>0?'+':'')+r.lech,'num'+(r.counted&&r.lech?' warn':''));cell([...r.ke].join(', '));
   }
-  if(!list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent=all.length||loc||tim?'Không có mã nào khớp bộ lọc.':'Chưa đếm mã nào trong đợt này. Quét mã vạch sản phẩm đầu tiên để bắt đầu.';}
-  else if(total>list.length){const c=tb.insertRow().insertCell();c.colSpan=6;c.textContent='Đang hiện 300 trên '+total+' mã. Dùng ô tìm hoặc Xuất CSV để xem hết.';}
+  if(!list.length){const c=tb.insertRow().insertCell();c.colSpan=5;c.textContent=all.length||loc||tim?'Không có mã nào khớp bộ lọc.':'Chưa đếm mã nào trong đợt này. Quét mã vạch sản phẩm đầu tiên để bắt đầu.';}
+  else if(total>list.length){const c=tb.insertRow().insertCell();c.colSpan=5;c.textContent='Đang hiện 300 trên '+total+' mã. Dùng ô tìm hoặc Xuất CSV để xem hết.';}
   const undone=new Set(all.filter(e=>/^HUY:/.test(e.note||'')).map(e=>e.note.slice(4))),wait=new Set(S.queue.map(e=>e.id));
   for(const e of all.filter(e=>!/^HUY:/.test(e.note||'')).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,15)){
     const row=lg.insertRow(),off=undone.has(e.id);
@@ -503,9 +502,9 @@ function render(){
 }
 function renderPend(){
   const box=$('kPend'),p=S.pend;box.textContent='';box.hidden=!p;if(!p)return;
-  const st=S.stock&&S.stock.get(p.sku),had=entries().filter(e=>e.sku===p.sku).reduce((s,e)=>s+(+e.qty||0),0);
+  const had=entries().filter(e=>e.sku===p.sku).reduce((s,e)=>s+(+e.qty||0),0);
   const b=document.createElement('b');
-  b.textContent='ĐANG ĐẾM: '+p.sku+(st&&st[1]?' · '+st[1]:'')+'. Gõ số lượng rồi Enter (Enter trống hoặc quét mã tiếp theo = 1 cái).'+(had?' Mã này đã đếm '+had+' cái ở lượt trước, lượt này sẽ CỘNG THÊM.':'');
+  b.textContent='ĐANG ĐẾM: '+p.sku+'. Gõ số lượng rồi Enter (Enter trống hoặc quét mã tiếp theo = 1 cái).'+(had?' Mã này đã đếm '+had+' cái ở lượt trước, lượt này sẽ CỘNG THÊM.':'');
   const x=document.createElement('button');x.textContent='Bỏ, không ghi mã này';x.onclick=()=>{S.pend=null;renderPend();$('kScan').focus();};
   box.append(b,x);
 }
@@ -535,8 +534,8 @@ function scan(raw){
 }
 function csv(){
   const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
-  const lines=[['Mã sản phẩm','Tên','Đã đếm','Tồn Pancake','Lệch (đếm trừ Pancake)','Đã đếm chưa','Kệ'].map(esc).join(',')];
-  for(const r of S.rows.slice().sort((a,b)=>a.sku.localeCompare(b.sku)))lines.push([r.sku,r.name,r.dem,r.pos==null?'':r.pos,r.lech==null?'':r.lech,r.counted?'Đã đếm':'CHƯA ĐẾM',[...r.ke].join(' ')].map(esc).join(','));
+  const lines=[['Mã sản phẩm','Đã đếm','Tồn Pancake','Lệch (đếm trừ Pancake)','Đã đếm chưa','Kệ'].map(esc).join(',')];
+  for(const r of S.rows.slice().sort((a,b)=>a.sku.localeCompare(b.sku)))lines.push([r.sku,r.dem,r.pos==null?'':r.pos,r.lech==null?'':r.lech,r.counted?'Đã đếm':'CHƯA ĐẾM',[...r.ke].join(' ')].map(esc).join(','));
   downloadBlob(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv'}),'tong-kiem-kho-'+S.dot+'.csv');
 }
 async function openDot(force){
