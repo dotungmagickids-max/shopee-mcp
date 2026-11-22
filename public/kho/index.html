@@ -3028,15 +3028,15 @@ const sxNum=n=>n==null?'—':Number(n).toLocaleString('vi-VN');
 const sxDay=(iso,nam)=>{if(!iso)return '';const a=String(iso).slice(0,10).split('-');return a[2]+'/'+a[1]+(nam?'/'+a[0]:'');};
 function mockSx(){
   const mt=(sizes,hang)=>{const tong=sizes.map((_,i)=>hang.reduce((a,h)=>a+(h.o[i]||0),0));return {sizes,hang,tong,tongCong:tong.reduce((a,b)=>a+b,0)};};
-  const lo=(id,ma,l,mau,soCat,khoDem,choKhoDem,ngayTre,henTra,nhan,x)=>Object.assign({id,ma,lo:l,mau,soCat,khoDem,choKhoDem,conNo:soCat-khoDem,ngayTre,henTra,ngayCat:'2026-11-03',trangThai:'dang_ve',nhan,choVe:soCat>khoDem,maTran:null,theoMau:[],ghiChu:'',lanVe:[],doiHen:[]},x||{});
+  const lo=(id,ma,l,mau,soCat,khoDem,choKhoDem,ngayTre,henTra,nhan,x)=>Object.assign({id,ma,lo:l,mau,soCat,khoDem,choKhoDem,conNo:soCat-khoDem,ngayTre,henTra,ngayCat:'2026-11-03',trangThai:'dang_ve',nhan,choVe:soCat>khoDem,maTran:null,theoMau:[],ghiChu:'',lanVe:[],doiHen:[],sx:{ngayChot:null,veDau:null,veDu:null,chotDenCat:null,chotDenVeDau:null,chotDenVeDu:null,daQua:null,xuong:'',vaiVe:null,thongTin:''}},x||{});
   return {at:Date.now(),homNay:dayStr(new Date()),tomTat:{loTre:1,conNo:363,veHomNay:77,phieuHomNay:1,choCat:500,choKhoDem:12},
     los:[
-      lo(1,'MAU0001','L1','Đỏ 152 · Trắng 40',192,77,12,3,'2026-11-19',{k:'late',t:'Trễ 3 ngày'},{ghiChu:'Xưởng báo đang in (số giả).',
+      lo(1,'MAU0001','L1','Đỏ 152 · Trắng 40',192,77,12,3,'2026-11-19',{k:'late',t:'Trễ 3 ngày'},{ghiChu:'Xưởng báo đang in (số giả).',sx:{ngayChot:'2026-10-30',veDau:'2026-11-21',veDu:null,chotDenCat:4,chotDenVeDau:22,chotDenVeDu:null,daQua:23,xuong:'Xưởng B',vaiVe:'2026-11-01',thongTin:'In xong, đang may (số giả)'},
         maTran:mt(['130','140','150','160'],[{mau:'Đỏ',o:[11,8,32,54],tong:105},{mau:'Trắng',o:[0,8,2,null],tong:10}]),
         lanVe:[{ngay:'2026-11-20',so:'12 xưởng giao, chờ kho đếm',pancake:''},{ngay:'2026-11-21',so:'77',pancake:'#1001'}],doiHen:[{cu:'2026-11-18',moi:'2026-11-19',lyDo:'Xưởng báo trễ một ngày'}]}),
       lo(2,'MAU0002','L4','Đen 464',464,235,0,0,'2026-11-28',{k:'idle',t:'Còn 6 ngày'},{maTran:mt(['150','160','170'],[{mau:'Đen',o:[68,47,114],tong:229}])}),
       lo(3,'MAU0003','Tái 23/10','Ghi 360',360,341,0,0,null,{k:'warn',t:'Về một phần · chưa hẹn'},{theoMau:[{mau:'Ghi',conNo:19}]}),
-      lo(4,'MAU0004','L1','Đen 58',58,58,0,0,'2026-11-18',{k:'ok',t:'Đủ lô'},{choVe:false,maTran:mt(['140','150'],[{mau:'Đen',o:[0,0],tong:0}])}),
+      lo(4,'MAU0004','L1','Đen 58',58,58,0,0,'2026-11-18',{k:'ok',t:'Đủ lô'},{choVe:false,sx:{ngayChot:'2026-10-28',veDau:'2026-11-12',veDu:'2026-11-18',chotDenCat:6,chotDenVeDau:15,chotDenVeDu:21,daQua:null,xuong:'Xưởng B',vaiVe:null,thongTin:''},maTran:mt(['140','150'],[{mau:'Đen',o:[0,0],tong:0}])}),
       lo(5,'MAU0005','L2','Đen 291',291,0,238,0,null,{k:'idle',t:'Chưa đối soát'},{trangThai:'chua_doi_soat',choVe:false})
     ],
     ngay:[
@@ -3113,6 +3113,17 @@ function sxRenderLo(mk,d){
       det.append(mk('div','m','Mới có số theo sổ xưởng, kho chưa đếm: chưa tính còn nợ theo màu, size.'));
     }
     if(x.conNo<0)det.append(mk('div','sxamber','Về thừa '+sxNum(-x.conNo)+' cái so với số cắt.'));
+    const sx=x.sx;
+    if(sx){
+      const moc=[];
+      if(sx.chotDenCat!=null)moc.push('cắt sau '+sx.chotDenCat+' ngày');
+      if(sx.chotDenVeDau!=null)moc.push('về lần đầu sau '+sx.chotDenVeDau+' ngày');
+      if(sx.chotDenVeDu!=null)moc.push('về đủ sau '+sx.chotDenVeDu+' ngày');
+      else if(sx.daQua!=null&&!chua)moc.push('đã '+sx.daQua+' ngày, chưa về đủ');
+      det.append(mk('div','',(sx.ngayChot?'Chốt sản xuất '+sxDay(sx.ngayChot)+(moc.length?': '+moc.join(' · '):''):'Chưa ghi ngày chốt sản xuất')));
+      const tt=[sx.xuong?'Xưởng: '+sx.xuong:'',sx.vaiVe?'Vải về '+sxDay(sx.vaiVe):'',sx.thongTin].filter(Boolean);
+      if(tt.length)det.append(mk('div','m',tt.join(' · ')));
+    }
     det.append(mk('div','m',(x.lanVe.length?'Về '+x.lanVe.map(v=>sxDay(v.ngay)+': '+v.so+(v.pancake?' ('+v.pancake+')':'')).join(' · '):'Chưa về lần nào')+(x.ngayCat?' · Cắt '+sxDay(x.ngayCat):'')));
     if(x.doiHen.length)det.append(mk('div','m','Dời hẹn '+x.doiHen.length+' lần: '+x.doiHen.map(h=>(h.cu?sxDay(h.cu):'chưa hẹn')+' → '+sxDay(h.moi)+(h.lyDo?' ('+h.lyDo+')':'')).join(' · ')));
     if(x.ghiChu)det.append(mk('div','m',x.ghiChu));

@@ -25,6 +25,12 @@ export interface LoCat {
   gia?: number | null;
   trang_thai: TrangThaiLo;
   ghi_chu?: string | null;
+  /** Ngày chốt sản xuất với xưởng: mốc để đo xưởng làm mất bao lâu. */
+  ngay_chot?: string | null;
+  /** Đơn vị gia công. */
+  xuong?: string | null;
+  ngay_vai_ve?: string | null;
+  thong_tin_sx?: string | null;
   dong: { mau: string; size: string; so_cat: number }[];
   doi_hen?: DoiHen[];
 }
@@ -140,6 +146,47 @@ export function tinhLo(lo: LoCat, hangVe: HangVe[], homNay: string): TienDoLo {
     soLanDoiHen: doiHen.length,
     o,
     lanVe,
+  };
+}
+
+export interface NangLuc {
+  ngayChot: string | null;
+  /** Ngày đầu tiên kho đếm được hàng. */
+  veDau: string | null;
+  /** Ngày kho đếm đủ số cắt; null khi chưa đủ. */
+  veDu: string | null;
+  chotDenCat: number | null;
+  chotDenVeDau: number | null;
+  chotDenVeDu: number | null;
+  /** Số ngày từ ngày chốt đến hôm nay khi lô chưa về đủ. */
+  daQua: number | null;
+}
+
+/**
+ * Mốc thời gian xưởng làm một lô, tính từ ngày chốt sản xuất (cùng công thức với view `sx_tien_do_lo`).
+ * Chỉ tính theo số KHO ĐẾM, như còn nợ.
+ */
+export function nangLuc(t: TienDoLo, homNay: string): NangLuc {
+  const theoNgay = new Map<string, number>();
+  for (const h of t.lanVe) theoNgay.set(h.ngay, (theoNgay.get(h.ngay) ?? 0) + tongLanVe(h).khoDem);
+  let veDau: string | null = null;
+  let veDu: string | null = null;
+  let luyKe = 0;
+  for (const [ngay, kho] of [...theoNgay].sort((a, b) => a[0].localeCompare(b[0]))) {
+    luyKe += kho;
+    if (veDau == null && kho > 0) veDau = ngay;
+    if (veDu == null && t.soCat > 0 && luyKe >= t.soCat) veDu = ngay;
+  }
+  const chot = t.lo.ngay_chot ?? null;
+  const tu = (den: string | null | undefined) => (chot && den ? soNgay(chot, den) : null);
+  return {
+    ngayChot: chot,
+    veDau,
+    veDu,
+    chotDenCat: tu(t.lo.ngay_cat),
+    chotDenVeDau: tu(veDau),
+    chotDenVeDu: tu(veDu),
+    daQua: chot && !veDu ? soNgay(chot, homNay) : null,
   };
 }
 

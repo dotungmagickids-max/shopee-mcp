@@ -5,6 +5,7 @@ import {
   maTran,
   mauCat,
   moTaLanVe,
+  nangLuc,
   nhanLo,
   nhanPancake,
   nhatKy,
@@ -14,6 +15,7 @@ import {
   tongLanVe,
   xepLo,
   type MaTran,
+  type NangLuc,
   type Nhan,
   type TomTat,
 } from "./san-xuat";
@@ -72,6 +74,8 @@ export interface KhoLo {
   ghiChu: string;
   lanVe: { ngay: string; so: string; pancake: string }[];
   doiHen: { cu: string | null; moi: string; lyDo: string }[];
+  /** Mốc xưởng làm tính từ ngày chốt sản xuất, kèm thông tin sản xuất của lô (đã bỏ tiền). */
+  sx: NangLuc & { xuong: string; vaiVe: string | null; thongTin: string };
 }
 
 export interface KhoNgayVe {
@@ -138,6 +142,12 @@ export function soChoKho(so: SoSanXuat, homNay: string, now: number = Date.now()
           };
         }),
         doiHen: (t.lo.doi_hen ?? []).map((d) => ({ cu: d.hen_cu, moi: d.hen_moi, lyDo: boTien(d.ly_do) })),
+        sx: {
+          ...nangLuc(t, homNay),
+          xuong: t.lo.xuong ?? "",
+          vaiVe: t.lo.ngay_vai_ve ?? null,
+          thongTin: boTien(t.lo.thong_tin_sx),
+        },
       };
     }),
     ngay: nhatKy(so.hangVe, so.los)

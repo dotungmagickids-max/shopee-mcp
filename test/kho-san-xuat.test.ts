@@ -25,6 +25,7 @@ const so: SoSanXuat = {
   los: [
     {
       id: 1, ma_hang: "ADT26001", lo: "L1", phieu_dat_id: 10, ngay_cat: "2026-11-12", hen_tra: "2026-11-19", gia: 91000, trang_thai: "dang_ve",
+      ngay_chot: "2026-11-03", xuong: "Xưởng B", ngay_vai_ve: "2026-11-06", thong_tin_sx: "Đang in. Công in 3.000 đ/cái",
       ghi_chu: "Đang in. Giá 91.000 đ/cái",
       dong: [{ mau: "Đỏ", size: "130", so_cat: 16 }, { mau: "Đỏ", size: "140", so_cat: 16 }, { mau: "Trắng", size: "130", so_cat: 8 }],
       doi_hen: [{ hen_cu: "2026-11-18", hen_moi: "2026-11-19", ly_do: "Xưởng B báo trễ, giảm 2.000 đ/cái" }],
@@ -61,6 +62,13 @@ describe("soChoKho", () => {
     assert.deepEqual(a.maTran?.hang.map((h) => [h.mau, h.o, h.tong]), [["Đỏ", [11, 16], 27], ["Trắng", [8, null], 8]]);
     assert.deepEqual(a.lanVe, [{ ngay: "2026-11-21", so: "5", pancake: "#1003" }, { ngay: "2026-11-22", so: "3 xưởng giao, chờ kho đếm", pancake: "" }]);
     assert.deepEqual([b.trangThai, b.choVe, b.maTran, b.theoMau, b.nhan.t], ["chua_doi_soat", false, null, [], "Chưa đối soát"]);
+  });
+  it("ngày chốt sản xuất và thông tin sản xuất của lô, đã bỏ tiền", () => {
+    assert.deepEqual(r.los[0].sx, {
+      ngayChot: "2026-11-03", veDau: "2026-11-21", veDu: null, chotDenCat: 9, chotDenVeDau: 18, chotDenVeDu: null, daQua: 19,
+      xuong: "Xưởng B", vaiVe: "2026-11-06", thongTin: "Đang in.",
+    });
+    assert.equal(r.los[1].sx.ngayChot, null);
   });
   it("hàng về gom theo ngày, mới nhất trước; phiếu đặt chỉ còn phiếu chờ cắt", () => {
     assert.deepEqual(r.ngay.map((d) => [d.ngay, d.khoDem, d.choKhoDem]), [["2026-11-22", 0, 3], ["2026-11-21", 5, 0], ["2026-10-07", 0, 66]]);

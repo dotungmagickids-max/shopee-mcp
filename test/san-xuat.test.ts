@@ -5,7 +5,7 @@ import { beforeEach, describe, it } from "node:test";
 import { z } from "zod";
 import type { ApiKeyContext } from "../src/lib/api-keys";
 import {
-  conChoVe, conNoTheoMau, homNayVN, loiHangVe, maTran, moTaLanVe, nhanLo, nhanPancake, nhatKy, phieuChoCat, soNgay,
+  conChoVe, conNoTheoMau, homNayVN, loiHangVe, maTran, moTaLanVe, nangLuc, nhanLo, nhanPancake, nhatKy, phieuChoCat, soNgay,
   tinhLo, tomTat, xepLo, type HangVe, type LoCat, type PhieuDat,
 } from "../src/lib/san-xuat";
 import { arrivalSaveInput, lotSaveInput, registerSanXuatTools, rescheduleInput } from "../src/lib/san-xuat-tools";
@@ -134,6 +134,27 @@ describe("lịch sử dời hẹn", () => {
   });
 });
 
+describe("ngày chốt sản xuất: mốc đo xưởng làm", () => {
+  const lo = (ngay_chot: string | null): LoCat => ({
+    id: 1, ma_hang: "ADT26001", lo: "L1", ngay_cat: "2026-11-05", hen_tra: "2026-11-19", trang_thai: "dang_ve", ngay_chot,
+    dong: [{ mau: "Đỏ", size: "130", so_cat: 10 }],
+  });
+  const ve = (id: number, ngay: string, kho_dem: number | null): HangVe => ({ id, lo_id: 1, ngay, dong: [{ mau: "Đỏ", size: "130", xuong_giao: 4, kho_dem }] });
+
+  it("chưa về đủ: tính chốt → cắt, chốt → về lần đầu và số ngày đã qua", () => {
+    const n = nangLuc(tinhLo(lo("2026-11-01"), [ve(1, "2026-11-12", null), ve(2, "2026-11-15", 4)], "2026-11-22"), "2026-11-22");
+    assert.deepEqual(n, { ngayChot: "2026-11-01", veDau: "2026-11-15", veDu: null, chotDenCat: 4, chotDenVeDau: 14, chotDenVeDu: null, daQua: 21 });
+  });
+  it("về đủ: lấy ngày kho đếm đủ số cắt, hàng xưởng giao chưa đếm không tính", () => {
+    const n = nangLuc(tinhLo(lo("2026-11-01"), [ve(1, "2026-11-15", 4), ve(2, "2026-11-18", 3), ve(3, "2026-11-20", 3), ve(4, "2026-11-21", 1)], "2026-11-22"), "2026-11-22");
+    assert.deepEqual([n.veDau, n.veDu, n.chotDenVeDu, n.daQua], ["2026-11-15", "2026-11-20", 19, null]);
+  });
+  it("chưa ghi ngày chốt thì không có số ngày nào", () => {
+    const n = nangLuc(tinhLo(lo(null), [ve(1, "2026-11-15", 10)], "2026-11-22"), "2026-11-22");
+    assert.deepEqual(n, { ngayChot: null, veDau: "2026-11-15", veDu: "2026-11-15", chotDenCat: null, chotDenVeDau: null, chotDenVeDu: null, daQua: null });
+  });
+});
+
 describe("tóm tắt, phiếu chờ cắt, nhật ký", () => {
   const los = [
     lo(),
@@ -246,7 +267,7 @@ describe("công cụ MCP mk_sx_*", () => {
     assert.deepEqual([...tools("read").keys()], ["mk_sx_progress", "mk_sx_arrivals", "mk_sx_orders"]);
     assert.deepEqual([...tools("read_write").keys()], [
       "mk_sx_progress", "mk_sx_arrivals", "mk_sx_orders",
-      "mk_sx_order_save", "mk_sx_lot_save", "mk_sx_lot_reschedule", "mk_sx_arrival_save",
+      "mk_sx_order_save", "mk_sx_lot_save", "mk_sx_lot_reschedule", "mk_sx_lot_info", "mk_sx_arrival_save",
     ]);
     const src = fs.readFileSync("src/lib/san-xuat-tools.ts", "utf8");
     assert.deepEqual([...src.matchAll(/call\("(\w+)"/g)].map((m) => m[1]).filter((f) => !f.startsWith("mk_sx_")), []);
@@ -274,6 +295,12 @@ describe("công cụ MCP mk_sx_*", () => {
     assert.equal(rpcCalls.length, 0);
   });
 
+  it("ghi thông tin sản xuất mà không có trường nào thì từ chối, không gọi database", async () => {
+    const r = await goi(tools("read_write"), "mk_sx_lot_info", { ma_hang: "ADT26001", lo: "L1", nguon: "zalo 2" });
+    assert.equal(r.isError, true);
+    assert.equal(rpcCalls.length, 0);
+  });
+
   it("tham số gửi đi đều có trong chữ ký hàm của migration", async () => {
     const t = tools("read_write");
     await goi(t, "mk_sx_progress", {});
@@ -283,8 +310,9 @@ describe("công cụ MCP mk_sx_*", () => {
     await goi(t, "mk_sx_lot_save", { ma_hang: "ADT26001", lo: "L1", nguon: "sổ cắt xưởng", lines: [{ mau: "Đỏ", size: "130", so_cat: 16 }] });
     await goi(t, "mk_sx_lot_reschedule", { ma_hang: "ADT26001", lo: "L1", hen_moi: "2026-11-25", ly_do: "xưởng báo", nguon: "zalo 1" });
     await goi(t, "mk_sx_arrival_save", { nguon: "phiếu 1", ma_hang: "ADT26001", lo: "L1", ngay: "2026-11-20", lines: [{ mau: "Đỏ", size: "130", kho_dem: 1 }] });
-    assert.equal(rpcCalls.length, 7);
-    const sql = fs.readFileSync("supabase/migrations/0025_san_xuat.sql", "utf8");
+    await goi(t, "mk_sx_lot_info", { ma_hang: "ADT26001", lo: "L1", nguon: "zalo 2", ngay_chot: "2026-11-03", xuong: "Xưởng B", ngay_vai_ve: "2026-11-05", thong_tin_sx: "đang in" });
+    assert.equal(rpcCalls.length, 8);
+    const sql = ["0025_san_xuat.sql", "0026_sx_ngay_chot.sql"].map((f) => fs.readFileSync(`supabase/migrations/${f}`, "utf8")).join("\n");
     for (const c of rpcCalls) {
       const m = sql.match(new RegExp(`create or replace function public\\.${c.fn}\\(([^)]*)\\)`));
       assert.ok(m, `migration thiếu hàm ${c.fn}`);

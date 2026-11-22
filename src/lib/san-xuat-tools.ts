@@ -7,7 +7,7 @@ import { loiDongTrung, loiHangVe } from "./san-xuat";
 
 /**
  * Sổ hàng xưởng (mục Sản xuất): công cụ cho phòng Thu Hà ghi phiếu đặt, lô cắt, ngày hẹn, lần hàng về.
- * Mỗi công cụ gọi một hàm Postgres `public.mk_sx_*` (supabase/migrations/0025_san_xuat.sql), hàm đó ghi nhật ký.
+ * Mỗi công cụ gọi một hàm Postgres `public.mk_sx_*` (supabase/migrations/0025_san_xuat.sql, 0026_sx_ngay_chot.sql), hàm đó ghi nhật ký.
  * Không công cụ nào ở đây ghi sang Pancake, Shopee hay Meta: số phiếu Pancake chỉ là số tham chiếu.
  */
 
@@ -77,6 +77,16 @@ export const rescheduleInput = {
   hen_moi: date,
   ly_do: z.string().trim().min(3).max(1000).describe("Ai báo dời, vì sao"),
   nguon,
+};
+
+export const lotInfoInput = {
+  ma_hang: maHang,
+  lo: z.string().trim().min(1).max(30),
+  nguon,
+  ngay_chot: date.optional().describe("Ngày chốt sản xuất với xưởng: mốc để đo xưởng làm mất bao lâu"),
+  xuong: z.string().trim().max(100).optional().describe("Đơn vị gia công"),
+  ngay_vai_ve: date.optional().describe("Ngày vải về xưởng"),
+  thong_tin_sx: z.string().trim().max(2000).optional().describe("Thông tin sản xuất của lô: in thêu, may, hoàn thiện, vướng gì…"),
 };
 
 export const arrivalSaveInput = {
@@ -231,6 +241,34 @@ export function registerSanXuatTools(server: McpServer, ctx: ApiKeyContext): voi
         p_ly_do: v.ly_do,
         p_nguon: v.nguon,
       })
+  );
+
+  server.registerTool(
+    "mk_sx_lot_info",
+    {
+      title: "Sản xuất: ngày chốt và thông tin sản xuất của lô",
+      description:
+        "Set the production-confirmed date (ngay_chot) and production info (factory, fabric arrival date, free notes) " +
+        "of an EXISTING cut lot. Fields you leave out are kept. ngay_chot is the starting point for measuring how long " +
+        "the factory takes: confirmed → cut → first delivery → fully delivered (shown by mk_sx_progress).",
+      inputSchema: lotInfoInput,
+      annotations: add,
+    },
+    async (v) => {
+      if (v.ngay_chot == null && v.xuong == null && v.ngay_vai_ve == null && v.thong_tin_sx == null) {
+        return loi("Chưa có thông tin nào để ghi: cần ít nhất ngay_chot, xuong, ngay_vai_ve hoặc thong_tin_sx");
+      }
+      return call("mk_sx_lot_info", {
+        p_agent: agent,
+        p_ma_hang: v.ma_hang,
+        p_lo: v.lo,
+        p_nguon: v.nguon,
+        p_ngay_chot: v.ngay_chot ?? null,
+        p_xuong: v.xuong ?? null,
+        p_ngay_vai_ve: v.ngay_vai_ve ?? null,
+        p_thong_tin_sx: v.thong_tin_sx ?? null,
+      });
+    }
   );
 
   server.registerTool(
