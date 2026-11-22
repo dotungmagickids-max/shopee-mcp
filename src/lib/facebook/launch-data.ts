@@ -5,7 +5,7 @@
 import { addDays, vnDate } from "../autopilot/time";
 import { db } from "../supabase";
 import { loadStock } from "./jobs";
-import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, creativeParams, type LaunchConfig, type LaunchItem } from "./launch";
+import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, creativeParams, creativeParamsWithCta, isCreativeIncompatible, type LaunchConfig, type LaunchItem } from "./launch";
 import { adsInfo, createObject, listAccounts, pagePosts, scrub } from "./meta";
 import { realSpend } from "./rules";
 
@@ -149,7 +149,19 @@ export async function runLaunch(cfg: LaunchConfig, items: LaunchItem[]): Promise
       try {
         r.adset_id = await create(c.account_id, "adsets", adsetParams(cfg, campaignId, a));
         const creativeId = await create(c.account_id, "adcreatives", creativeParams(a.post_id, a.ad_name));
-        r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, r.adset_id, creativeId));
+        try {
+          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, r.adset_id, creativeId));
+        } catch (e) {
+          const first = e instanceof Error ? e.message : String(e);
+          if (!isCreativeIncompatible(first)) throw e;
+          // Bài thiếu nút nhắn tin: thử đúng một lần nữa với creative có nút Messenger (tham số khác, không phải gửi lại lệnh cũ).
+          const withCta = await create(c.account_id, "adcreatives", creativeParamsWithCta(a.post_id, a.ad_name)).catch((e2) => {
+            throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
+          });
+          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, r.adset_id, withCta)).catch((e2) => {
+            throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
+          });
+        }
       } catch (e) {
         r.error = e instanceof Error ? e.message : String(e);
       }

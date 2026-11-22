@@ -64,3 +64,12 @@ describe("FB Magic Tool: lên camp", () => {
     assert.match(validate(cfg({ age_min: 13 }), items)!, /Tuổi/);
   });
 });
+
+it("creative có nút nhắn tin dùng khi Meta báo bài không hợp mục tiêu", async () => {
+  const { creativeParamsWithCta, isCreativeIncompatible } = await import("../src/lib/facebook/launch");
+  const p = creativeParamsWithCta("111_222", "BD26005-P01-V01");
+  assert.equal(p.object_story_id, "111_222");
+  assert.deepEqual(JSON.parse(p.call_to_action), { type: "MESSAGE_PAGE", value: { app_destination: "MESSENGER" } });
+  assert.equal(isCreativeIncompatible("Meta API 400: The ad's creative is incompatible with the objective of the campaign that the ad belongs to. (mã 100)"), true);
+  assert.equal(isCreativeIncompatible("Meta API 400: Invalid parameter (mã 100)"), false);
+});
