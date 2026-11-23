@@ -23,7 +23,7 @@ function chan(request: Request): Response | null {
 /**
  * Sổ hàng xưởng cho trang /xuong. Header bắt buộc: x-mk-key: <XUONG_API_KEY>
  *   GET /api/xuong → { at, homNay, tomTat, ghiThongTin, don[], los[] } đã bỏ giá, ghi chú nội bộ và số phiếu Pancake
- *   GET /api/xuong?phieu=1 → { phieu: [{ id, so, nguoi, suaLuc, phieu }] } phiếu gửi đối tác đã lưu (không có đơn giá); { chuaBat: true } khi chưa có bảng
+ *   GET /api/xuong?phieu=1 → { phieu: [{ id, so, nguoi, suaLuc, phieu }] } phiếu gửi đối tác đã lưu (có đơn giá vải nếu xưởng đã ghi); { chuaBat: true } khi chưa có bảng
  */
 export async function GET(request: Request) {
   const tuChoi = chan(request);

@@ -1,4 +1,4 @@
-/** Phiếu xưởng gửi đối tác lưu trên máy chủ: kiểm và làm sạch nội dung, không lưu đơn giá, đánh số khi trùng. */
+/** Phiếu xưởng gửi đối tác lưu trên máy chủ: kiểm và làm sạch nội dung, giữ đơn giá vải, đánh số khi trùng. */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { describe, it } from "node:test";
@@ -13,7 +13,7 @@ const vai = {
 const may = { loai: "may", so: "GM-261123-01", ngay: "2026-11-23", doiTac: "Tổ may C", gui, sizes: ["130", "140", ""], hang: [{ mau: "Đỏ", o: ["20", "24", "9"] }, { mau: "", o: [] }], yeuCau: "May theo bảng thông số" };
 
 describe("docPhieu", () => {
-  it("phiếu đặt vải: bỏ đơn giá và trường lạ, chuẩn hóa chữ, bỏ dòng trống", () => {
+  it("phiếu đặt vải: giữ đơn giá, bỏ trường lạ, chuẩn hóa chữ, bỏ dòng trống", () => {
     const r = docPhieu({ action: "phieu_luu", nguoi: "Người A", phieu: vai });
     assert.ok(r.ok);
     if (!r.ok) return;
@@ -21,11 +21,10 @@ describe("docPhieu", () => {
     assert.equal(r.nguoi, "Người A");
     assert.deepEqual(r.phieu, {
       loai: "vai", so: "DV-261123-01", ngay: "2026-11-23", can: "2026-11-27", doiTac: "Nhà vải B", lienHe: "Người B", ma: "MA26005", lo: "L2", gui,
-      vai: [{ ten: "Cotton 4 chiều", mau: "Hồng", sl: "120", dv: "kg", ghi: "Khổ 1m8" }],
+      vai: [{ ten: "Cotton 4 chiều", mau: "Hồng", sl: "120", dv: "kg", gia: "95000", ghi: "Khổ 1m8" }],
       sizes: [], hang: [], viTri: "", kieu: "", yeuCau: "", ghiChu: "Giao tại xưởng\ngiờ hành chính",
     });
-    assert.ok(!JSON.stringify(r.phieu).includes("95000"));
-    assert.ok(!/"gia"|"la"|"sid"|"luuLuc"/.test(JSON.stringify(r.phieu)));
+    assert.ok(!/"la"|"sid"|"luuLuc"/.test(JSON.stringify(r.phieu)));
   });
   it("phiếu giao may: bảng màu × size cắt theo số size, bỏ dòng trống; người ghi lấy từ người lập phiếu", () => {
     const r = docPhieu({ id: "12", phieu: may });
@@ -50,6 +49,7 @@ describe("docPhieu", () => {
     assert.match(loi({ vai: [{ ten: "Cotton", sl: "0", dv: "kg" }] }), /Chưa có dòng vải/);
     assert.match(loi({ vai: [{ ten: "Cotton", sl: "10", dv: "tấn" }] }), /Đơn vị vải/);
     assert.match(loi({ vai: [{ ten: "Cotton", sl: "mười", dv: "kg" }] }), /phải là số/);
+    assert.match(loi({ vai: [{ ten: "Cotton", sl: "10", dv: "kg", gia: "95k" }] }), /Đơn giá phải là số/);
     assert.match(loi({ ghiChu: "x".repeat(801) }), /dài quá/);
     assert.match(loi({ doiTac: "A\u0000B" }), /không hợp lệ/);
     assert.match(loi({ hang: [{ mau: "Đỏ", o: ["", ""] }] }, may), /Chưa có số lượng/);
@@ -77,11 +77,10 @@ describe("lỗi database", () => {
     assert.equal(chuaCoBang({ code: "23505", message: "duplicate key" }), false);
     assert.equal(trungSo({ code: "23505" }), true);
   });
-  it("migration khóa bảng với người ngoài và không có cột giá", () => {
+  it("migration khóa bảng với người ngoài", () => {
     const sql = fs.readFileSync("supabase/migrations/0028_sx_phieu_gui.sql", "utf8");
     assert.match(sql, /enable row level security/);
     assert.match(sql, /revoke all on sx_phieu_gui from anon, authenticated/);
-    assert.ok(!/\bgia\b/.test(sql.replace(/--.*$/gm, "")));
   });
 });
 

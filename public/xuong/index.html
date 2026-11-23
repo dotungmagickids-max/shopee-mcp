@@ -136,7 +136,7 @@ table.nhap button{padding:4px 10px}
 'use strict';
 /* Trang cho xưởng: đơn đã nhận, tiến độ trả hàng, xưởng tự cập nhật ngày hẹn và thông tin sản xuất.
    Chỉ gọi /api/xuong (GET đọc sổ đã bỏ giá, POST ghi ngày hẹn / thông tin sản xuất). Thêm ?thu=1 để chạy thử bằng số giả.
-   Màn Làm phiếu (đặt vải, đặt in thêu, giao may): phiếu lưu trên máy và trên máy chủ (không gửi đơn giá). */
+   Màn Làm phiếu (đặt vải, đặt in thêu, giao may): phiếu lưu trên máy và trên máy chủ. */
 const THU=new URLSearchParams(location.search).has('thu');
 const API='/api/xuong';
 const CHUA_BAT='Máy chủ chưa bật phần ghi thông tin sản xuất';
@@ -201,11 +201,11 @@ function mockTinh(d){
 }
 let MOCK=null;
 const MOCKP=[];
-/* máy chủ giả cho phiếu gửi đối tác: giữ trong bộ nhớ, bỏ đơn giá như máy chủ thật */
+/* máy chủ giả cho phiếu gửi đối tác: giữ trong bộ nhớ */
 function mockPhieu(method,b){
   if(method==='GET')return {status:200,body:{phieu:JSON.parse(JSON.stringify(MOCKP))}};
   if(b.action==='phieu_xoa'){const i=MOCKP.findIndex(x=>x.id===b.id);if(i>=0)MOCKP.splice(i,1);return {status:200,body:{ok:true}};}
-  const ph=JSON.parse(JSON.stringify(b.phieu));(ph.vai||[]).forEach(v=>{delete v.gia;});
+  const ph=JSON.parse(JSON.stringify(b.phieu));
   let x=b.id?MOCKP.find(y=>y.id===b.id):null;
   if(b.id&&!x)return {status:404,body:{error:'Không còn phiếu này trên máy chủ (đã bị xóa)'}};
   if(!x){
@@ -474,7 +474,7 @@ function formTin(x,khoa,iTen){
 }
 
 /* ---------- làm phiếu gửi đối tác: đặt vải, đặt in thêu, giao may ----------
-   Phiếu lưu trên máy này (localStorage) và trên máy chủ để máy khác của xưởng mở lại được; đơn giá chỉ nằm trên máy đã gõ.
+   Phiếu lưu trên máy này (localStorage) và trên máy chủ để máy khác của xưởng mở lại được.
    In ra giấy hoặc lưu PDF bằng lệnh in của trình duyệt. */
 const LOAI={
   vai:{ten:'Phiếu đặt vải',tieuDe:'PHIẾU ĐẶT VẢI',dau:'DV',gui:'Nhà cung cấp vải',can:'Ngày cần vải về'},
@@ -483,7 +483,7 @@ const LOAI={
 };
 const docJson=(k,macDinh)=>{try{const v=JSON.parse(store.get(k)||'null');return v==null?macDinh:v;}catch(e){return macDinh;}};
 const PH={gui:docJson('mk_xuong_ben_gui',{ten:'',diaChi:'',sdt:'',nguoi:''}),ds:docJson('mk_xuong_phieu',[]),p:null,xem:false,
-  srv:null,srvAt:0,srvBusy:false,srvErr:'',chuaBat:false,luu:null,gia:docJson('mk_xuong_gia',{})};
+  srv:null,srvAt:0,srvBusy:false,srvErr:'',chuaBat:false,luu:null};
 const soPhieuMoi=loai=>{
   const hn=homNay(),goc=LOAI[loai].dau+'-'+hn.slice(2,4)+hn.slice(5,7)+hn.slice(8,10)+'-';
   const n=PH.ds.concat(PH.srv||[]).filter(x=>String(x.so||'').startsWith(goc)).map(x=>Number(String(x.so).slice(goc.length))||0);
@@ -499,13 +499,6 @@ function luuPhieu(){
   PH.ds=[p].concat(PH.ds.filter(x=>x.id!==p.id)).slice(0,40);
   store.set('mk_xuong_phieu',JSON.stringify(PH.ds));store.set('mk_xuong_ben_gui',JSON.stringify(PH.gui));
 }
-/* đơn giá không lên máy chủ: giữ riêng trên máy này theo mã phiếu của máy chủ */
-function nhoGia(p){
-  const g=(p.vai||[]).map(v=>v.gia||'');
-  if(!p.sid)return;
-  if(g.some(Boolean))PH.gia['s'+p.sid]=g;else delete PH.gia['s'+p.sid];
-  store.set('mk_xuong_gia',JSON.stringify(PH.gia));
-}
 /* danh sách phiếu trên máy chủ: máy nào của xưởng cũng thấy */
 async function taiPhieu(buoc){
   if(PH.srvBusy||(!buoc&&PH.srv&&Date.now()-PH.srvAt<120000))return;
@@ -519,11 +512,11 @@ async function taiPhieu(buoc){
   }catch(e){PH.srvErr='Chưa đọc được phiếu trên máy chủ ('+(e.message&&e.name!=='AbortError'&&e.name!=='TypeError'?e.message:loiMang(e))+').';}
   PH.srvBusy=false;if(S.tab==='phieu'&&!PH.xem)veDsPhieu();
 }
-/* đưa phiếu đang mở lên máy chủ (không gửi đơn giá); lỗi thì phiếu vẫn nằm trên máy này */
+/* đưa phiếu đang mở lên máy chủ (kể cả đơn giá vải); lỗi thì phiếu vẫn nằm trên máy này */
 async function dayPhieu(){
   const p=PH.p;PH.luu={k:'m',t:'Đang lưu lên máy chủ…'};veLuu();
   const sach=JSON.parse(JSON.stringify(p));for(const k of ['id','sid','luuLuc'])delete sach[k];
-  (sach.vai||[]).forEach(v=>{delete v.gia;});sach.gui=PH.gui;
+  sach.gui=PH.gui;
   try{
     const r=await goi('POST',{action:'phieu_luu',id:p.sid||undefined,nguoi:S.ten||undefined,phieu:sach});
     if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
@@ -533,8 +526,8 @@ async function dayPhieu(){
     else{
       const doiSo=r.body.so&&r.body.so!==p.so;
       if(doiSo)p.so=r.body.so;
-      p.sid=r.body.id;luuPhieu();nhoGia(p);PH.srvAt=0;
-      PH.luu={k:'ok',t:'Đã lưu lên máy chủ lúc '+hhmm(Date.now())+(doiSo?'. Số phiếu đổi thành '+p.so+' vì số cũ máy khác đã dùng':'')+'. Đơn giá (nếu có) chỉ nằm trên máy này.'};
+      p.sid=r.body.id;luuPhieu();PH.srvAt=0;
+      PH.luu={k:'ok',t:'Đã lưu lên máy chủ lúc '+hhmm(Date.now())+(doiSo?'. Số phiếu đổi thành '+p.so+' vì số cũ máy khác đã dùng':'')+'.'};
       if(doiSo&&PH.xem){ve();return;}
     }
   }catch(e){PH.luu={k:'err',t:'Chưa lưu lên máy chủ được ('+loiMang(e)+'). Phiếu vẫn nằm trên máy này.'};}
@@ -571,7 +564,7 @@ function vePhieu(d,body){
     b.onclick=()=>{if(p.loai===k)return;const cu=PH.ds.some(x=>x.id===p.id);p.loai=k;if(!cu)p.so=soPhieuMoi(k);ve();};chon.append(b);
   }
   body.append(chon);
-  body.append(mk('div','note','Bấm "Xem phiếu" để lưu phiếu lên máy chủ (máy nào của xưởng cũng mở lại được) rồi in hoặc lưu PDF gửi đối tác. Đơn giá không gửi lên máy chủ, chỉ nằm trên máy đã gõ.'));
+  body.append(mk('div','note','Bấm "Xem phiếu" để lưu phiếu lên máy chủ (máy nào của xưởng cũng mở lại được, kể cả đơn giá đã ghi) rồi in hoặc lưu PDF gửi đối tác.'));
   /* bên gửi */
   const c1=mk('details','card'),s1=mk('summary');c1.open=!PH.gui.ten;
   s1.append(mk('div','top'));s1.firstChild.append(mk('b','','Bên gửi phiếu'),mk('span','m',PH.gui.ten||'chưa ghi'));
@@ -658,10 +651,10 @@ function vePhieu(d,body){
   const hop=mk('div');hop.id='phDs';body.append(hop);veDsPhieu();taiPhieu();
 }
 function moPhieu(x){
-  PH.p=JSON.parse(JSON.stringify(x));const p=PH.p,g=(p.sid&&PH.gia['s'+p.sid])||[];
+  PH.p=JSON.parse(JSON.stringify(x));const p=PH.p;
   if(!p.id)p.id='p'+Date.now();
   if(!Array.isArray(p.vai)||!p.vai.length)p.vai=[{ten:'',mau:'',sl:'',dv:'kg',gia:'',ghi:''}];
-  p.vai.forEach((v,i)=>{if(v.gia==null)v.gia=g[i]||'';});
+  p.vai.forEach(v=>{if(v.gia==null)v.gia='';});
   if(!Array.isArray(p.sizes)||!p.sizes.length)p.sizes=['130','140','150','160','170','180'];
   if(!Array.isArray(p.hang)||!p.hang.length)p.hang=[{mau:'',o:[]}];
   for(const k of ['can','lienHe','ma','lo','viTri','kieu','yeuCau','ghiChu'])if(p[k]==null)p[k]='';
@@ -693,7 +686,7 @@ function veDsPhieu(){
           const k=await goi('POST',{action:'phieu_xoa',id:r.id,nguoi:S.ten||undefined});
           if(k.status!==200||!k.body.ok){alert('Chưa xóa được: '+(k.body&&k.body.error||'máy chủ báo lỗi '+k.status));return;}
         }catch(e){alert('Chưa xóa được ('+loiMang(e)+').');return;}
-        PH.ds=PH.ds.filter(y=>y.sid!==r.id);store.set('mk_xuong_phieu',JSON.stringify(PH.ds));delete PH.gia['s'+r.id];store.set('mk_xuong_gia',JSON.stringify(PH.gia));
+        PH.ds=PH.ds.filter(y=>y.sid!==r.id);store.set('mk_xuong_phieu',JSON.stringify(PH.ds));
         if(PH.p&&PH.p.sid===r.id)delete PH.p.sid;
         PH.srv=srv.filter(y=>y.id!==r.id);veDsPhieu();
       });

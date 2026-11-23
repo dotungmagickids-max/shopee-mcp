@@ -1,6 +1,6 @@
 -- Phiếu xưởng gửi đối tác (đặt vải, đặt in thêu, giao may), soạn ở trang /xuong.
 -- Lưu nguyên nội dung phiếu để máy nào của xưởng cũng mở lại, sửa và in được.
--- KHÔNG lưu đơn giá: máy chủ bỏ đơn giá trước khi ghi (xem src/lib/xuong-phieu.ts).
+-- Đơn giá trên phiếu đặt vải nằm trong noi_dung (anh chốt 23/11): ai có mã truy cập của xưởng đều xem được.
 -- Chạy lại được nhiều lần.
 
 create table if not exists sx_phieu_gui (
@@ -11,7 +11,7 @@ create table if not exists sx_phieu_gui (
   doi_tac text not null,
   ma_hang text not null default '',
   lo text not null default '',
-  noi_dung jsonb not null,                              -- toàn bộ phiếu đã kiểm, không có đơn giá
+  noi_dung jsonb not null,                              -- toàn bộ phiếu đã kiểm (kể cả đơn giá vải nếu có ghi)
   nguoi_ghi text not null,
   ghi_luc timestamptz not null default now(),
   sua_luc timestamptz not null default now(),

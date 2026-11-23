@@ -3,8 +3,8 @@ import { ngayHopLe } from "./xuong";
 /**
  * Phiếu xưởng gửi đối tác (đặt vải, đặt in thêu, giao may) lưu trên máy chủ, bảng `sx_phieu_gui`
  * (supabase/migrations/0028_sx_phieu_gui.sql). Phần kiểm và làm sạch là hàm thuần để test.
- * Giá chỉ một số người được xem mà trang /xuong dùng chung một mã, nên máy chủ KHÔNG lưu đơn giá:
- * trường `gia` bị bỏ ở đây, đơn giá chỉ nằm trên máy đã gõ.
+ * Đơn giá trên phiếu đặt vải CÓ lưu (anh chốt 23/11): ai có mã truy cập của xưởng đều mở lại phiếu và thấy giá đã ghi.
+ * Đây là giá xưởng mua vải của nhà cung cấp, khác với giá đặt xưởng của công ty (vẫn không trả cho trang /xuong).
  */
 
 export const LOAI_PHIEU = { vai: "DV", in: "IN", may: "GM" } as const;
@@ -20,7 +20,7 @@ export interface PhieuGui {
   ma: string;
   lo: string;
   gui: { ten: string; diaChi: string; sdt: string; nguoi: string };
-  vai: { ten: string; mau: string; sl: string; dv: string; ghi: string }[];
+  vai: { ten: string; mau: string; sl: string; dv: string; gia: string; ghi: string }[];
   sizes: string[];
   hang: { mau: string; o: string[] }[];
   viTri: string;
@@ -67,7 +67,7 @@ const doiTuong = (v: unknown): Record<string, unknown> => (v && typeof v === "ob
 
 /**
  * Kiểm và làm sạch phiếu từ thân POST `{ action: "phieu_luu", id?, nguoi?, phieu }`.
- * Chỉ giữ các trường biết trước; đơn giá và mọi trường lạ bị bỏ.
+ * Chỉ giữ các trường biết trước; mọi trường lạ bị bỏ.
  */
 export function docPhieu(body: unknown): KetQuaPhieu {
   try {
@@ -96,7 +96,7 @@ export function docPhieu(body: unknown): KetQuaPhieu {
         const v = doiTuong(x);
         const dv = chu(v.dv, "Đơn vị", 5) || "kg";
         if (!DON_VI.includes(dv)) throw new Sai("Đơn vị vải phải là kg, cây hoặc m");
-        return { ten: chu(v.ten, "Loại vải", 80), mau: chu(v.mau, "Màu vải", 40), sl: soGo(v.sl, "Số lượng vải"), dv, ghi: chu(v.ghi, "Ghi chú vải", 120) };
+        return { ten: chu(v.ten, "Loại vải", 80), mau: chu(v.mau, "Màu vải", 40), sl: soGo(v.sl, "Số lượng vải"), dv, gia: soGo(v.gia, "Đơn giá"), ghi: chu(v.ghi, "Ghi chú vải", 120) };
       })
       .filter((v) => v.ten || v.mau || v.sl);
     const sizes = mang(p.sizes, "Danh sách size", 10).map((s) => chu(s, "Size", 8)).filter(Boolean);
