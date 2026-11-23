@@ -57,5 +57,21 @@
 .fb .post .pick { font-size: 12px; font-weight: 600; }
 .fb .pickbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 14px; margin: 12px 0; border: 1px solid #1877f2; border-radius: 12px; background: var(--card); box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 .fb .pickbar .go { padding: 6px 14px; border-radius: 8px; background: #1877f2; color: #fff; font-weight: 700; text-decoration: none; }
+.fb .goalcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 12px 0; }
+.fb .goalcard { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.fb .goalcard.warn { border-color: #d98200; }
+.fb .goalcard.good { border-color: #1a7f37; }
+.fb .gc-name { font-size: 13px; font-weight: 600; color: var(--muted); }
+.fb .gc-num { font-size: 28px; font-weight: 800; line-height: 1.15; }
+.fb .gc-sub { font-size: 12px; color: var(--muted); }
+.fb .goalrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+.fb .big { font-size: 24px; font-weight: 800; }
+.fb .big .sub { font-size: 14px; font-weight: 400; }
+.fb .bar { height: 10px; border-radius: 999px; background: var(--border); overflow: hidden; margin: 6px 0; }
+.fb .bar span { display: block; height: 100%; background: #1a7f37; }
+.fb .bar span.bad { background: #b42318; }
+.fb .good { color: #1a7f37; }
+.fb .bad { color: #b42318; }
+.fb td.good, .fb td.bad { font-weight: 700; }
 .fb .named { display: inline-flex; flex-direction: column; gap: 2px; }
 .fb .pickbar .warn { color: var(--error); font-weight: 600; }

@@ -17,6 +17,7 @@ export default async function FbLayout({ children }: { children: ReactNode }) {
       <link rel="stylesheet" href="/fb.css" precedence="default" />
       <nav className="nav">
         <b>FB Magic Tool</b>
+        <a href="/fb/muc-tieu">Mục tiêu</a>
         <a href="/fb">Đánh giá</a>
         <a href="/fb/noi-dung">Bài đã đăng</a>
         <a href="/fb/len-camp">Lên camp</a>
