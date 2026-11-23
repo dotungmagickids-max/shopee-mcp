@@ -1,7 +1,9 @@
 /**
  * Bài đã đăng của page lấy qua Pancake (API trang, chỉ đọc), dùng khi token Meta không đọc được bài của page đó.
  * Cần biến PANCAKE_PAGE_TOKENS trên máy chủ: JSON {"<page_id>": "<page access token của page trong Pancake>"}.
- * Tài liệu Pancake không ghi trường ảnh của bài; nếu câu trả lời có ảnh thì lấy, không thì bài hiện không ảnh.
+ * Tài liệu công khai của Pancake không ghi trường ảnh, nhưng bài của Pancake có `attachments.data[].url`
+ * (ảnh lưu trên máy chủ Pancake, kể cả ảnh bìa video) và `attachments.target.url` (link bài trên Facebook).
+ * Câu trả lời thiếu các trường này thì bài hiện không ảnh.
  */
 import type { PagePost } from "./meta";
 
@@ -25,7 +27,7 @@ export function pancakePageTokens(env: string | undefined = process.env.PANCAKE_
 }
 
 const IMG_KEYS = ["full_picture", "picture", "thumbnail", "thumbnail_url", "preview_url", "image_url", "src", "url"];
-const looksLikeImage = (s: unknown): s is string => typeof s === "string" && /^https:\/\/[^\s]+$/.test(s) && !/\.(mp4|mov|m3u8)(\?|$)/i.test(s);
+const looksLikeImage = (s: unknown): s is string => typeof s === "string" && /^https:\/\/[^\s]+$/.test(s) && !/\.(mp4|mov|m3u8)(\?|$)/i.test(s) && !/^https:\/\/([a-z0-9-]+\.)?(facebook|fb)\.com\//i.test(s);
 
 /** Tìm đường dẫn ảnh đầu tiên trong một bài Pancake (dạng trả về không cố định, nên dò theo tên trường, sâu tối đa 5 tầng). */
 export function pickImage(v: unknown, depth = 0): string | null {
@@ -39,7 +41,7 @@ export function pickImage(v: unknown, depth = 0): string | null {
   }
   const o = v as Record<string, unknown>;
   for (const k of IMG_KEYS) if (looksLikeImage(o[k])) return o[k] as string;
-  for (const k of ["attachments", "data", "media", "image", "image_data", "subattachments", "target"]) {
+  for (const k of ["attachments", "data", "media", "image", "image_data", "subattachments"]) {
     const r = pickImage(o[k], depth + 1);
     if (r) return r;
   }
@@ -49,7 +51,7 @@ export function pickImage(v: unknown, depth = 0): string | null {
 /** Bài Pancake → cùng dạng với bài đọc từ Meta. Giờ của Pancake là UTC, không kèm múi giờ. Bài đã gỡ và ảnh con của album thì bỏ (null). */
 export function fromPancakePost(r: any): PagePost | null {
   const id = String(r?.id ?? "");
-  if (!id || r?.removed === true) return null;
+  if (!id || r?.removed === true || r?.is_removed === true) return null;
   // Pancake đếm cả từng ảnh con của album thành một bài (ảnh, không có chữ): bỏ, để số bài khớp với Facebook.
   if (String(r?.type ?? "") === "photo" && !String(r?.message ?? "").trim()) return null;
   const at = String(r?.inserted_at ?? r?.created_time ?? "");
@@ -59,7 +61,7 @@ export function fromPancakePost(r: any): PagePost | null {
     message: String(r?.message ?? ""),
     created_time: created,
     picture: pickImage({ attachments: r?.attachments, image_data: r?.image_data, full_picture: r?.full_picture, picture: r?.picture, thumbnail: r?.thumbnail }),
-    permalink: /^\d+_\d+$/.test(id) ? `https://www.facebook.com/${id}` : null,
+    permalink: typeof r?.attachments?.target?.url === "string" ? r.attachments.target.url : /^\d+_\d+$/.test(id) ? `https://www.facebook.com/${id}` : null,
     kind: String(r?.type ?? ""),
   };
 }

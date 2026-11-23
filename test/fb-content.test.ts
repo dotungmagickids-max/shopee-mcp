@@ -73,6 +73,16 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
     assert.equal(fromPancakePost({ id: "111_8", type: "photo", message: "BD25056 về hàng", inserted_at: "2026-11-21T03:00:00" })!.picture, null);
     assert.equal(fromPancakePost({ id: "111_5", type: "photo", message: null, inserted_at: "2026-11-21T03:00:00" }), null); // ảnh con của album
     assert.equal(fromPancakePost({ id: "111_7", removed: true }), null);
+    assert.equal(fromPancakePost({ id: "111_4", is_removed: true }), null);
+    // Dạng thật của Pancake: ảnh bìa ở attachments.data[].url, link bài ở attachments.target.url.
+    const real = fromPancakePost({
+      id: "111_3", message: "Mã: BD25056", type: "video", inserted_at: "2026-11-23T13:00:00",
+      attachments: { data: [{ image_data: { height: 1280, width: 720 }, type: "video_inline", url: "https://content.example.test/a/b.jpg" }], target: { id: "9", url: "https://www.facebook.com/reel/9/" } },
+    })!;
+    assert.equal(real.picture, "https://content.example.test/a/b.jpg");
+    assert.equal(real.permalink, "https://www.facebook.com/reel/9/");
+    assert.equal(toContentPost("111", real).kind, "reel");
+    assert.equal(pickImage({ attachments: { data: [], target: { url: "https://www.facebook.com/reel/9/" } } }), null);
     assert.equal(toContentPost("111", fromPancakePost({ id: "111_6", type: "livestream", inserted_at: "2026-11-21T03:00:00" })!).kind, "video");
     assert.equal(pickImage({ attachments: { data: [{ url: "https://example.test/clip.mp4" }] } }), null);
     assert.deepEqual(vnRangeUnix("2026-11-20", "2026-11-20"), { since: 1795107600, until: 1795193999 });
