@@ -22,3 +22,31 @@
 .fb .warnbox { background: var(--warn-bg); padding: 8px 12px; border-radius: 8px; font-size: 14px; }
 .fb .st-ACTIVE { color: #1a7f37; font-weight: 600; }
 .fb .low { color: var(--error); font-weight: 700; }
+/* Nội dung đã đăng */
+.fb .pagecards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 12px 0; }
+.fb .pagecard { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 16px; text-align: left; border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--fg); cursor: pointer; font: inherit; }
+.fb .pagecard.on { border-color: #1877f2; box-shadow: 0 0 0 2px rgba(24,119,242,.25); }
+.fb .pagecard.bad .pc-num { color: var(--muted); }
+.fb .pc-name { font-size: 13px; font-weight: 600; color: var(--muted); }
+.fb .pc-num { font-size: 34px; font-weight: 800; line-height: 1.1; }
+.fb .pc-sub { font-size: 12px; color: var(--muted); font-weight: 400; }
+.fb .filters .spacer { flex: 1; }
+.fb .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.fb .codechips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+.fb .chip { display: inline-block; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--code-bg); color: var(--fg); font-size: 12px; font-weight: 600; cursor: pointer; }
+.fb .chip.on { background: #1877f2; border-color: #1877f2; color: #fff; }
+.fb .chip.none { cursor: default; color: var(--muted); font-weight: 400; }
+.fb .postgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; margin: 12px 0; }
+.fb .post { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--card); overflow: hidden; }
+.fb .post .thumb { position: relative; display: block; aspect-ratio: 1 / 1; background: var(--code-bg); }
+.fb .post .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fb .post .noimg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+.fb .post .kind, .fb .post .day { position: absolute; top: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(0,0,0,.62); }
+.fb .post .kind { left: 8px; }
+.fb .post .day { right: 8px; }
+.fb .post .k-video, .fb .post .k-reel { background: rgba(180,35,24,.88); }
+.fb .post .body { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px; flex: 1; }
+.fb .post .codes { display: flex; flex-wrap: wrap; gap: 4px; }
+.fb .post .msg { margin: 0; font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fb .post .foot { display: flex; align-items: center; gap: 6px; margin-top: auto; }
+.fb .post .foot button { padding: 2px 8px; font-size: 12px; }
