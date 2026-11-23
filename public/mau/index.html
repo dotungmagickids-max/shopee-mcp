@@ -213,7 +213,7 @@ function mock(){
   const hs=(id,ma,ten,tt,x)=>Object.assign({id,ma,ma_chinh_thuc:null,ten,thuong_hieu:'Magickids',gioi:'trai',loai:'Áo',mua:'Xuân Hè',nguon_loai:'taobao',
     nguon_link:'https://example.com/san-pham/'+id,nguon_shop:'Shop nguồn '+id,thong_tin_nguon:'',phan_tich:'',ly_do:'',chat_lieu:'',mau_sac:'',bang_size:'',
     co_mau_that:false,ngay_mau_ve:null,gia_ban:'',gia_nhap:'',link_goc:'',link_anh:'',link_video:'',link_shopee:'',so_anh:0,so_video:0,
-    sua_tt:'chua_giao',sua_nguoi:'',sua_yeu_cau:'',sua_xong:null,mo_ta:'',luu_y:'',trang_thai:tt,ly_do_bo:'',nguoi_tao:'Người A',tao_luc:nay,cap_nhat_luc:nay,anh:null,ngay_test:null,chuan_bi:{}},x||{});
+    sua_tt:'chua_giao',sua_nguoi:'',sua_yeu_cau:'',sua_xong:null,mo_ta:'',luu_y:'',trang_thai:tt,ly_do_bo:'',nguoi_tao:'Người A',tao_luc:nay,cap_nhat_luc:nay,anh:null,ngay_test:null,chuan_bi:{},ke_hoach_test:{}},x||{});
   const ds=[
     hs(1,'MAU27001','Áo polo dài tay phối cổ, phong cách học đường','dang_xem',{ly_do:'Dáng dễ mặc, hợp bé lớn',anh:'v1'}),
     hs(2,'MAU27002','Bộ áo khoác có mũ phối quần ống rộng','chon_lam',{gioi:'gai',loai:'Bộ',mua:'Thu Đông',link_goc:'https://example.com/thu-muc/2-goc',sua_tt:'dang_lam',sua_nguoi:'Người B',sua_yeu_cau:'Bỏ chữ trên ảnh, thêm mã ở góc, chỉnh màu cho đúng',anh:'v1'}),
@@ -249,6 +249,7 @@ function mockGoi(method,body,qs){
   h.cap_nhat_luc=nay;
   if(body.action==='sua'){for(const k in body)if(k in h&&k!=='id')h[k]=body[k];ghi(h.id,'sua','','','(lưu thử)');}
   else if(body.action==='lich'){ghi(h.id,'lich',h.ngay_test||'',body.ngay_test||'');h.ngay_test=body.ngay_test||null;}
+  else if(body.action==='ke_hoach'){for(const [k] of KE_HOACH_TEST)if(k in body)h.ke_hoach_test[k]=body[k];ghi(h.id,'ke_hoach','','','(lưu thử)');}
   else if(body.action==='chuan_bi'){if(body.xong)h.chuan_bi[body.muc]={nguoi:body.nguoi,luc:nay};else delete h.chuan_bi[body.muc];ghi(h.id,'chuan_bi','',body.xong?'xong':'chua',(CHUAN_BI.find(m=>m.k===body.muc)||{}).ten);}
   else if(body.action==='trang_thai'){
     if((body.den==='bo'||h.trang_thai==='bo')&&String(body.ghi_chu||'').trim().length<3)return {status:400,body:{error:'Cần ghi lý do (ít nhất 3 ký tự)'}};
@@ -749,8 +750,9 @@ function veForm(h){
 }
 
 /* ---------- Lịch test: kéo mẫu vào ngày chạy test; việc chuẩn bị tự xếp hạn lùi từ ngày đó ---------- */
-/* Bốn việc phải xong trước ngày test và trước mấy ngày (khớp CHUAN_BI ở máy chủ). */
-const CHUAN_BI=[{k:'thong_tin',ten:'Thông tin sản phẩm',truoc:5},{k:'hinh_anh',ten:'Hình ảnh',truoc:3},{k:'ma_hang',ten:'Mã hàng',truoc:2},{k:'bai_ban',ten:'Bài bán hàng',truoc:1}];
+/* Ba việc phải xong trước ngày test và trước mấy ngày (khớp CHUAN_BI ở máy chủ). Hình ảnh, mã test lúc lên lịch đã có sẵn. */
+const CHUAN_BI=[{k:'thong_tin',ten:'Thông tin sản phẩm',truoc:7},{k:'ke_hoach',ten:'Kế hoạch, kịch bản bán hàng',truoc:2},{k:'bai_ban',ten:'Bài bán hàng',truoc:2}];
+const KE_HOACH_TEST=[['gia_ban','Giá bán'],['tien_test','Tiền test'],['chi_so','Các chỉ số cần đạt'],['dang_bai','Các dạng bài cần test'],['chot_khach','Kịch bản chốt khách']];
 const homNayVN=()=>new Date(Date.now()+7*3600000).toISOString().slice(0,10);
 const doiNgay=(ngay,n)=>new Date(Date.parse(ngay+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 const ngayVN=iso=>{const p=String(iso).slice(0,10).split('-');return p[2]+'/'+p[1];};
@@ -784,7 +786,7 @@ function veLichMau(h,coTen){
   if(h.ngay_test){const bo=mk('button',null,'Bỏ lịch');bo.type='button';bo.addEventListener('click',async()=>{bo.disabled=true;await ghiLich({action:'lich',id:h.id,ngay_test:null},m);bo.disabled=false;});hang.append(bo);}
   if(coTen){const mo=mk('button',null,'Mở hồ sơ');mo.type='button';mo.addEventListener('click',()=>{S.tab='mau';S.mo=h.id;S.nk=null;ve();window.scrollTo(0,0);});hang.append(mo);}
   hop.append(hang);
-  if(!h.ngay_test){hop.append(mk('div','m','Đặt ngày xong, trang tự xếp hạn cho 4 việc chuẩn bị: thông tin sản phẩm, hình ảnh, mã hàng, bài bán hàng.'),m);return hop;}
+  if(!h.ngay_test){hop.append(mk('div','m','Đặt ngày xong, trang tự xếp hạn 3 việc chuẩn bị: thông tin sản phẩm (trước 7 ngày); kế hoạch, kịch bản bán hàng và bài bán hàng (trước 2 ngày).'),veKeHoach(h,m),m);return hop;}
   const vs=viecCua(h),con=vs.filter(v=>!v.xong).length;
   hop.append(mk('div','m','Chạy test '+thuVN(h.ngay_test)+' '+ngayVN(h.ngay_test)+'. '+(con?'Còn '+con+' việc chuẩn bị chưa xong.':'Đã chuẩn bị đủ.')));
   for(const v of vs){
@@ -793,7 +795,23 @@ function veLichMau(h,coTen){
     r.append(c,mk('span','ten2',v.ten),mk('span','han'+(v.xong?' xong':v.tre?' tre':''),v.xong?'Xong'+(v.nguoi?' · '+v.nguoi:''):(v.tre?'Trễ, hạn ':'Hạn ')+thuVN(v.han)+' '+ngayVN(v.han)));
     r.style.margin='0';hop.append(r);
   }
-  hop.append(m);return hop;
+  hop.append(veKeHoach(h,m),m);return hop;
+}
+/* Kế hoạch, kịch bản bán hàng của đợt test: 5 ô chữ, lưu chung một lần. */
+function veKeHoach(h,m){
+  const kh=h.ke_hoach_test||{},d=mk('details');d.style.marginTop='10px';
+  const co=KE_HOACH_TEST.filter(([k])=>String(kh[k]||'').trim()).length;
+  const sm=mk('summary',null,'Kế hoạch, kịch bản bán hàng ('+co+'/'+KE_HOACH_TEST.length+' mục đã ghi)');sm.style.cssText='cursor:pointer;font-weight:600;color:var(--accent)';d.append(sm);
+  const o={};
+  for(const [k,ten] of KE_HOACH_TEST){d.append(mk('label',null,ten));const t=mk('textarea');t.maxLength=2000;t.value=kh[k]||'';t.style.minHeight=k==='chot_khach'||k==='dang_bai'?'90px':'52px';d.append(t);o[k]=t;}
+  const luu=mk('button','primary','Lưu kế hoạch');luu.type='button';luu.style.marginTop='8px';
+  luu.addEventListener('click',async()=>{
+    const body={action:'ke_hoach',id:h.id};let doi=false;
+    for(const [k] of KE_HOACH_TEST){const v=o[k].value.trim();if(v!==String(kh[k]||'')){body[k]=v;doi=true;}}
+    if(!doi){m.className='msg';m.textContent='Chưa đổi gì.';return;}
+    luu.disabled=true;await ghiLich(body,m);luu.disabled=false;
+  });
+  d.append(luu);return d;
 }
 function veLich(body){
   const L=S.lich,nay=homNayVN();
@@ -812,7 +830,7 @@ function veLich(body){
   const keo=(c,h)=>{c.draggable=true;c.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',String(h.id));e.dataTransfer.effectAllowed='move';});};
 
   const cho=ds.filter(h=>!h.ngay_test);
-  body.append(mk('p','info','Kéo mẫu thả vào ngày bắt đầu chạy test (trên điện thoại: chạm vào mẫu rồi chọn ngày). Trang tự xếp hạn 4 việc chuẩn bị lùi từ ngày đó.'));
+  body.append(mk('p','info','Kéo mẫu thả vào ngày bắt đầu chạy test (trên điện thoại: chạm vào mẫu rồi chọn ngày). Trang tự xếp hạn 3 việc chuẩn bị lùi từ ngày đó.'));
   body.append(mk('div','m','Mẫu chưa có lịch ('+cho.length+')'));
   const khay=mk('div','khay');tha(khay,null);
   if(!cho.length)khay.append(mk('span','m',ds.length?'Mẫu nào cũng đã có lịch. Kéo một mẫu về đây để bỏ lịch.':'Chưa có mẫu nào. Thêm mẫu ở tab "Mẫu mới".'));
@@ -844,7 +862,7 @@ function veLich(body){
 
 function veNhatKy(h){
   const d=mk('details','nhom');d.append(mk('summary',null,'Nhật ký'));const trong=mk('div');d.append(trong);
-  const VIEC={tao:'Thêm mẫu',sua:'Sửa hồ sơ',trang_thai:'Đổi trạng thái',anh:'Đổi ảnh đại diện',lich:'Đổi ngày test',chuan_bi:'Việc chuẩn bị'};
+  const VIEC={tao:'Thêm mẫu',sua:'Sửa hồ sơ',trang_thai:'Đổi trạng thái',anh:'Đổi ảnh đại diện',lich:'Đổi ngày test',chuan_bi:'Việc chuẩn bị',ke_hoach:'Sửa kế hoạch test'};
   const veDs=ds=>{
     trong.textContent='';
     if(!ds.length){trong.append(mk('div','m','Chưa có dòng nào.'));return;}

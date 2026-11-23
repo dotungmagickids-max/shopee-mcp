@@ -91,6 +91,8 @@ export interface HoSoRow {
   ngay_test?: string | null;
   /** Việc chuẩn bị đã xong: { <mục>: { nguoi, luc } }. */
   chuan_bi?: Record<string, { nguoi: string; luc: string }> | null;
+  /** Kế hoạch, kịch bản bán hàng của đợt test: { gia_ban, tien_test, chi_so, dang_bai, chot_khach }. */
+  ke_hoach_test?: Record<string, string> | null;
 }
 
 /** Hồ sơ gửi ra trang: thêm dấu ảnh đại diện; `gia_nhap` chỉ có với vai quản lý. */
@@ -237,6 +239,7 @@ export type LenhMau =
   | { ok: true; viec: "trang_thai"; nguoi: string; id: number; den: TrangThai; ghiChu: string }
   | { ok: true; viec: "anh"; nguoi: string; id: number; kieu: string; duLieu: string }
   | { ok: true; viec: "lich"; nguoi: string; id: number; ngay: string | null }
+  | { ok: true; viec: "ke_hoach"; nguoi: string; id: number; cot: Record<string, string> }
   | { ok: true; viec: "chuan_bi"; nguoi: string; id: number; muc: MucChuanBi; xong: boolean }
   | { ok: true; viec: "anh_ma"; nguoi: string; ma: string; kieu: string; duLieu: string }
   | { ok: true; viec: "ma_ban_them"; nguoi: string; ma: string }
@@ -255,6 +258,7 @@ export const ANH_TOI_DA = 300_000;
  *   { action: "trang_thai", id, den, ghi_chu, nguoi }  → đổi trạng thái (chỉ quan_ly)
  *   { action: "anh", id, du_lieu: "data:image/…;base64,…", nguoi } → ảnh đại diện (quan_ly, lam)
  *   { action: "lich", id, ngay_test: "YYYY-MM-DD" | null, nguoi } → đặt, dời hoặc bỏ ngày chạy test (quan_ly, lam)
+ *   { action: "ke_hoach", id, gia_ban?, tien_test?, chi_so?, dang_bai?, chot_khach?, nguoi } → ghi kế hoạch, kịch bản bán hàng (quan_ly, lam)
  *   { action: "chuan_bi", id, muc, xong: true|false, nguoi }     → đánh dấu một việc chuẩn bị (quan_ly, lam)
  *   { action: "anh_ma", ma, du_lieu: "data:image/…;base64,…", nguoi } → ảnh tự đăng cho một mã đang bán (quan_ly, lam)
  *   { action: "ma_ban_them", ma, nguoi }                 → thêm một mã vào tab Mã bán tốt (quan_ly, lam)
@@ -291,9 +295,20 @@ export function docLenhMau(body: unknown, vai: Vai): LenhMau {
     return { ok: true, viec: "sua", nguoi, id, cot };
   }
 
-  if (b.action === "lich" || b.action === "chuan_bi") {
+  if (b.action === "lich" || b.action === "chuan_bi" || b.action === "ke_hoach") {
     const id = docId(b.id);
     if (id == null) return sai("Thiếu id hồ sơ");
+    if (b.action === "ke_hoach") {
+      const cot: Record<string, string> = {};
+      for (const m of KE_HOACH_TEST) {
+        if (!(m.k in b)) continue;
+        const r = docTruong(m.ten, { k: "chu", max: 2000, dong: true }, b[m.k]);
+        if (!r.ok) return sai(r.error);
+        cot[m.k] = String(r.v ?? "");
+      }
+      if (!Object.keys(cot).length) return sai("Chưa có thông tin nào để ghi");
+      return { ok: true, viec: "ke_hoach", nguoi, id, cot };
+    }
     if (b.action === "lich") {
       if (trong(b.ngay_test)) return { ok: true, viec: "lich", nguoi, id, ngay: null };
       if (!ngayHopLe(b.ngay_test) || b.ngay_test < "2024-01-01" || b.ngay_test > "2099-12-31") return sai("Ngày chạy test phải có dạng YYYY-MM-DD");
@@ -403,14 +418,23 @@ export function loiChuyen(r: HoSoRow, den: TrangThai, ghiChu: string, coAnh: boo
 // ---------- Lịch test và việc chuẩn bị ----------
 
 /**
- * Bốn việc phải xong trước ngày chạy test, và phải xong trước mấy ngày.
- * Số ngày là mặc định ban đầu; đổi ở đây thì hạn của mọi mẫu đã lên lịch đổi theo.
+ * Ba việc phải xong trước ngày chạy test, và phải xong trước mấy ngày (anh chốt 23/11/2026).
+ * Hình ảnh và mã sản phẩm test không nằm trong danh sách: lúc lên lịch đã có sẵn.
+ * Đổi số ngày ở đây thì hạn của mọi mẫu đã lên lịch đổi theo.
  */
 export const CHUAN_BI = [
-  { k: "thong_tin", ten: "Thông tin sản phẩm", truoc: 5 },
-  { k: "hinh_anh", ten: "Hình ảnh", truoc: 3 },
-  { k: "ma_hang", ten: "Mã hàng", truoc: 2 },
-  { k: "bai_ban", ten: "Bài bán hàng", truoc: 1 },
+  { k: "thong_tin", ten: "Thông tin sản phẩm", truoc: 7 },
+  { k: "ke_hoach", ten: "Kế hoạch, kịch bản bán hàng", truoc: 2 },
+  { k: "bai_ban", ten: "Bài bán hàng", truoc: 2 },
+] as const;
+
+/** Các mục của kế hoạch, kịch bản bán hàng cho một đợt test. */
+export const KE_HOACH_TEST = [
+  { k: "gia_ban", ten: "Giá bán" },
+  { k: "tien_test", ten: "Tiền test" },
+  { k: "chi_so", ten: "Các chỉ số cần đạt" },
+  { k: "dang_bai", ten: "Các dạng bài cần test" },
+  { k: "chot_khach", ten: "Kịch bản chốt khách" },
 ] as const;
 export type MucChuanBi = (typeof CHUAN_BI)[number]["k"];
 
