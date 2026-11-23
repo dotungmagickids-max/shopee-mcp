@@ -1,7 +1,7 @@
 /** FB Magic Tool, phần lên camp: đọc mã trong bài, đặt tên, chia tài khoản, tham số gửi Meta luôn tạm dừng. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, nextName, planBudget, validate, type LaunchConfig } from "../src/lib/facebook/launch";
+import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, type LaunchConfig } from "../src/lib/facebook/launch";
 
 const cfg = (p: Partial<LaunchConfig> = {}): LaunchConfig => ({
   page_id: "159993608025607", accounts: ["111111", "222222"], budget: 200_000, structure: "abo",
@@ -37,6 +37,45 @@ describe("FB Magic Tool: lên camp", () => {
     assert.equal(plan[0].adsets[0].daily_budget, null);
     assert.equal(planBudget(plan), 400_000);
     assert.equal(campaignParams(plan[0]).daily_budget, "200000");
+  });
+
+  it("1-1-N (test): một chiến dịch, một nhóm, mỗi bài một quảng cáo; ngân sách ABO ở nhóm", () => {
+    const plan = buildPlan(cfg({ accounts: ["111111"], shape: "1-1-n", cbo_name: "TT-MG-BD26011-01", adset_name: "TN-NU2540-AUTO" }), items);
+    assert.equal(plan.length, 1);
+    assert.equal(plan[0].name, "TT-MG-BD26011-01");
+    assert.equal(plan[0].daily_budget, null);
+    assert.equal(plan[0].adsets.length, 1);
+    assert.deepEqual(plan[0].adsets[0].ads.map((a) => a.ad_name), items.map((i) => i.name));
+    assert.equal(plan[0].adsets[0].name, "TN-NU2540-AUTO");
+    assert.equal(plan[0].adsets[0].daily_budget, 200_000);
+    assert.equal(planBudget(plan), 200_000);
+    assert.equal(campaignParams(plan[0]).daily_budget, undefined);
+  });
+
+  it("1-N-1 (scale): một chiến dịch, mỗi bài một nhóm; ABO thì mỗi nhóm một ngân sách, CBO thì ngân sách ở chiến dịch", () => {
+    const abo = buildPlan(cfg({ accounts: ["111111"], shape: "1-n-1", cbo_name: "TT-MG-GOM-02", adset_name: "TN-NU2540-AUTO" }), items);
+    assert.equal(abo.length, 1);
+    assert.deepEqual(abo[0].adsets.map((s) => s.name), ["TN-NU2540-AUTO-01", "TN-NU2540-AUTO-02", "TN-NU2540-AUTO-03"]);
+    assert.deepEqual(abo[0].adsets.map((s) => s.ads.length), [1, 1, 1]);
+    assert.equal(planBudget(abo), 600_000);
+    const cbo = buildPlan(cfg({ accounts: ["111111"], shape: "1-n-1", structure: "cbo", cbo_name: "X" }), items);
+    assert.equal(cbo[0].daily_budget, 200_000);
+    assert.equal(cbo[0].adsets[0].daily_budget, null);
+    assert.equal(planBudget(cbo), 200_000);
+    // Hai tài khoản: mỗi tài khoản một chiến dịch, bài chia lần lượt.
+    const two = buildPlan(cfg({ shape: "1-1-n", cbo_name: "X" }), items);
+    assert.deepEqual(two.map((c) => c.adsets[0].ads.length), [2, 1]);
+  });
+
+  it("gợi ý tên chiến dịch và tên nhóm theo quy ước", () => {
+    assert.deepEqual(["Magic Kids", "Magickids.Official", "Magickids Store", "Annie Baby"].map(pageShort), ["MG", "MGO", "MGS", "AB"]);
+    assert.equal(suggestCampaignName("MG", ["ADT25003"], []), "TT-MG-ADT25003-01");
+    assert.equal(suggestCampaignName("MG", ["ADT25003"], ["TT-MG-ADT25003-01", "tt-mg-adt25003-04", "TT-MG-ADT25002-09"]), "TT-MG-ADT25003-05");
+    assert.equal(suggestCampaignName("MG", ["ADT26001", "ADT26002", "ADT26001"], []), "TT-MG-ADT26001.ADT26002-01");
+    assert.equal(suggestCampaignName("MGO", ["A1", "B2", "C3"], ["TT-MGO-GOM-02"]), "TT-MGO-GOM-03");
+    assert.equal(suggestCampaignName("AB", [], []), "TT-AB-GOM-01");
+    assert.equal(suggestAdsetName({ gender: "female", age_min: 25, age_max: 40, placement: "auto" }), "TN-NU2540-AUTO");
+    assert.equal(suggestAdsetName({ gender: "all", age_min: 25, age_max: 65, placement: "facebook" }), "TN-ALL2565-FB");
   });
 
   it("mọi thứ gửi Meta đều tạm dừng, đúng mục tiêu tin nhắn", () => {
