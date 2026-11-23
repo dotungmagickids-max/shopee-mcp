@@ -31,7 +31,20 @@ export type LaunchConfig = {
   shape?: Shape;
   /** Tên nhóm quảng cáo; "1-n-1" thì thêm số thứ tự -01, -02… Không ghi thì lấy tên quảng cáo. */
   adset_name?: string;
+  /**
+   * Hẹn giờ bắt đầu chạy, giờ Việt Nam, dạng "YYYY-MM-DDTHH:mm". Nhóm vẫn tạo ở trạng thái tạm dừng; sau khi anh bật,
+   * Meta chờ tới giờ này mới phân phối. Không ghi = chạy ngay khi bật.
+   */
+  start_time?: string;
 };
+
+/** Giờ hẹn (giờ Việt Nam) → giây unix; sai dạng thì null. */
+export function startUnix(v: string | undefined): number | null {
+  if (!v || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return null;
+  const t = Date.parse(`${v}:00+07:00`);
+  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
+}
+export const MAX_START_DAYS = 60;
 
 export const shapeOf = (cfg: Pick<LaunchConfig, "shape" | "structure">): Shape => cfg.shape ?? (cfg.structure === "cbo" ? "1-n-1" : "n-1-1");
 
@@ -61,7 +74,13 @@ export function nextName(codes: string[], used: Iterable<string>): string {
   return `${head}-P${String(max + 1).padStart(2, "0")}-V01`;
 }
 
-export function validate(cfg: LaunchConfig, items: LaunchItem[]): string | null {
+export function validate(cfg: LaunchConfig, items: LaunchItem[], now: number = Date.now()): string | null {
+  if (cfg.start_time) {
+    const t = startUnix(cfg.start_time);
+    if (t == null) return "Giờ hẹn bắt đầu chạy không hợp lệ.";
+    if (t * 1000 < now + 10 * 60_000) return "Giờ hẹn bắt đầu chạy phải sau hiện tại ít nhất 10 phút.";
+    if (t * 1000 > now + MAX_START_DAYS * 86_400_000) return `Giờ hẹn bắt đầu chạy không quá ${MAX_START_DAYS} ngày tới.`;
+  }
   if (!/^\d{5,20}$/.test(cfg.page_id)) return "Page không hợp lệ.";
   if (!cfg.accounts.length || cfg.accounts.some((a) => !/^\d{5,20}$/.test(a))) return "Chọn ít nhất một tài khoản quảng cáo.";
   if (!items.length) return "Chưa chọn bài nào.";
@@ -209,6 +228,8 @@ export function adsetParams(cfg: LaunchConfig, campaignId: string, a: PlannedCam
     p.daily_budget = String(Math.round(a.daily_budget));
     p.bid_strategy = "LOWEST_COST_WITHOUT_CAP";
   }
+  const start = startUnix(cfg.start_time);
+  if (start) p.start_time = String(start);
   return p;
 }
 
@@ -222,6 +243,17 @@ export const creativeParamsWithCta = (postId: string, name: string): Record<stri
   ...creativeParams(postId, name),
   call_to_action: JSON.stringify({ type: "MESSAGE_PAGE", value: { app_destination: "MESSENGER" } }),
 });
+
+/**
+ * Thêm lời giải thích tiếng Việt cho lỗi Meta hay gặp. Lỗi quyền page: tài khoản hệ thống của web chưa được giao
+ * quyền tạo quảng cáo cho page đó trong Cài đặt doanh nghiệp.
+ */
+export function explainMetaError(message: string): string {
+  if (/need access to create ads for this Page/i.test(message)) {
+    return `${message} → Web chưa có quyền tạo quảng cáo cho page này: vào Cài đặt doanh nghiệp Meta, giao page cho người dùng hệ thống của web với quyền tạo quảng cáo, rồi tạo lại.`;
+  }
+  return message;
+}
 
 /** Lỗi Meta báo bài không hợp mục tiêu tin nhắn (thường do bài thiếu nút nhắn tin). */
 export const isCreativeIncompatible = (message: string): boolean => /creative is incompatible with the objective/i.test(message);

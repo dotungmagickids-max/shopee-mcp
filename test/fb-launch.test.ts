@@ -78,6 +78,19 @@ describe("FB Magic Tool: lên camp", () => {
     assert.equal(suggestAdsetName({ gender: "all", age_min: 25, age_max: 65, placement: "facebook" }), "TN-ALL2565-FB");
   });
 
+  it("hẹn giờ bắt đầu chạy: giờ Việt Nam, phải ở tương lai, nhóm vẫn tạm dừng", () => {
+    const now = Date.parse("2026-11-23T10:00:00+07:00");
+    assert.equal(validate(cfg({ start_time: "2026-11-25T08:00" }), items, now), null);
+    assert.match(validate(cfg({ start_time: "2026-11-23T10:05" }), items, now)!, /sau hiện tại/);
+    assert.match(validate(cfg({ start_time: "2027-03-01T08:00" }), items, now)!, /không quá/);
+    assert.match(validate(cfg({ start_time: "25/11/2026" }), items, now)!, /không hợp lệ/);
+    const plan = buildPlan(cfg({ start_time: "2026-11-25T08:00" }), items);
+    const s = adsetParams(cfg({ start_time: "2026-11-25T08:00" }), "c1", plan[0].adsets[0]);
+    assert.equal(s.start_time, String(Date.parse("2026-11-25T08:00:00+07:00") / 1000));
+    assert.equal(s.status, "PAUSED");
+    assert.equal(adsetParams(cfg(), "c1", plan[0].adsets[0]).start_time, undefined);
+  });
+
   it("mọi thứ gửi Meta đều tạm dừng, đúng mục tiêu tin nhắn", () => {
     const plan = buildPlan(cfg({ gender: "female" }), items);
     const c = campaignParams(plan[0]);
@@ -111,4 +124,7 @@ it("creative có nút nhắn tin dùng khi Meta báo bài không hợp mục ti�
   assert.deepEqual(JSON.parse(p.call_to_action), { type: "MESSAGE_PAGE", value: { app_destination: "MESSENGER" } });
   assert.equal(isCreativeIncompatible("Meta API 400: The ad's creative is incompatible with the objective of the campaign that the ad belongs to. (mã 100)"), true);
   assert.equal(isCreativeIncompatible("Meta API 400: Invalid parameter (mã 100)"), false);
+  const { explainMetaError } = await import("../src/lib/facebook/launch");
+  assert.match(explainMetaError("Meta API 400: You need access to create ads for this Page. Send a request (mã 100)"), /giao page cho người dùng hệ thống/);
+  assert.equal(explainMetaError("Meta API 400: Invalid parameter (mã 100)"), "Meta API 400: Invalid parameter (mã 100)");
 });

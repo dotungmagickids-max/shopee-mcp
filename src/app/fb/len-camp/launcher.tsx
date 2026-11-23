@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
-import type { LaunchResult, PostRow } from "@/lib/facebook/launch-data";
+import type { LaunchDraft, LaunchResult, PostRow } from "@/lib/facebook/launch-data";
 
 const vnd = (n: number | null | undefined) => (n == null ? "–" : Math.round(n).toLocaleString("vi-VN"));
 const day = (iso: string) => (iso ? new Date(iso).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit" }) : "");
@@ -10,7 +10,7 @@ const day = (iso: string) => (iso ? new Date(iso).toLocaleDateString("vi-VN", { 
 const HOT = 5;
 const STEADY = 1;
 
-type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns?: string[]; preselect?: string[] };
+type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns?: string[]; drafts?: LaunchDraft[] | null; preselect?: string[] };
 
 const SHAPES: [Shape, string][] = [
   ["1-1-n", "1-1-N: 1 chiến dịch, 1 nhóm, mỗi bài 1 quảng cáo (test)"],
@@ -18,7 +18,10 @@ const SHAPES: [Shape, string][] = [
   ["n-1-1", "N-1-1: mỗi bài 1 chiến dịch riêng"],
 ];
 
-export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], preselect = [] }: Props) {
+export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], drafts: savedDrafts = null, preselect = [] }: Props) {
+  const [drafts, setDrafts] = useState<LaunchDraft[]>(savedDrafts ?? []);
+  const [startTime, setStartTime] = useState("");
+  const [draftMsg, setDraftMsg] = useState<string | null>(null);
   // Bài chọn sẵn từ màn Bài đã đăng; bài nào không còn trong 30 ngày gần nhất thì bỏ qua và báo số lượng.
   const preFound = useMemo(() => preselect.filter((id) => posts.some((p) => p.id === id)).slice(0, MAX_ITEMS), [preselect, posts]);
   const [picked, setPicked] = useState<string[]>(preFound);
@@ -72,6 +75,7 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
     placement,
     cbo_name: grouped ? campName : undefined,
     adset_name: adsetName,
+    start_time: startTime || undefined,
   };
   const budgetHint = !grouped ? "Ngân sách/ngày mỗi bài (đ)" : structure === "cbo" ? "Ngân sách/ngày cả chiến dịch (đ)" : shape === "1-1-n" ? "Ngân sách/ngày của nhóm (đ)" : "Ngân sách/ngày mỗi nhóm (đ)";
   const accName = (id: string) => accounts.find((a) => a.id === id)?.name ?? id;
@@ -89,6 +93,51 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
     const bad = validate(cfg, list);
     setError(bad);
     setItems(bad ? null : list);
+  };
+
+  /** Lưu kế hoạch đang xem trước thành nháp: chỉ ghi vào máy chủ của mình, không gọi Meta. */
+  const saveDraft = async () => {
+    if (!items) return;
+    setDraftMsg(null);
+    try {
+      const res = await fetch("/api/fb/launch-drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: grouped ? campName : `${items[0].name}${items.length > 1 ? ` +${items.length - 1}` : ""}`, config: cfg, items }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.draft) return setDraftMsg(body?.error ?? `Chưa lưu được (lỗi ${res.status}).`);
+      setDrafts((xs) => [body.draft, ...xs]);
+      setDraftMsg("Đã lưu nháp. Chưa tạo gì trên Meta.");
+    } catch {
+      setDraftMsg("Chưa lưu được, anh thử lại.");
+    }
+  };
+  const openDraft = (d: LaunchDraft) => {
+    const c = d.config ?? {};
+    const have = d.items.filter((i) => posts.some((p) => p.id === i.post_id));
+    setPicked(have.map((i) => i.post_id));
+    setAccs((c.accounts ?? []).filter((a) => accounts.some((x) => x.id === a)));
+    setBudget(c.budget ? String(c.budget) : "");
+    setStructure(c.structure === "cbo" ? "cbo" : "abo");
+    setShape(c.shape ?? (c.structure === "cbo" ? "1-n-1" : "n-1-1"));
+    setAgeMin(String(c.age_min ?? 25));
+    setAgeMax(String(c.age_max ?? 45));
+    setGender(c.gender ?? "female");
+    setPlacement(c.placement ?? "auto");
+    setCampTyped(c.cbo_name ?? null);
+    setAdsetTyped(c.adset_name ?? null);
+    setStartTime(c.start_time ?? "");
+    setResults(null);
+    setItems(null);
+    setError(have.length < d.items.length ? `Nháp có ${d.items.length} bài, chỉ còn ${have.length} bài nằm trong 30 ngày gần nhất.` : null);
+    setDraftMsg(`Đã mở nháp "${d.name}". Bấm Xem trước để kiểm lại rồi mới tạo.`);
+  };
+  const removeDraft = async (d: LaunchDraft) => {
+    if (!window.confirm(`Xóa nháp "${d.name}"?`)) return;
+    const res = await fetch("/api/fb/launch-drafts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: d.id }) }).catch(() => null);
+    if (res?.ok) setDrafts((xs) => xs.filter((x) => x.id !== d.id));
+    else setDraftMsg("Chưa xóa được nháp.");
   };
 
   const plan = items ? buildPlan(cfg, items) : [];
@@ -120,6 +169,34 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
 
   return (
     <>
+      {drafts.length ? (
+        <div className="card">
+          <h2>Nháp đã lưu ({drafts.length})</h2>
+          <div className="table-wrap">
+            <table className="data">
+              <tbody>
+                {drafts.map((d) => (
+                  <tr key={d.id}>
+                    <td className="l">{d.name}</td>
+                    <td>{d.items.length} bài</td>
+                    <td>{d.config?.budget ? `${vnd(d.config.budget)}đ/ngày` : "–"}</td>
+                    <td>{d.config?.start_time ? `hẹn ${d.config.start_time.replace("T", " ")}` : "chạy khi bật"}</td>
+                    <td>{day(d.created_at)}</td>
+                    <td>
+                      <span className="acts">
+                        <button type="button" onClick={() => openDraft(d)}>Mở</button>
+                        <button type="button" className="secondary" onClick={() => removeDraft(d)}>Xóa</button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+      {draftMsg ? <p className="sub" style={{ margin: "8px 4px" }}>{draftMsg}</p> : null}
+
       <div className="card">
         <h2>1. Chọn bài ({picked.length} đã chọn, tối đa {MAX_ITEMS})</h2>
         <div className="filters" style={{ marginBottom: 8 }}>
@@ -246,6 +323,10 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
           {campTyped != null || adsetTyped != null ? (
             <button type="button" className="secondary" onClick={() => { setCampTyped(null); setAdsetTyped(null); }}>Dùng lại tên gợi ý</button>
           ) : null}
+          <label className="named">
+            <span className="sub">Hẹn giờ bắt đầu chạy (để trống = chạy ngay khi bật)</span>
+            <input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+          </label>
           <button type="button" onClick={preview}>Xem trước</button>
         </div>
         <p className="sub" style={{ marginTop: 6 }}>
@@ -296,7 +377,11 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
           <p style={{ marginTop: 10 }}>
             {items.length} quảng cáo · {plan.reduce((s, c) => s + c.adsets.length, 0)} nhóm · {plan.length} chiến dịch · tổng ngân sách <b>{vnd(total)}đ/ngày</b> (chi thật ~{vnd(total * 1.111)}đ) khi bật hết.
           </p>
-          <button type="button" onClick={() => dlg.current?.showModal()}>Tạo {items.length} quảng cáo (tạm dừng)</button>
+          {startTime ? <p className="sub">Hẹn bắt đầu chạy: {startTime.replace("T", " ")} (giờ Việt Nam). Quảng cáo vẫn tạo tạm dừng; anh bật thì Meta chờ tới giờ này mới chạy.</p> : null}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => dlg.current?.showModal()}>Tạo {items.length} quảng cáo (tạm dừng)</button>
+            <button type="button" className="secondary" onClick={saveDraft}>Lưu nháp (chưa tạo trên Meta)</button>
+          </div>
         </div>
       ) : null}
 
