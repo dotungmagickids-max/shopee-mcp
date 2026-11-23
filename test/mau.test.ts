@@ -111,6 +111,8 @@ describe("docLenhMau", () => {
       assert.match(loi({ ...tao, link_anh: l })!.error, /Thư mục ảnh đã chỉnh/, l);
     }
     assert.match(loi({ ...tao, gioi: "nam" })!.error, /Bé trai/);
+    assert.match(loi({ ...tao, loai: "Giày" })!.error, /Loại/);
+    for (const loai of ["", "Áo", "Quần", "Bộ", "Váy", "Khác"]) assert.equal(docLenhMau({ ...tao, loai }, "lam").ok, true, loai);
     assert.match(loi({ ...tao, so_anh: -1 })!.error, /Số ảnh/);
     assert.match(loi({ ...tao, so_video: 1.5 })!.error, /Số video/);
     assert.match(loi({ ...tao, ngay_mau_ve: "2026-02-30" })!.error, /YYYY-MM-DD/);
