@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { bamSdt, boThe, chuanSdt, docHoiThoai, docTin, gioPancake, maTrongChu, pageTokens, rutHoiThoai, rutTin } from "../src/lib/cskh/pancake-chat";
 import { rutDon, ungVienHoiThoai } from "../src/lib/cskh/data";
 import { tonTheoMa } from "../src/lib/cskh/ton";
+import { cauHinhAi, chamMot, cheThongTin, docKetQua, gopCham, soanHoiThoai, type DongCham } from "../src/lib/cskh/cham";
 import { MAC_DINH, dauNgay, hanTraLoi, moc90, tinhNgay, tomTat, trungVi, type HoiThoai, type Tin } from "../src/lib/cskh/tinh";
 
 const NGAY = "2026-01-10";
@@ -216,5 +217,89 @@ describe("cskh: chỉ đọc", () => {
     assert.equal((await GET(new Request("http://x/api/cskh", { headers: { "x-mk-key": "sai" } }))).status, 401);
     assert.equal((await GET(new Request("http://x/api/cskh?ngay=10/01/2026", { headers: { "x-mk-key": "ma-thu" } }))).status, 400);
     delete process.env.CSKH_API_KEY;
+  });
+});
+
+describe("cskh: AI chấm điểm", () => {
+  const tra = { loai: "hoi_gia_size", ket_qua: "khach_im", diem: { size: 5, mua_kem: 0, chot: 15, thai_do: null }, san_pham: ["Quần Kaki", "quần kaki", ""], tiem_nang: "am", ly_do_tiem_nang: "Khách hỏi size cho bé rồi dừng", phan_hoi_xau: false, mo_ta_xau: "không có", do_dong_hang: true, viec: "Nhắn lại hỏi chị chọn màu, gọi 0900000000", muc_gap: 1, nhan_xet: "Dán mẫu rồi dừng" };
+  it("che SĐT, email, đường dẫn, dãy số dài trước khi gửi AI", () => {
+    assert.equal(cheThongTin("sđt 0900 000 000 hoặc +84900000000, mail a.b@x.vn, xem https://x.vn/a?b=1 stk 123456789012"), "sđt [SĐT] hoặc [SĐT], mail [email], xem [link] stk [số]");
+    assert.equal(cheThongTin("bé 35kg cao 1m40, lấy 2 cái 169k"), "bé 35kg cao 1m40, lấy 2 cái 169k");
+  });
+  it("soạn cuộc chat: tách trước ngày, trong ngày, sau ngày; không có tên khách", () => {
+    const t = (ms: number, ben: Tin["ben"], chu: string, them: Partial<Tin> = {}) => ({ ...tin(ms, ben, them), chu });
+    const s = soanHoiThoai([t(luc(20, 0, -1), "khach", "hôm qua"), t(luc(9), "khach", "gọi em 0900000000"), t(luc(9, 1), "nhan_vien", "dạ"), t(luc(9, 2), "tu_dong", "", { loai: "anh" }), t(luc(8, 0, 1), "nhan_vien", "hôm sau")], dauNgay(NGAY), dauNgay(NGAY) + 86_400_000);
+    assert.equal(s, ["--- Trước ngày chấm (chỉ để hiểu bối cảnh, không chấm) ---", "20:00 Khách: hôm qua", "--- Trong ngày chấm ---", "09:00 Khách: gọi em [SĐT]", "09:01 NV Nhân viên A: dạ", "09:02 Tự động: [ảnh]", "--- Sau ngày chấm (chỉ để biết kết quả) ---", "08:00 NV Nhân viên A: hôm sau"].join("\n"));
+  });
+  it("đọc câu trả lời của AI: chỉ nhận giá trị hợp lệ, kẹp điểm 0–10, che SĐT AI lỡ chép", () => {
+    const k = docKetQua("Đây là kết quả:\n```json\n" + JSON.stringify(tra) + "\n```")!;
+    assert.deepEqual(k, { loai: "hoi_gia_size", ketQua: "khach_im", diemSize: 5, diemMuaKem: 0, diemChot: 10, diemThaiDo: null, sanPham: ["quần kaki"], tiemNang: "am", lyDoTiemNang: "Khách hỏi size cho bé rồi dừng", phanHoiXau: false, moTaXau: "", doDongHang: false, viec: "Nhắn lại hỏi chị chọn màu, gọi [SĐT]", mucGap: 1, nhanXet: "Dán mẫu rồi dừng" });
+    assert.equal(docKetQua('{"loai":"la","ket_qua":"x","muc_gap":9}')!.loai, "khac");
+    assert.equal(docKetQua('{"loai":"la","ket_qua":"x","muc_gap":9}')!.mucGap, 2);
+    assert.equal(docKetQua('{"tiem_nang":"rat nong"}')!.tiemNang, "khong");
+    assert.equal(docKetQua("không phải json"), null);
+    assert.equal(docKetQua("{hỏng"), null);
+  });
+  it("cấu hình AI cần đủ địa chỉ https, khóa và model", () => {
+    const giu = { ...process.env };
+    delete process.env.CSKH_AI_BASE_URL;
+    assert.equal(cauHinhAi(), null);
+    Object.assign(process.env, { CSKH_AI_BASE_URL: "https://ai.example/v1/", CSKH_AI_API_KEY: "khoa-ai-thu", CSKH_AI_MODEL: "model-a" });
+    assert.deepEqual(cauHinhAi(), { baseUrl: "https://ai.example/v1", khoa: "khoa-ai-thu", model: "model-a", huongDanRieng: "" });
+    assert.equal(cauHinhAi("model-b")!.model, "model-b");
+    process.env.CSKH_AI_BASE_URL = "http://ai.example/v1";
+    assert.equal(cauHinhAi(), null);
+    for (const k of ["CSKH_AI_BASE_URL", "CSKH_AI_API_KEY", "CSKH_AI_MODEL"]) if (giu[k] === undefined) delete process.env[k];
+  });
+  it("gọi AI qua cổng kiểu OpenAI, thử lại khi bên đó không nhận response_format, lỗi không lộ khóa", async () => {
+    const that = globalThis.fetch;
+    const goi: any[] = [];
+    const c = { baseUrl: "https://ai.example/v1", khoa: "khoa-ai-thu", model: "model-a", huongDanRieng: "Miễn ship theo mức của shop." };
+    try {
+      globalThis.fetch = (async (u: string, init: RequestInit = {}) => {
+        const than = JSON.parse(String(init.body));
+        goi.push({ u, than, auth: (init.headers as any).Authorization });
+        if (than.response_format) return new Response("{}", { status: 400 });
+        return Response.json({ choices: [{ message: { content: JSON.stringify(tra) } }], usage: { prompt_tokens: 700, completion_tokens: 120 } });
+      }) as typeof fetch;
+      const r = await chamMot("09:00 Khách: xin giá", c);
+      assert.equal(r.kq!.loai, "hoi_gia_size");
+      assert.deepEqual([r.tokenVao, r.tokenRa], [700, 120]);
+      assert.equal(goi.length, 2);
+      assert.equal(goi[1].u, "https://ai.example/v1/chat/completions");
+      assert.equal(goi[1].auth, "Bearer khoa-ai-thu");
+      assert.equal(goi[1].than.model, "model-a");
+      assert.ok(goi[1].than.messages[0].content.includes("Miễn ship theo mức của shop."));
+      assert.ok(goi[1].than.messages[1].content.includes("xin giá"));
+      globalThis.fetch = (async () => new Response("no", { status: 500 })) as typeof fetch;
+      await assert.rejects(chamMot("x", c), (e: Error) => /HTTP 500/.test(e.message) && !e.message.includes("khoa-ai-thu"));
+    } finally {
+      globalThis.fetch = that;
+    }
+  });
+  it("gộp điểm: trung bình theo người trực, việc với từng khách xếp việc gấp trước, bỏ cuộc đã chốt", () => {
+    const ds = [
+      ht("g-40001", luc(9), [tin(luc(9), "khach"), tin(luc(9, 1), "nhan_vien")]),
+      ht("g-40002", luc(10), [tin(luc(10), "khach"), tin(luc(10, 1), "nhan_vien", { nv: "Nhân viên B" })]),
+      ht("g-40003", luc(11), [tin(luc(11), "khach"), tin(luc(11, 1), "nhan_vien")]),
+    ];
+    const k = tinhNgay(ds, [{ page: PAGE, hoiThoai: "g-40003", ma: "D9", taoLuc: luc(12) }], NGAY, MAC_DINH, luc(23));
+    const co = docKetQua(JSON.stringify(tra))!;
+    const rows: DongCham[] = [
+      { ...co, page: PAGE, id: "g-40001", mucGap: 2 },
+      { ...co, page: PAGE, id: "g-40002", diemSize: 9, diemThaiDo: 8, mucGap: 1, tiemNang: "nong", phanHoiXau: true, moTaXau: "Khách chê vải", loai: "khieu_nai" },
+      { ...co, page: PAGE, id: "g-40003", ketQua: "da_chot", viec: "Cảm ơn khách", tiemNang: "lanh" },
+      { ...co, page: PAGE, id: "khong-co-trong-ngay" },
+    ];
+    const g = gopCham(k, rows, "model-a");
+    assert.deepEqual([g.canCham, g.daCham], [3, 3]);
+    assert.deepEqual(g.diem[0], { ten: "Tất cả", cuoc: 3, size: 6.33, muaKem: 0, chot: 10, thaiDo: 8 });
+    assert.deepEqual(g.tiemNang, [{ capDo: "nong", cuoc: 1 }, { capDo: "am", cuoc: 1 }, { capDo: "lanh", cuoc: 1 }, { capDo: "khong", cuoc: 0 }]);
+    assert.deepEqual(g.khach.map((v) => [v.duoi, v.capDo, v.aiCham]), [["40002", "nong", false], ["40001", "am", false]]);
+    assert.deepEqual(g.diem.slice(1).map((d) => [d.ten, d.cuoc]), [["Nhân viên A", 2], ["Nhân viên B", 1]]);
+    assert.deepEqual(g.viec.map((v) => [v.duoi, v.mucGap]), [["40002", 1], ["40001", 2]]);
+    assert.deepEqual(g.xau.map((v) => [v.duoi, v.moTaXau]), [["40002", "Khách chê vải"]]);
+    assert.deepEqual(g.loai, [{ loai: "hoi_gia_size", cuoc: 2 }, { loai: "khieu_nai", cuoc: 1 }]);
+    assert.deepEqual(g.sanPham, [{ ten: "quần kaki", cuoc: 3 }]);
   });
 });

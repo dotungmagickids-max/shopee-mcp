@@ -163,6 +163,8 @@ export interface DongSot {
 }
 
 export interface DongCuoc {
+  /** Mã hội thoại đầy đủ: chỉ dùng phía máy chủ (khớp điểm chấm, tạo đường dẫn mở Pancake), không in ra trang. */
+  id: string;
   duoi: string;
   page: string;
   nhom: Nhom;
@@ -321,7 +323,7 @@ export function tinhNgay(ds: HoiThoai[], dons: DonKhop[], ngay: string, ch: CauH
     }
     if (cho) xet(cho, null);
 
-    cuoc.push({ duoi: duoi(h.id), page: h.page, nhom, nguoi: ten, giay, trongGio, chot, sot: soSot, tinKhach: khach.length, tinNhanVien: nvNgay.length });
+    cuoc.push({ id: h.id, duoi: duoi(h.id), page: h.page, nhom, nguoi: ten, giay, trongGio, chot, sot: soSot, tinKhach: khach.length, tinNhanVien: nvNgay.length });
   }
 
   const nguoiTruc = [...nguoi.values()]
