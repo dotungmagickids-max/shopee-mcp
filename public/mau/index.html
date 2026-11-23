@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Magickids – Mẫu và media</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--ink:#14171c;--mut:#5b6472;--line:#d9dde3;--accent:#6d3fc4;--red:#c62828;--amber:#b26a00;--green:#0f7b4b}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 "Segoe UI",Arial,sans-serif}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;padding:10px 14px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+button.danger{border-color:var(--red);color:var(--red)}
+button:disabled{opacity:.45;cursor:default}
+input,textarea,select{font:inherit;width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+input[type=checkbox]{width:auto}
+textarea{min-height:70px;resize:vertical}
+label{display:block;font-size:14px;color:var(--mut);margin:10px 0 4px}
+header{background:var(--accent);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;flex:1;white-space:nowrap}
+header button{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4);color:#fff;padding:7px 12px}
+.thu{background:#ffe6b3;color:#6b3f00;padding:8px 14px;font-weight:600;font-size:14px}
+main{max-width:1040px;margin:0 auto;padding:12px}
+.info{color:var(--mut);font-size:14px;margin:0 0 10px}
+.info.err{color:var(--red);font-weight:600}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.bar input{flex:1;min-width:160px}
+.bar select{width:auto}
+.loc{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.loc button{padding:6px 12px;font-size:14px;border-radius:999px}
+.loc button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.the{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;padding:0;text-align:left;display:flex;flex-direction:column}
+.the:hover{border-color:var(--accent)}
+.hinh{aspect-ratio:1/1;background:#e9ebf0;display:flex;align-items:center;justify-content:center;color:#9aa1ad;font-size:13px;overflow:hidden}
+.hinh img{width:100%;height:100%;object-fit:cover;display:block}
+.the .t{padding:8px 10px}
+.code{font-family:Consolas,monospace;font-weight:700;font-size:16px}
+.m{color:var(--mut);font-size:14px}
+.ten{font-size:14px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:2.9em}
+.nhan{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;margin-top:4px;background:#e9ebf0;color:var(--mut)}
+.nhan.chon_lam{background:#fff1d6;color:var(--amber)}
+.nhan.co_media{background:#dff3e8;color:var(--green)}
+.nhan.bo{background:#fbe1e1;color:var(--red)}
+.nhan.dang_xem{background:#ece4fa;color:var(--accent)}
+.rong{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:24px;text-align:center;color:var(--mut)}
+.hop{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.hop h3{font-size:15px;margin:0 0 6px}
+.dau{display:grid;grid-template-columns:200px 1fr;gap:12px}
+.dau .hinh{border-radius:10px;border:1px solid var(--line)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.nut{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+a.lk{display:inline-block;border:1px solid var(--line);border-radius:8px;padding:9px 13px;background:#fff;color:var(--accent);font-weight:600;text-decoration:none}
+a.lk.chinh{background:var(--accent);border-color:var(--accent);color:#fff}
+span.lk0{display:inline-block;border:1px dashed var(--line);border-radius:8px;padding:9px 13px;color:#9aa1ad;font-size:14px}
+details.nhom{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+details.nhom>summary{cursor:pointer;padding:10px 12px;font-weight:700}
+details.nhom>div{padding:0 12px 12px}
+.msg{margin-top:8px;font-size:14px;font-weight:600;white-space:pre-wrap}
+.msg.err{color:var(--red)}
+.msg.ok{color:var(--green)}
+.note{background:#fff8e6;border:1px solid #f0d48a;border-radius:8px;padding:8px 10px;font-size:14px;color:#6b3f00;margin:8px 0}
+.van{white-space:pre-wrap;overflow-wrap:anywhere}
+.nk{font-size:14px;border-top:1px solid var(--line);padding:6px 0}
+.nk:first-child{border-top:0}
+#gate{max-width:420px;margin:40px auto;padding:16px;background:var(--card);border:1px solid var(--line);border-radius:12px}
+#gate h2{margin:0 0 6px;font-size:20px}
+#gate button{width:100%;margin-top:12px}
+@media(max-width:600px){.dau{grid-template-columns:1fr}.dau .hinh{max-width:240px}.row3{grid-template-columns:1fr 1fr}.grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Magickids · Mẫu và media</h1>
+  <button id="btnReload" type="button">Tải lại</button>
+  <button id="btnKey" type="button">Đổi mã</button>
+</header>
+<div class="thu" id="thuBar" hidden>Bản chạy thử: dữ liệu giả, lưu thử chỉ nằm trong trang này, không gửi lên máy chủ.</div>
+
+<div id="gate" hidden>
+  <h2>Nhập mã truy cập</h2>
+  <div class="m">Mã do Magickids cấp. Máy sẽ nhớ mã cho lần sau.</div>
+  <label for="keyIn">Mã truy cập</label>
+  <input id="keyIn" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <div class="msg err" id="gateMsg"></div>
+  <button class="primary" id="keyOk" type="button">Vào xem</button>
+</div>
+
+<main id="app" hidden>
+  <p class="info" id="info"></p>
+  <div id="body"></div>
+</main>
+
+<script>
+'use strict';
+/* Trang Mẫu và media, đợt 1: danh sách mẫu, hồ sơ từng mẫu, chọn / bỏ / đã có media.
+   Chỉ gọi /api/mau. Ảnh, video nằm ở kho lưu trữ bên ngoài, trang chỉ mở đường dẫn.
+   Thêm ?thu=1 để chạy thử bằng dữ liệu giả; thêm &vai=lam hoặc &vai=xem để thử vai khác. */
+const Q=new URLSearchParams(location.search);
+const THU=Q.has('thu');
+const API='/api/mau';
+const $=id=>document.getElementById(id);
+const mk=(tag,cls,txt)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(txt!=null)x.textContent=txt;return x;};
+const store={
+  get(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}},
+  set(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}}
+};
+const S={key:store.get('mk_mau_key'),ten:store.get('mk_mau_ten'),vai:'',ds:[],at:0,busy:false,err:'',
+  loc:'tat',gioi:'',tim:'',mo:null,them:false,nk:null,anh:new Map()};
+
+const TT={dang_xem:'Đang xem',chon_lam:'Chọn làm',co_media:'Đã có media',bo:'Bỏ'};
+const CHUYEN={dang_xem:['chon_lam','bo'],chon_lam:['co_media','dang_xem','bo'],co_media:['chon_lam','bo'],bo:['dang_xem']};
+const NUT={chon_lam:'Chọn làm',co_media:'Duyệt: đã có media',dang_xem:'Đưa về Đang xem',bo:'Bỏ mẫu'};
+const SUA={chua_giao:'Chưa giao',dang_lam:'Đang làm',cho_duyet:'Chờ duyệt',da_duyet:'Đã duyệt'};
+const NGUON={taobao:'Link Taobao / Tmall',suu_tam:'Ảnh sưu tầm',xuong:'Mẫu xưởng gửi',tu_thiet_ke:'Tự thiết kế',ma_cu:'Mã cũ làm lại'};
+const GIOI={'':'Chưa rõ',trai:'Bé trai',gai:'Bé gái',unisex:'Unisex'};
+const hhmm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const ngayGio=iso=>{const d=new Date(iso);return isNaN(d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+hhmm(d);};
+const laLink=v=>typeof v==='string'&&/^https:\/\/[^\s<>"'`]+$/.test(v);
+
+/* ---------- dữ liệu giả cho bản chạy thử ---------- */
+let MOCK=null;
+function mockAnh(chu,mau){
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="'+mau+'"/><text x="200" y="215" font-family="Arial" font-size="42" font-weight="700" fill="#fff" text-anchor="middle">'+chu+'</text></svg>';
+  return 'data:image/svg+xml;base64,'+btoa(svg);
+}
+function mock(){
+  const nay=new Date().toISOString();
+  const hs=(id,ma,ten,tt,x)=>Object.assign({id,ma,ma_chinh_thuc:null,ten,thuong_hieu:'Magickids',gioi:'trai',loai:'Áo',mua:'Xuân Hè',nguon_loai:'taobao',
+    nguon_link:'https://example.com/san-pham/'+id,nguon_shop:'Shop nguồn '+id,thong_tin_nguon:'',phan_tich:'',ly_do:'',chat_lieu:'',mau_sac:'',bang_size:'',
+    co_mau_that:false,ngay_mau_ve:null,gia_ban:'',gia_nhap:'',link_goc:'',link_anh:'',link_video:'',link_shopee:'',so_anh:0,so_video:0,
+    sua_tt:'chua_giao',sua_nguoi:'',sua_yeu_cau:'',sua_xong:null,mo_ta:'',luu_y:'',trang_thai:tt,ly_do_bo:'',nguoi_tao:'Người A',tao_luc:nay,cap_nhat_luc:nay,anh:null},x||{});
+  const ds=[
+    hs(1,'MAU27001','Áo polo dài tay phối cổ, phong cách học đường','dang_xem',{ly_do:'Dáng dễ mặc, hợp bé lớn',anh:'v1'}),
+    hs(2,'MAU27002','Bộ áo khoác có mũ phối quần ống rộng','chon_lam',{gioi:'gai',loai:'Bộ',mua:'Thu Đông',link_goc:'https://example.com/thu-muc/2-goc',sua_tt:'dang_lam',sua_nguoi:'Người B',sua_yeu_cau:'Bỏ chữ trên ảnh, thêm mã ở góc, chỉnh màu cho đúng',anh:'v1'}),
+    hs(3,'MAU27003','Quần dài ống rộng thể thao sọc','co_media',{loai:'Quần',link_goc:'https://example.com/thu-muc/3-goc',link_anh:'https://example.com/thu-muc/3-anh',link_video:'https://example.com/thu-muc/3-video',so_anh:9,so_video:1,sua_tt:'da_duyet',
+      mo_ta:'Quần dài ống rộng, cạp chun, sọc dọc hai bên ống.\n- Dễ phối áo thun, áo nỉ\n- Mặc đi học, đi chơi',bang_size:'130: 22–27 kg\n140: 27–32 kg\n150: 32–38 kg',chat_lieu:'Chưa xác minh trên mẫu thật',mau_sac:'Ghi, Đen',gia_ban:'Dự kiến 2 mức, chờ chốt',gia_nhap:'(ví dụ) chờ báo giá',luu_y:'Chưa có mẫu thật: không cam kết chất liệu',anh:'v1'}),
+    hs(4,'MAU27004','Chân váy xếp ly cạp chun','bo',{gioi:'gai',loai:'Váy',ly_do_bo:'Trùng kiểu với mẫu đã có'}),
+    hs(5,'MAU27005','Áo len cổ tròn dệt kim','dang_xem',{mua:'Thu Đông',nguon_loai:'suu_tam',nguon_link:''})
+  ];
+  const mau=['#6d3fc4','#0f7b4b','#b26a00','#c62828','#2b6cb0'];
+  const anh={};ds.forEach((h,i)=>{if(h.anh)anh[h.id]=mockAnh(h.ma.slice(-3),mau[i%5]);});
+  return {ds,anh,nk:{1:[{luc:nay,nguoi:'Người A',vai:'lam',viec:'tao',tu:'',den:'dang_xem',ghi_chu:''}]},seq:5};
+}
+function mockGoi(method,body,qs){
+  if(!MOCK)MOCK=mock();
+  const vai=['lam','xem'].includes(Q.get('vai'))?Q.get('vai'):'quan_ly';
+  if(method==='GET'){
+    if(qs&&qs.startsWith('nhatky='))return {status:200,body:{ds:MOCK.nk[qs.slice(7)]||[]}};
+    let ds=JSON.parse(JSON.stringify(MOCK.ds));
+    if(vai==='xem')ds=ds.filter(h=>h.trang_thai==='co_media');
+    if(vai!=='quan_ly')ds.forEach(h=>delete h.gia_nhap);
+    return {status:200,body:{at:Date.now(),vai,ds}};
+  }
+  const nay=new Date().toISOString(),ghi=(id,viec,tu,den,gc)=>{(MOCK.nk[id]=MOCK.nk[id]||[]).unshift({luc:nay,nguoi:body.nguoi,vai,viec,tu:tu||'',den:den||'',ghi_chu:gc||''});};
+  if(body.action==='tao'){
+    if(MOCK.ds.some(h=>h.ma===String(body.ma).toUpperCase()))return {status:400,body:{error:'Mã mẫu '+body.ma+' đã có hồ sơ'}};
+    const h=Object.assign(mock().ds[0],{id:++MOCK.seq,anh:null,trang_thai:'dang_xem',ten:'',thuong_hieu:'',gioi:'',loai:'',mua:'',nguon_link:'',nguon_shop:'',ly_do:'',tao_luc:nay,cap_nhat_luc:nay,nguoi_tao:body.nguoi});
+    for(const k in body)if(k!=='action'&&k!=='nguoi'&&k in h)h[k]=body[k];
+    h.ma=String(body.ma).toUpperCase();MOCK.ds.unshift(h);ghi(h.id,'tao','','dang_xem');
+    return {status:200,body:{ok:true,id:h.id}};
+  }
+  const h=MOCK.ds.find(x=>x.id===body.id);
+  if(!h)return {status:404,body:{error:'Không có hồ sơ mẫu này'}};
+  h.cap_nhat_luc=nay;
+  if(body.action==='sua'){for(const k in body)if(k in h&&k!=='id')h[k]=body[k];ghi(h.id,'sua','','','(lưu thử)');}
+  else if(body.action==='trang_thai'){
+    if((body.den==='bo'||h.trang_thai==='bo')&&String(body.ghi_chu||'').trim().length<3)return {status:400,body:{error:'Cần ghi lý do (ít nhất 3 ký tự)'}};
+    if(body.den==='co_media'){const th=thieu(h);if(th.length)return {status:400,body:{error:'Chưa đủ để coi là đã có media, còn thiếu: '+th.join(', ')}};}
+    ghi(h.id,'trang_thai',h.trang_thai,body.den,body.ghi_chu);h.ly_do_bo=body.den==='bo'?body.ghi_chu:'';h.trang_thai=body.den;
+  }else if(body.action==='anh'){h.anh=nay;MOCK.anh[h.id]=body.du_lieu;ghi(h.id,'anh');}
+  return {status:200,body:{ok:true}};
+}
+
+/* ---------- gọi máy chủ ---------- */
+async function goi(method,body,qs){
+  if(THU){await new Promise(r=>setTimeout(r,150));return mockGoi(method,body,qs);}
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),25000);
+  try{
+    const r=await fetch(API+(qs?'?'+qs:''),{method,cache:'no-store',signal:ctl.signal,
+      headers:Object.assign({'x-mk-key':S.key},body?{'content-type':'application/json'}:{}),body:body?JSON.stringify(body):undefined});
+    let j=null;try{j=await r.json();}catch(e){}
+    return {status:r.status,body:j||{}};
+  }finally{clearTimeout(t);}
+}
+const loiMang=e=>e&&e.name==='AbortError'?'quá thời gian chờ':'không kết nối được máy chủ';
+
+/* Ảnh đại diện cần mã truy cập nên tải bằng fetch rồi gắn vào thẻ img; nhớ theo id + dấu phiên bản. */
+function ganAnh(img,h){
+  if(!h.anh)return false;
+  if(THU){img.src=MOCK.anh[h.id]||'';return true;}
+  const khoa=h.id+'|'+h.anh,co=S.anh.get(khoa);
+  if(co){img.src=co;return true;}
+  fetch(API+'?anh='+h.id+'&v='+encodeURIComponent(h.anh),{headers:{'x-mk-key':S.key}})
+    .then(r=>r.ok?r.blob():null).then(b=>{if(!b)return;const u=URL.createObjectURL(b);S.anh.set(khoa,u);img.src=u;}).catch(()=>{});
+  return true;
+}
+function khungAnh(h){
+  const k=mk('div','hinh');
+  if(h.anh){const img=mk('img');img.alt='Ảnh đại diện '+h.ma;img.loading='lazy';ganAnh(img,h);k.append(img);}
+  else k.textContent='Chưa có ảnh';
+  return k;
+}
+/* Thu nhỏ ảnh trong trình duyệt (cạnh dài 480px, JPEG) trước khi gửi: chỉ là ảnh đại diện, ảnh gốc vẫn ở kho lưu trữ. */
+function thuNho(file){
+  return new Promise((ok,loi)=>{
+    if(!/^image\/(jpeg|png|webp)$/.test(file.type))return loi(new Error('Chọn ảnh JPG, PNG hoặc WEBP'));
+    const u=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{
+      const tile=Math.min(1,480/Math.max(img.width,img.height)),c=document.createElement('canvas');
+      c.width=Math.max(1,Math.round(img.width*tile));c.height=Math.max(1,Math.round(img.height*tile));
+      const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(u);ok(c.toDataURL('image/jpeg',0.82));
+    };
+    img.onerror=()=>{URL.revokeObjectURL(u);loi(new Error('Không đọc được ảnh này'));};
+    img.src=u;
+  });
+}
+
+function hoiMa(msg){
+  $('app').hidden=true;$('gate').hidden=false;$('gateMsg').textContent=msg||'';$('keyIn').value='';
+  try{$('keyIn').focus();}catch(e){}
+}
+async function tai(){
+  if(S.busy)return;
+  if(!THU&&!S.key){hoiMa('');return;}
+  $('gate').hidden=true;$('app').hidden=false;
+  S.busy=true;S.err='';ve();
+  try{
+    const r=await goi('GET');
+    if(r.status===401){S.key='';store.set('mk_mau_key','');S.busy=false;hoiMa('Mã truy cập không đúng. Nhập lại mã Magickids đã cấp.');return;}
+    if(r.status!==200||!r.body||!Array.isArray(r.body.ds))throw new Error(r.body&&r.body.error||'máy chủ không trả danh sách');
+    S.ds=r.body.ds;S.vai=r.body.vai;S.at=Date.now();
+  }catch(e){S.err='Chưa đọc được danh sách ('+(e.message&&e.name!=='AbortError'&&e.name!=='TypeError'?e.message:loiMang(e))+'). Bấm "Tải lại".';}
+  S.busy=false;ve();
+}
+const duocGhi=()=>S.vai==='quan_ly'||S.vai==='lam';
+const thieu=h=>{const t=[];if(!h.link_anh&&!h.link_goc&&!h.link_video&&!h.link_shopee)t.push('link thư mục ảnh hoặc video');if(!h.anh)t.push('ảnh đại diện');if(!String(h.mo_ta||'').trim())t.push('mô tả cơ bản');return t;};
+
+/* ---------- vẽ ---------- */
+function ve(){
+  const info=$('info'),body=$('body');body.textContent='';
+  const tenVai={quan_ly:'quản lý',lam:'người làm',xem:'chỉ xem'}[S.vai]||'';
+  info.textContent=S.err||(S.busy&&!S.at?'Đang đọc danh sách mẫu…':S.at?('Lấy lúc '+hhmm(S.at)+(S.busy?' · đang tải lại…':'')+(tenVai?' · vai: '+tenVai:'')+'. Ảnh, video nằm ở kho lưu trữ; trang này chỉ giữ đường dẫn.'):'');
+  info.classList.toggle('err',!!S.err);
+  if(!S.at)return;
+  if(S.them){body.append(veForm(null));return;}
+  const h=S.mo!=null?S.ds.find(x=>x.id===S.mo):null;
+  if(h){body.append(veHoSo(h));return;}
+  /* đang tải lại thì giữ S.mo: hồ sơ vừa thêm chưa có trong danh sách cũ */
+  if(!S.busy)S.mo=null;
+  veDanhSach(body);
+}
+
+function veDanhSach(body){
+  const bar=mk('div','bar');
+  const tim=mk('input');tim.type='search';tim.placeholder='Tìm theo mã hoặc tên';tim.value=S.tim;
+  tim.addEventListener('input',()=>{S.tim=tim.value;veLuoi(luoi);});
+  const gioi=mk('select');for(const [v,t] of [['','Trai và gái'],['trai','Bé trai'],['gai','Bé gái'],['unisex','Unisex']]){const o=mk('option',null,t);o.value=v;gioi.append(o);}
+  gioi.value=S.gioi;gioi.addEventListener('change',()=>{S.gioi=gioi.value;veLuoi(luoi);});
+  bar.append(tim,gioi);
+  if(duocGhi()){const b=mk('button','primary','+ Thêm mẫu');b.type='button';b.addEventListener('click',()=>{S.them=true;ve();});bar.append(b);}
+  body.append(bar);
+  if(S.vai!=='xem'){
+    const loc=mk('div','loc');
+    for(const [k,t] of [['tat','Tất cả'],['dang_xem',TT.dang_xem],['chon_lam',TT.chon_lam],['co_media',TT.co_media],['bo',TT.bo]]){
+      const n=k==='tat'?S.ds.length:S.ds.filter(h=>h.trang_thai===k).length;
+      const b=mk('button',S.loc===k?'on':'',t+' ('+n+')');b.type='button';b.addEventListener('click',()=>{S.loc=k;ve();});loc.append(b);
+    }
+    body.append(loc);
+  }
+  const luoi=mk('div');body.append(luoi);veLuoi(luoi);
+}
+function veLuoi(luoi){
+  luoi.textContent='';
+  const tu=S.tim.trim().toLowerCase();
+  const ds=S.ds.filter(h=>(S.loc==='tat'||S.vai==='xem'||h.trang_thai===S.loc)&&(!S.gioi||h.gioi===S.gioi)&&(!tu||(h.ma+' '+(h.ma_chinh_thuc||'')+' '+h.ten).toLowerCase().includes(tu)));
+  if(!ds.length){
+    luoi.append(mk('div','rong',S.ds.length?'Không có mẫu nào khớp bộ lọc.':S.vai==='xem'?'Chưa có mẫu nào có media.':'Chưa có mẫu nào. Bấm "+ Thêm mẫu" để bắt đầu.'));return;
+  }
+  const g=mk('div','grid');
+  for(const h of ds){
+    const b=mk('button','the');b.type='button';
+    const t=mk('div','t');
+    t.append(mk('div','code',h.ma),mk('div','ten',h.ten||'(chưa đặt tên)'),mk('span','nhan '+h.trang_thai,TT[h.trang_thai]||h.trang_thai));
+    b.append(khungAnh(h),t);
+    b.addEventListener('click',()=>{S.mo=h.id;S.nk=null;ve();window.scrollTo(0,0);});
+    g.append(b);
+  }
+  luoi.append(g);
+}
+
+function nutLink(ten,url,chinh){
+  if(laLink(url)){const a=mk('a','lk'+(chinh?' chinh':''),ten);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
+  return mk('span','lk0',ten+': chưa có');
+}
+function dong(nhan,gt){const d=mk('div');d.append(mk('div','m',nhan),mk('div','van',gt||'—'));d.style.margin='6px 0';return d;}
+
+function veHoSo(h){
+  const w=mk('div');
+  const ve0=mk('button',null,'← Danh sách');ve0.type='button';ve0.addEventListener('click',()=>{S.mo=null;ve();});
+  const top=mk('div','bar');top.append(ve0);w.append(top);
+
+  const hop=mk('div','hop'),dau=mk('div','dau'),trai=mk('div'),phai=mk('div');
+  trai.append(khungAnh(h));
+  if(duocGhi()){
+    const f=mk('input');f.type='file';f.accept='image/jpeg,image/png,image/webp';f.hidden=true;
+    const b=mk('button',null,h.anh?'Đổi ảnh đại diện':'Thêm ảnh đại diện');b.type='button';b.style.marginTop='8px';
+    const m=mk('div','msg');
+    b.addEventListener('click',()=>f.click());
+    f.addEventListener('change',async()=>{
+      if(!f.files||!f.files[0])return;
+      const nguoi=layTen(m);if(!nguoi)return;
+      b.disabled=true;m.className='msg';m.textContent='Đang gửi ảnh…';
+      try{
+        const du=await thuNho(f.files[0]);
+        const r=await goi('POST',{action:'anh',id:h.id,du_lieu:du,nguoi});
+        if(r.status!==200)throw new Error(r.body.error||'máy chủ chưa lưu được');
+        await tai();
+      }catch(e){m.className='msg err';m.textContent=e.name==='AbortError'||e.name==='TypeError'?loiMang(e):e.message;b.disabled=false;}
+    });
+    trai.append(f,b,m);
+  }
+  phai.append(mk('div','code',h.ma+(h.ma_chinh_thuc?' → '+h.ma_chinh_thuc:'')),mk('div',null,h.ten||'(chưa đặt tên)'));
+  phai.append(mk('span','nhan '+h.trang_thai,TT[h.trang_thai]||h.trang_thai));
+  phai.append(mk('div','m',[GIOI[h.gioi]||'',h.loai,h.mua,h.thuong_hieu].filter(Boolean).join(' · ')));
+  if(h.trang_thai==='bo'&&h.ly_do_bo)phai.append(mk('div','note','Lý do bỏ: '+h.ly_do_bo));
+  const nut=mk('div','nut');
+  nut.append(nutLink('Ảnh đã chỉnh',h.link_anh,true),nutLink('Video',h.link_video),nutLink('Ảnh Shopee',h.link_shopee));
+  if(S.vai!=='xem')nut.append(nutLink('Ảnh gốc',h.link_goc),nutLink('Link nguồn',h.nguon_link));
+  phai.append(nut);
+  phai.append(mk('div','m','Bấm nút để mở thư mục, rồi tải ảnh hoặc video về từ đó.'));
+  dau.append(trai,phai);hop.append(dau);w.append(hop);
+
+  if(S.vai==='xem'){
+    const x=mk('div','hop');
+    x.append(mk('h3',null,'Tư liệu tư vấn'),dong('Mô tả cơ bản',h.mo_ta),dong('Bảng size',h.bang_size),dong('Chất liệu',h.chat_lieu),dong('Màu',h.mau_sac),dong('Giá bán dự kiến',h.gia_ban));
+    if(h.luu_y)x.append(mk('div','note','Lưu ý: '+h.luu_y));
+    const c=mk('button',null,'Chép mô tả');c.type='button';
+    c.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(h.mo_ta||'');c.textContent='Đã chép';}catch(e){c.textContent='Máy không cho chép';}});
+    x.append(c);w.append(x);return w;
+  }
+
+  w.append(veTrangThai(h),veForm(h),veNhatKy(h));
+  return w;
+}
+
+function oTen(){
+  const wrap=mk('div');const l=mk('label',null,'Người ghi (tên của bạn)');const i=mk('input');i.value=S.ten;i.maxLength=40;i.dataset.ten='1';
+  i.addEventListener('input',()=>{S.ten=i.value.trim();store.set('mk_mau_ten',S.ten);document.querySelectorAll('input[data-ten]').forEach(o=>{if(o!==i)o.value=i.value;});});
+  wrap.append(l,i);return wrap;
+}
+function layTen(m){
+  if(S.ten.length>=2)return S.ten;
+  m.className='msg err';m.textContent='Nhập tên của bạn ở ô "Người ghi" trước khi lưu.';return '';
+}
+
+function veTrangThai(h){
+  const hop=mk('div','hop');hop.append(mk('h3',null,'Trạng thái: '+(TT[h.trang_thai]||h.trang_thai)));
+  if(h.trang_thai==='chon_lam'){
+    const t=thieu(h);
+    hop.append(mk('div',t.length?'note':'m',t.length?'Để chuyển sang "Đã có media" còn thiếu: '+t.join(', ')+'.':'Đã đủ link thư mục, ảnh đại diện và mô tả. Quản lý duyệt là xong.'));
+  }
+  if(S.vai!=='quan_ly'){hop.append(mk('div','m','Chọn, bỏ và duyệt mẫu do quản lý bấm.'));return hop;}
+  const buoc=CHUYEN[h.trang_thai];
+  if(!buoc){hop.append(mk('div','m','Mẫu đang ở bước của đợt sau, trang này chưa đổi được.'));return hop;}
+  const gc=mk('textarea');gc.placeholder='Ghi chú (bắt buộc khi bỏ mẫu hoặc mở lại mẫu đã bỏ)';gc.maxLength=500;
+  const m=mk('div','msg'),nut=mk('div','nut');
+  for(const den of buoc){
+    const b=mk('button',den==='bo'?'danger':den==='dang_xem'?'':'primary',h.trang_thai==='bo'&&den==='dang_xem'?'Mở lại mẫu':h.trang_thai==='co_media'&&den==='chon_lam'?'Làm lại media':NUT[den]);
+    b.type='button';
+    b.addEventListener('click',async()=>{
+      const nguoi=layTen(m);if(!nguoi)return;
+      nut.querySelectorAll('button').forEach(x=>x.disabled=true);m.className='msg';m.textContent='Đang ghi…';
+      try{
+        const r=await goi('POST',{action:'trang_thai',id:h.id,den,ghi_chu:gc.value,nguoi});
+        if(r.status!==200)throw new Error(r.body.error||'máy chủ chưa ghi được');
+        S.nk=null;await tai();
+      }catch(e){m.className='msg err';m.textContent=e.name==='AbortError'||e.name==='TypeError'?loiMang(e):e.message;nut.querySelectorAll('button').forEach(x=>x.disabled=false);}
+    });
+    nut.append(b);
+  }
+  hop.append(oTen(),mk('label',null,'Ghi chú'),gc,nut,m);
+  return hop;
+}
+
+/* Ô nhập của hồ sơ, gom theo nhóm. [khóa, nhãn, kiểu, tùy chọn] */
+const NHOM=[
+  ['Nhận diện',true,[['ten','Tên gợi ý','text',150],['thuong_hieu','Thương hiệu','chon',{'':'Chưa chọn','Magickids':'Magickids','Annie Baby':'Annie Baby'}],['gioi','Bé trai / bé gái','chon',GIOI],['loai','Loại (áo, quần, bộ, váy…)','text',40],['mua','Mùa, đợt bán dự kiến','text',60]]],
+  ['Nguồn mẫu',true,[['nguon_loai','Loại nguồn','chon',NGUON],['nguon_link','Link nguồn (https)','link'],['nguon_shop','Shop nguồn','text',100],['ly_do','Lý do chọn','area',500],['thong_tin_nguon','Thông tin sản phẩm nguồn','area',8000],['phan_tich','Phân tích sản phẩm','area',8000]]],
+  ['Thông tin thật',false,[['chat_lieu','Chất liệu','area',300],['mau_sac','Màu','text',200],['bang_size','Bảng size','area',2000],['co_mau_that','Đã có mẫu thật','bool'],['ngay_mau_ve','Ngày mẫu về','date'],['gia_ban','Giá bán dự kiến','area',200],['gia_nhap','Giá nhập, giá sản xuất (chỉ quản lý thấy)','area',200]]],
+  ['Media',true,[['link_goc','Thư mục ảnh gốc (https)','link'],['link_anh','Thư mục ảnh đã chỉnh (https)','link'],['link_video','Thư mục video (https)','link'],['link_shopee','Thư mục ảnh Shopee (https)','link'],['so_anh','Số ảnh đã chỉnh','num'],['so_video','Số video','num'],['sua_tt','Việc chỉnh ảnh','chon',SUA],['sua_nguoi','Người chỉnh','text',40],['sua_yeu_cau','Yêu cầu chỉnh','area',1000],['sua_xong','Ngày chỉnh xong','date']]],
+  ['Mô tả cơ bản',true,[['mo_ta','Mô tả cơ bản (tên bán, 3–5 ý chính)','area',4000],['luu_y','Lưu ý (điều chưa xác minh, không được cam kết)','area',1000]]]
+];
+function veForm(h){
+  const moi=!h,w=mk('div'),o={};
+  if(moi){
+    const top=mk('div','bar');const b=mk('button',null,'← Danh sách');b.type='button';b.addEventListener('click',()=>{S.them=false;ve();});top.append(b);w.append(top);
+    const hop=mk('div','hop');hop.append(mk('h3',null,'Thêm mẫu mới'));
+    const l=mk('label',null,'Mã mẫu (mã tạm, ví dụ SP27005)');const i=mk('input');i.maxLength=30;i.autocapitalize='characters';i.spellcheck=false;
+    hop.append(l,i,mk('div','m','Mã tạm dùng tới khi cho sản xuất mới cấp mã chính thức. Mẫu mới vào trạng thái "Đang xem".'));o.ma=i;w.append(hop);
+  }
+  for(const [ten,mo,ds] of NHOM){
+    const d=mk('details','nhom');d.open=moi?(ten==='Nhận diện'||ten==='Nguồn mẫu'):mo;d.append(mk('summary',null,ten));
+    const trong=mk('div');
+    for(const [k,nhan,kieu,opt] of ds){
+      if(k==='gia_nhap'&&S.vai!=='quan_ly')continue;
+      const gt=h?h[k]:(k==='nguon_loai'?'taobao':k==='sua_tt'?'chua_giao':k==='thuong_hieu'?'':k==='gioi'?'':undefined);
+      let i;
+      if(kieu==='bool'){const l=mk('label');i=mk('input');i.type='checkbox';i.checked=!!gt;l.append(i,document.createTextNode(' '+nhan));trong.append(l);o[k]=i;continue;}
+      trong.append(mk('label',null,nhan));
+      if(kieu==='chon'){i=mk('select');for(const v in opt){const op=mk('option',null,opt[v]);op.value=v;if(v==='da_duyet'&&S.vai!=='quan_ly')op.disabled=true;i.append(op);}i.value=gt==null?'':gt;}
+      else if(kieu==='area'){i=mk('textarea');i.maxLength=opt;i.value=gt||'';if(opt>=4000)i.style.minHeight='140px';}
+      else{i=mk('input');i.type=kieu==='date'?'date':kieu==='num'?'number':kieu==='link'?'url':'text';if(kieu==='num'){i.min=0;i.max=99999;}if(kieu==='text')i.maxLength=opt;if(kieu==='link'){i.maxLength=600;i.placeholder='https://…';}i.value=gt==null?'':gt;}
+      trong.append(i);o[k]=i;
+    }
+    d.append(trong);w.append(d);
+  }
+  const hop=mk('div','hop'),m=mk('div','msg'),luu=mk('button','primary',moi?'Thêm mẫu':'Lưu hồ sơ');luu.type='button';
+  hop.append(oTen(),m);const nut=mk('div','nut');nut.append(luu);hop.append(nut);w.append(hop);
+  luu.addEventListener('click',async()=>{
+    const nguoi=layTen(m);if(!nguoi)return;
+    const body={action:moi?'tao':'sua',nguoi};
+    if(moi)body.ma=o.ma.value.trim().toUpperCase();else body.id=h.id;
+    for(const k in o){
+      if(k==='ma')continue;
+      const i=o[k],v=i.type==='checkbox'?i.checked:i.type==='number'?(i.value===''?0:Number(i.value)):i.value.trim();
+      const cu=h?(h[k]==null?(i.type==='checkbox'?false:i.type==='number'?0:''):h[k]):undefined;
+      if(moi?(v!==''&&v!==false&&v!==0||k==='nguon_loai'):v!==cu)body[k]=v;
+    }
+    if(!moi&&Object.keys(body).length===3){m.className='msg';m.textContent='Chưa đổi gì.';return;}
+    luu.disabled=true;m.className='msg';m.textContent='Đang lưu…';
+    try{
+      const r=await goi('POST',body);
+      if(r.status!==200)throw new Error(r.body.error||'máy chủ chưa lưu được');
+      if(moi){S.them=false;S.mo=r.body.id;S.loc='tat';}
+      S.nk=null;await tai();
+      if(!moi){const m2=document.querySelector('#body .msg.luu');if(m2){m2.className='msg ok luu';m2.textContent='Đã lưu lúc '+hhmm(Date.now())+'.';}}
+    }catch(e){m.className='msg err';m.textContent=e.name==='AbortError'||e.name==='TypeError'?loiMang(e):e.message;luu.disabled=false;}
+  });
+  m.classList.add('luu');
+  return w;
+}
+
+function veNhatKy(h){
+  const d=mk('details','nhom');d.append(mk('summary',null,'Nhật ký'));const trong=mk('div');d.append(trong);
+  const VIEC={tao:'Thêm mẫu',sua:'Sửa hồ sơ',trang_thai:'Đổi trạng thái',anh:'Đổi ảnh đại diện'};
+  const veDs=ds=>{
+    trong.textContent='';
+    if(!ds.length){trong.append(mk('div','m','Chưa có dòng nào.'));return;}
+    for(const x of ds){
+      let t=ngayGio(x.luc)+' · '+x.nguoi+' · '+(VIEC[x.viec]||x.viec);
+      if(x.viec==='trang_thai')t+=': '+(TT[x.tu]||x.tu)+' → '+(TT[x.den]||x.den);
+      if(x.ghi_chu)t+=' · '+x.ghi_chu;
+      trong.append(mk('div','nk',t));
+    }
+  };
+  d.addEventListener('toggle',async()=>{
+    if(!d.open)return;
+    if(S.nk&&S.nk.id===h.id){veDs(S.nk.ds);return;}
+    trong.textContent='Đang đọc nhật ký…';
+    try{
+      const r=await goi('GET',null,'nhatky='+h.id);
+      if(r.status!==200||!Array.isArray(r.body.ds))throw new Error(r.body.error||'');
+      S.nk={id:h.id,ds:r.body.ds};veDs(r.body.ds);
+    }catch(e){trong.textContent='Chưa đọc được nhật ký.';}
+  });
+  return d;
+}
+
+/* ---------- khởi động ---------- */
+$('thuBar').hidden=!THU;
+$('btnReload').addEventListener('click',tai);
+$('btnKey').addEventListener('click',()=>{if(THU)return;S.key='';store.set('mk_mau_key','');S.at=0;S.ds=[];hoiMa('');});
+$('keyOk').addEventListener('click',()=>{const v=$('keyIn').value.trim();if(!v){$('gateMsg').textContent='Nhập mã truy cập.';return;}S.key=v;store.set('mk_mau_key',v);tai();});
+$('keyIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('keyOk').click();});
+if(THU)$('btnKey').hidden=true;
+tai();
+</script>
+</body>
+</html>

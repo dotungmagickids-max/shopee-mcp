@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
       { source: "/cskh", destination: "/cskh/index.html" },
       // Trang cho xưởng: đơn đã nhận, tiến độ trả hàng, xưởng tự cập nhật. Mã truy cập riêng (XUONG_API_KEY).
       { source: "/xuong", destination: "/xuong/index.html" },
+      // Trang Mẫu và media: chọn mẫu, hồ sơ mẫu, media cơ bản. Ba mã truy cập theo vai (MAU_*_KEY).
+      { source: "/mau", destination: "/mau/index.html" },
       { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/metadata" },
       { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/metadata" },
       { source: "/.well-known/openid-configuration", destination: "/api/oauth/metadata" },
