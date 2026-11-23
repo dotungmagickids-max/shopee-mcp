@@ -77,6 +77,18 @@ details.nhom>div{padding:0 12px 12px}
 #gate{max-width:420px;margin:40px auto;padding:16px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 #gate h2{margin:0 0 6px;font-size:20px}
 #gate button{width:100%;margin-top:12px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button{flex:1;padding:11px 4px;font-weight:600}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.hang{position:absolute;top:6px;left:6px;background:rgba(20,23,28,.78);color:#fff;font-size:12px;font-weight:700;border-radius:999px;padding:2px 8px}
+.the.ban{cursor:default;position:relative}
+.the.ban:hover{border-color:var(--line)}
+.so{font-size:13px;margin-top:3px}
+.so b{font-variant-numeric:tabular-nums}
+.nhan.hot{background:#dff3e8;color:var(--green)}
+.nhan.het{background:#fbe1e1;color:var(--red)}
+.nhan.saphet{background:#fff1d6;color:var(--amber)}
+.nhan.cham{background:#e9ebf0;color:var(--mut)}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
 .seg button{flex:1;min-width:64px;padding:12px 6px}
 .seg button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
@@ -130,7 +142,7 @@ const store={
   set(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}}
 };
 const S={key:store.get('mk_mau_key'),ten:store.get('mk_mau_ten'),vai:'',ds:[],at:0,busy:false,err:'',
-  loc:'tat',gioi:'',loai:'',tim:'',mo:null,them:false,nk:null,anh:new Map(),chiaSe:''};
+  loc:'tat',gioi:'',loai:'',tim:'',mo:null,them:false,nk:null,anh:new Map(),chiaSe:'',tab:'mau',ban:{nam:0,data:null,busy:false,err:'',gioi:'',loai:'',namMa:'',mua:'',xep:'ban',tim:''}};
 
 const TT={dang_xem:'Đang xem',chon_lam:'Chọn làm',co_media:'Đã có media',bo:'Bỏ'};
 const CHUYEN={dang_xem:['chon_lam','bo'],chon_lam:['co_media','dang_xem','bo'],co_media:['chon_lam','bo'],bo:['dang_xem']};
@@ -298,6 +310,10 @@ function ve(){
   if(h){body.append(veHoSo(h));return;}
   /* đang tải lại thì giữ S.mo: hồ sơ vừa thêm chưa có trong danh sách cũ */
   if(!S.busy)S.mo=null;
+  const tabs=mk('div','tabs');
+  for(const [k,t] of [['mau','Mẫu mới'],['ban','Mã đang bán']]){const b=mk('button',S.tab===k?'on':'',t);b.type='button';b.addEventListener('click',()=>{S.tab=k;ve();if(k==='ban'&&!S.ban.data&&!S.ban.busy)taiBan();});tabs.append(b);}
+  body.append(tabs);
+  if(S.tab==='ban'){veBan(body);return;}
   veDanhSach(body);
 }
 
@@ -338,6 +354,80 @@ function veLuoi(luoi){
     b.addEventListener('click',()=>{S.mo=h.id;S.nk=null;ve();window.scrollTo(0,0);});
     g.append(b);
   }
+  luoi.append(g);
+}
+
+/* ---------- Mã đang bán (chỉ đọc, để tham khảo khi chọn mẫu) ---------- */
+function mockBan(nam){
+  const m=(ma,ten,gioi,loai,mua,ton,banNgay,slBan,mau)=>({ma,ten,gioi,loai,mua,nam:2000+Number(ma.replace(/^[A-Z]+/,'').slice(0,2)),ton,banNgay,duBan:banNgay>0?Math.round(ton/banNgay):null,giaBan:150000,anh:mau?mockAnh(ma.slice(-3),mau):null,slBan:nam===new Date().getFullYear()?slBan:Math.round(slBan/3),doanhSo:slBan*150000,lai:slBan*60000});
+  const ds=[m('MA26001','Quần dài thử nghiệm','trai','Quần','Thu đông',201,24.6,2262,'#2b6cb0'),m('MA25002','Áo dài tay thử nghiệm','trai','Áo','Thu đông',99,33.6,2476,'#6d3fc4'),m('MA26011','Áo phông thử nghiệm','trai','Áo','Xuân hè',310,4.2,1047,'#0f7b4b'),
+    m('MB26011','Bộ nỉ thử nghiệm','trai','Bộ','Thu đông',0,0,632,'#b26a00'),m('MG25004','Quần nỉ bé gái thử nghiệm','gai','Quần','Thu đông',544,5.9,410,'#c62828'),m('MG26020','Váy thử nghiệm','gai','Váy','Xuân hè',120,0.4,96,null),m('MA24006','Quần kaki thử nghiệm','trai','Quần','',515,2.4,380,'#5b6472')];
+  const vai=['lam','xem'].includes(Q.get('vai'))?Q.get('vai'):'quan_ly';
+  if(vai!=='quan_ly')ds.forEach(x=>{delete x.doanhSo;delete x.lai;});
+  ds.sort((a,b)=>b.slBan-a.slBan);
+  return {at:Date.now(),vai,nam,namNay:new Date().getFullYear(),capNhat:new Date().toISOString(),coAnh:true,thieuSoBan:false,ds};
+}
+async function taiBan(nam){
+  const B=S.ban;if(B.busy)return;
+  B.busy=true;B.err='';ve();
+  try{
+    if(THU){await new Promise(r=>setTimeout(r,150));B.data=mockBan(nam||new Date().getFullYear());}
+    else{
+      const r=await goi('GET',null,'ban='+(nam||''));
+      if(r.status!==200||!Array.isArray(r.body.ds))throw new Error(r.body&&r.body.error||'máy chủ không trả danh sách');
+      B.data=r.body;
+    }
+    B.nam=B.data.nam;
+  }catch(e){B.err='Chưa đọc được mã đang bán ('+(e.message&&e.name!=='AbortError'&&e.name!=='TypeError'?e.message:loiMang(e))+').';}
+  B.busy=false;ve();
+}
+const soVN=n=>Number(n||0).toLocaleString('vi-VN');
+const trieu=n=>n==null?'—':(Math.round(n/100000)/10).toLocaleString('vi-VN')+'tr';
+function veBan(body){
+  const B=S.ban,d=B.data;
+  if(B.err)body.append(mk('div','info err',B.err));
+  if(!d){body.append(mk('div','rong',B.busy?'Đang đọc mã đang bán…':'Chưa có dữ liệu. Bấm lại tab "Mã đang bán" để thử lại.'));return;}
+  const chon=(khoa,ds,doi)=>{const s=mk('select');for(const [v,t] of ds){const o=mk('option',null,t);o.value=v;s.append(o);}s.value=String(B[khoa]);s.addEventListener('change',()=>{B[khoa]=s.value;doi?doi(s.value):veLuoiBan(luoi);});return s;};
+  const bar=mk('div','bar');
+  const tim=mk('input');tim.type='search';tim.placeholder='Tìm theo mã hoặc tên';tim.value=B.tim;tim.addEventListener('input',()=>{B.tim=tim.value;veLuoiBan(luoi);});
+  const namDs=[];for(let n=d.namNay;n>=2023;n--)namDs.push([String(n),'Bán trong '+n]);
+  const namMaDs=[['','Mã mọi năm']];for(const n of [...new Set(d.ds.map(x=>x.nam).filter(Boolean))].sort((a,b)=>b-a))namMaDs.push([String(n),'Mã ra năm '+n]);
+  bar.append(tim,chon('nam',namDs,v=>taiBan(Number(v))),chon('gioi',[['','Trai và gái'],['trai','Bé trai'],['gai','Bé gái'],['unisex','Unisex']]),
+    chon('loai',[['','Mọi loại'],['Áo','Áo'],['Quần','Quần'],['Bộ','Bộ'],['Váy','Váy'],['Khác','Khác']]),chon('mua',[['','Mọi mùa'],['Xuân hè','Xuân hè'],['Thu đông','Thu đông']]),
+    chon('namMa',namMaDs),chon('xep',[['ban','Xếp: bán nhiều trong năm'],['nhanh','Xếp: đang bán nhanh'],['ton','Xếp: tồn nhiều']]));
+  body.append(bar);
+  const ghi=['Số bán năm '+d.nam+' đã trừ hủy, hoàn.'];
+  if(d.capNhat)ghi.push('Tồn và tốc độ bán theo Pancake lúc '+ngayGio(d.capNhat)+'.');
+  if(d.thieuSoBan)ghi.push('CHƯA đọc được số bán theo năm: thứ hạng dưới đây chỉ theo tốc độ bán hiện tại.');
+  if(!d.coAnh)ghi.push('Chưa có ảnh (máy chủ chưa bật cột ảnh).');
+  body.append(mk('p','info',ghi.join(' ')));
+  const luoi=mk('div');body.append(luoi);veLuoiBan(luoi);
+}
+function veLuoiBan(luoi){
+  const B=S.ban,d=B.data;luoi.textContent='';
+  const tu=B.tim.trim().toLowerCase();
+  let ds=d.ds.filter(x=>(!B.gioi||x.gioi===B.gioi)&&(!B.loai||x.loai===B.loai)&&(!B.mua||x.mua===B.mua)&&(!B.namMa||String(x.nam)===B.namMa)&&(!tu||(x.ma+' '+x.ten).toLowerCase().includes(tu)));
+  ds=ds.slice().sort(B.xep==='nhanh'?(a,b)=>b.banNgay-a.banNgay||b.slBan-a.slBan:B.xep==='ton'?(a,b)=>b.ton-a.ton:(a,b)=>b.slBan-a.slBan||b.banNgay-a.banNgay);
+  if(!ds.length){luoi.append(mk('div','rong','Không có mã nào khớp bộ lọc.'));return;}
+  const g=mk('div','grid');
+  ds.forEach((x,i)=>{
+    const c=mk('div','the ban');
+    const k=mk('div','hinh');
+    if(laLink(x.anh)||(THU&&x.anh)){const img=mk('img');img.alt='Ảnh '+x.ma;img.loading='lazy';img.referrerPolicy='no-referrer';img.addEventListener('error',()=>{k.textContent='Chưa có ảnh';});img.src=x.anh;k.append(img);}
+    else k.textContent='Chưa có ảnh';
+    c.append(k,mk('span','hang','#'+(i+1)));
+    const t=mk('div','t');
+    t.append(mk('div','code',x.ma),mk('div','ten',x.ten||'(chưa có tên)'),mk('div','m',[x.loai,x.gioi?GIOI[x.gioi]:'',x.mua].filter(Boolean).join(' · ')||'Chưa phân loại'));
+    const so=(nhan,gt)=>{const s=mk('div','so');s.append(document.createTextNode(nhan+' '),mk('b',null,gt));return s;};
+    t.append(so('Bán năm '+d.nam+':',soVN(x.slBan)+' cái'),so('Đang bán:',x.banNgay.toLocaleString('vi-VN')+'/ngày'),so('Tồn:',soVN(x.ton)+(x.duBan!=null&&x.ton>0?' (đủ '+soVN(x.duBan)+' ngày)':'')));
+    if('doanhSo' in x)t.append(so('Doanh số:',trieu(x.doanhSo)),so('Lãi trước QC:',trieu(x.lai)));
+    if(x.ton===0)t.append(mk('span','nhan het','Hết hàng'));
+    else if(x.duBan!=null&&x.duBan<7&&x.banNgay>=1)t.append(mk('span','nhan saphet','Sắp hết'));
+    else if(x.ton>=100&&x.banNgay<1)t.append(mk('span','nhan cham','Bán chậm'));
+    /* "Bán tốt" = 10 mã bán nhiều nhất trong năm của bộ lọc đang chọn, trừ mã hiện đang bán chậm */
+    if(B.xep==='ban'&&i<10&&x.slBan>0&&!d.thieuSoBan&&!(x.ton>=100&&x.banNgay<1))t.append(document.createTextNode(' '),mk('span','nhan hot','Bán tốt'));
+    c.append(t);g.append(c);
+  });
   luoi.append(g);
 }
 

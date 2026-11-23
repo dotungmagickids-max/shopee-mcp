@@ -1,4 +1,5 @@
 import { docLenhMau, hoSoTheoVai, loiChuyen, tomTatSua, vaiCuaKhoa, type HoSoRow, type Vai } from "@/lib/mau";
+import { gomMaBan, namXem, type BienTheRow, type LaiRow } from "@/lib/mau-ban";
 import { allRows, db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -50,10 +51,47 @@ async function ghiNhatKy(hoSoId: number, nguoi: string, vai: Vai, viec: string, 
 }
 
 /**
+ * Mã đang bán để tham khảo: tồn, tốc độ bán, danh mục, ảnh từ bảng pancake_variations (đồng bộ đêm từ Pancake POS),
+ * số bán trong năm từ hàm mk_product_profit. Chỉ đọc. Thiếu nguồn nào thì báo cờ, không bịa số.
+ */
+async function docMaBan(vai: Vai, namHoi: string | null) {
+  const homNay = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const nam = namXem(namHoi, homNay);
+  const cot = "product_code, product_name, categories, stock, selling_avg, retail_price, updated_at";
+  const doc = (them: string) => allRows<BienTheRow>(() => db().from("pancake_variations").select(cot + them).order("sku"));
+  let coAnh = true;
+  let rows: BienTheRow[];
+  try {
+    rows = await doc(", image_url");
+  } catch (err) {
+    // Database chưa có cột ảnh (migration 0032): vẫn trả danh sách, không có hình.
+    if (!/image_url/.test(err instanceof Error ? err.message : "")) throw err;
+    coAnh = false;
+    rows = await doc("");
+  }
+  let lai: LaiRow[] = [];
+  let thieuSoBan = false;
+  const { data, error } = await db().rpc("mk_product_profit", {
+    p_agent: "web_mau",
+    p_from: `${nam}-01-01`,
+    p_to: String(nam) === homNay.slice(0, 4) ? homNay : `${nam}-12-31`,
+    p_code: null,
+    p_limit: 500,
+  });
+  if (error || !Array.isArray(data)) {
+    thieuSoBan = true;
+    if (error) console.error("[mau] đọc số bán theo mã lỗi:", error.message);
+  } else lai = data as LaiRow[];
+  const capNhat = rows.reduce<string | null>((a, r) => (r.updated_at && (!a || r.updated_at > a) ? r.updated_at : a), null);
+  return { at: Date.now(), vai, nam, namNay: Number(homNay.slice(0, 4)), capNhat, coAnh, thieuSoBan, ds: gomMaBan(rows, lai, vai) };
+}
+
+/**
  * Mẫu và media cho trang /mau. Header bắt buộc: x-mk-key (một trong ba mã: quản lý, người làm, người xem).
  *   GET /api/mau              → { at, vai, ds[] } hồ sơ theo vai (người xem chỉ thấy mẫu đã có media, không có giá nhập)
  *   GET /api/mau?anh=<id>     → ảnh đại diện của hồ sơ
  *   GET /api/mau?nhatky=<id>  → { ds[] } nhật ký của hồ sơ (không cho vai xem)
+ *   GET /api/mau?ban=<năm>    → { nam, capNhat, coAnh, thieuSoBan, ds[] } mã đang bán xếp theo số bán trong năm (doanh số, lãi chỉ vai quản lý)
  */
 export async function GET(request: Request) {
   const vai = vaiHoacTuChoi(request);
@@ -71,6 +109,7 @@ export async function GET(request: Request) {
         headers: { "Content-Type": data.kieu as string, "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" },
       });
     }
+    if (q.has("ban")) return json(await docMaBan(vai, q.get("ban")));
     if (q.has("nhatky")) {
       if (vai === "xem") return json({ error: "Mã truy cập này chỉ được xem" }, 403);
       const id = idTu(q.get("nhatky"));
