@@ -308,24 +308,55 @@ export function cleanVtpRows(v: unknown, max = 300): Array<{ ma: string; status:
   return [...out.values()];
 }
 
-/** Các đơn hoàn Viettel đã lưu (45 ngày kể từ lần cuối có trong báo cáo) và ngày báo cáo mới nhất đã nhận. */
-export async function vtpMailGet(): Promise<{ docs: Record<string, VtpMailDoc>; last: { ngay: string; at: number; n: number } | null }> {
+/** Khâu của báo cáo mail Viettel Post mà phần mềm giữ: hoàn (kiện đang về) và giao (đơn giao có vấn đề). */
+export type VtpKhau = "hoan" | "giao";
+const VTP_SCOPE: Record<VtpKhau, string> = { hoan: "hoan-vtp", giao: "giao-vtp" };
+
+/** Các đơn Viettel đã lưu của một khâu (45 ngày kể từ lần cuối có trong báo cáo) và ngày báo cáo mới nhất đã nhận. */
+export async function vtpMailGet(khau: VtpKhau = "hoan"): Promise<{ docs: Record<string, VtpMailDoc>; last: { ngay: string; at: number; n: number } | null }> {
+  const scope = VTP_SCOPE[khau];
   const since = new Date(Date.now() - 45 * 86400_000).toISOString();
   const [rows, meta] = await Promise.all([
-    allRows<{ khoa: string; du_lieu: VtpMailDoc }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", "hoan-vtp").gte("cap_nhat", since).order("khoa")),
-    db().from("kho_ghi_chu").select("du_lieu").eq("pham_vi", "hoan-vtp-meta").eq("khoa", "last").maybeSingle(),
+    allRows<{ khoa: string; du_lieu: VtpMailDoc }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", scope).gte("cap_nhat", since).order("khoa")),
+    db().from("kho_ghi_chu").select("du_lieu").eq("pham_vi", `${scope}-meta`).eq("khoa", "last").maybeSingle(),
   ]);
   fail("kho_ghi_chu", meta.error);
   const m = meta.data?.du_lieu as any;
   return { docs: Object.fromEntries(rows.map((r) => [r.khoa, r.du_lieu])), last: m?.ngay ? { ngay: String(m.ngay), at: Number(m.at) || 0, n: Number(m.n) || 0 } : null };
 }
 
-export async function vtpMailSave(ngay: string, docs: Record<string, VtpMailDoc>): Promise<void> {
-  await cacheDrop("hoan");
+export async function vtpMailSave(ngay: string, docs: Record<string, VtpMailDoc>, khau: VtpKhau = "hoan"): Promise<void> {
+  const scope = VTP_SCOPE[khau];
+  if (khau === "hoan") await cacheDrop("hoan");
   const now = new Date().toISOString();
-  const rows = Object.entries(docs).map(([khoa, du_lieu]) => ({ pham_vi: "hoan-vtp", khoa, du_lieu, cap_nhat: now }));
+  const rows = Object.entries(docs).map(([khoa, du_lieu]) => ({ pham_vi: scope, khoa, du_lieu, cap_nhat: now }));
   if (rows.length) fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert(rows)).error);
-  fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert({ pham_vi: "hoan-vtp-meta", khoa: "last", du_lieu: { ngay, at: Date.now(), n: rows.length }, cap_nhat: now })).error);
+  fail("kho_ghi_chu", (await db().from("kho_ghi_chu").upsert({ pham_vi: `${scope}-meta`, khoa: "last", du_lieu: { ngay, at: Date.now(), n: rows.length }, cap_nhat: now })).error);
+}
+
+/* Kết quả xử lý đơn giao có vấn đề (CSKH, sale ghi): một trong các kết quả đã biết và một dòng ghi chú. */
+
+export const GIAO_KQ = ["phat-lai", "cho-hoan", "sua-thong-tin", "chua-lien-lac"] as const;
+
+/** Chỉ giữ kết quả đã biết (hoặc rỗng = bỏ chọn) và ghi chú tối đa 300 ký tự. */
+export function cleanGiaoMark(v: any): Record<string, unknown> {
+  const o: Record<string, unknown> = {};
+  if (v?.state != null) {
+    const s = String(v.state);
+    if (s === "" || (GIAO_KQ as readonly string[]).includes(s)) o.state = s;
+  }
+  if (v?.note != null) o.note = String(v.note).trim().slice(0, 300);
+  return o;
+}
+
+export async function giaoMarksGet(): Promise<Record<string, Record<string, unknown>>> {
+  const since = new Date(Date.now() - 45 * 86400_000).toISOString();
+  const rows = await allRows<{ khoa: string; du_lieu: Record<string, unknown> }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", "giao-vtp-xl").gte("cap_nhat", since).order("khoa"));
+  return Object.fromEntries(rows.map((r) => [r.khoa, r.du_lieu ?? {}]));
+}
+
+export async function giaoMarkSet(ma: string, duLieu: unknown): Promise<void> {
+  await notesMerge("giao-vtp-xl", { [ma]: duLieu }, cleanGiaoMark);
 }
 
 /* Bộ nhớ đệm cho các lời gọi chậm (hàng hoàn ~1 phút, danh mục sản phẩm ~6 giây): lưu kết quả vào kho_ghi_chu. */

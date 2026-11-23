@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { shops } from "./autopilot/config";
 import { normSku, productCode } from "./autopilot/pancake";
 import { callShopee, chunk } from "./autopilot/shopee-call";
-import { cleanVtpRows, vtpMailGet, vtpMailSave, type VtpMailDoc } from "./kho-store";
+import { cleanVtpRows, giaoMarksGet, vtpMailGet, vtpMailSave, type VtpKhau, type VtpMailDoc } from "./kho-store";
 
 /**
  * Tra đơn cho bàn đóng hàng (công cụ quay video đóng hàng của kho). Chỉ đọc Pancake POS.
@@ -944,9 +944,9 @@ export function vtpMailDoc(row: { ma: string; status: string; reason: string }, 
  * Nhận danh sách đơn khâu hoàn từ mail "Báo cáo vận hành" của Viettel Post (tác vụ đọc mail buổi sáng đẩy lên).
  * Chỉ nhận mã, trạng thái, lý do: không nhận tên, SĐT, địa chỉ khách. Sản phẩm lấy từ Pancake theo mã (chỉ đọc).
  */
-export async function vtpMailPush(ngay: string, rowsIn: unknown): Promise<{ saved: number; matched: number; notFound: string[] }> {
+export async function vtpMailPush(ngay: string, rowsIn: unknown, khau: VtpKhau = "hoan"): Promise<{ saved: number; matched: number; notFound: string[] }> {
   const rows = cleanVtpRows(rowsIn);
-  const { docs: old } = await vtpMailGet();
+  const { docs: old } = await vtpMailGet(khau);
   const now = Date.now();
   const docs: Record<string, VtpMailDoc> = {};
   const notFound: string[] = [];
@@ -963,8 +963,53 @@ export async function vtpMailPush(ngay: string, rowsIn: unknown): Promise<{ save
     docs[row.ma] = vtpMailDoc(row, ngay, old[row.ma], orders, now);
     if (!docs[row.ma].id) notFound.push(row.ma);
   });
-  await vtpMailSave(ngay, docs);
+  await vtpMailSave(ngay, docs, khau);
   return { saved: rows.length, matched: rows.length - notFound.length, notFound };
+}
+
+/** Một đơn Viettel Post giao có vấn đề. Không có tên, SĐT, địa chỉ khách, không có tiền thu hộ, không có tên sản phẩm. */
+export interface GiaoRow {
+  ma: string;
+  id: string;
+  channel: string;
+  status: string;
+  reason: string;
+  items: Array<{ sku: string; quantity: number }>;
+  /** Lần đầu phần mềm thấy đơn trong danh sách có vấn đề (ms). */
+  since: number | null;
+  /** Ngày báo cáo gần nhất còn thấy đơn. */
+  ngay: string;
+  /** Còn trong báo cáo mới nhất. false = đã rời danh sách (giao xong hoặc chuyển sang hoàn). */
+  con: boolean;
+}
+
+export function shapeGiao(ma: string, d: VtpMailDoc, lastNgay: string): GiaoRow {
+  return {
+    ma,
+    id: d.id || "",
+    channel: d.channel || "Viettel Post",
+    status: d.status || "",
+    reason: d.reason || "",
+    items: (d.items ?? []).map((i) => ({ sku: i.sku, quantity: i.quantity })),
+    since: d.first || null,
+    ngay: d.ngay,
+    con: d.ngay === lastNgay,
+  };
+}
+
+/**
+ * Đơn giao có vấn đề theo báo cáo mail Viettel Post: đơn còn trong báo cáo mới nhất, và đơn đã rời danh sách
+ * trong 14 ngày gần đây (để xem lại kết quả xử lý). Kèm kết quả xử lý đã ghi.
+ */
+export async function giaoProblems(now = Date.now()): Promise<{ at: number; ngay: string | null; rows: GiaoRow[]; marks: Record<string, Record<string, unknown>> }> {
+  const [mail, marks] = await Promise.all([vtpMailGet("giao"), giaoMarksGet()]);
+  if (!mail.last) return { at: now, ngay: null, rows: [], marks };
+  const last = mail.last.ngay;
+  const rows = Object.entries(mail.docs)
+    .map(([ma, d]) => shapeGiao(ma, d, last))
+    .filter((r) => r.con || reportAgeDays(r.ngay, now) <= 14)
+    .sort((a, b) => Number(b.con) - Number(a.con) || (a.since ?? 0) - (b.since ?? 0));
+  return { at: now, ngay: last, rows, marks };
 }
 
 /**
