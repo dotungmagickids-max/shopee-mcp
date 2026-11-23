@@ -1,7 +1,7 @@
 /** FB Magic Tool, phần lên camp: đọc mã trong bài, đặt tên, chia tài khoản, tham số gửi Meta luôn tạm dừng. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, type LaunchConfig } from "../src/lib/facebook/launch";
+import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, welcomeTemplate, type LaunchConfig } from "../src/lib/facebook/launch";
 
 const cfg = (p: Partial<LaunchConfig> = {}): LaunchConfig => ({
   page_id: "159993608025607", accounts: ["111111", "222222"], budget: 200_000, structure: "abo",
@@ -76,6 +76,7 @@ describe("FB Magic Tool: lên camp", () => {
     assert.equal(suggestCampaignName("AB", [], []), "TT-AB-GOM-01");
     assert.equal(suggestAdsetName({ gender: "female", age_min: 25, age_max: 40, placement: "auto" }), "TN-NU2540-AUTO");
     assert.equal(suggestAdsetName({ gender: "all", age_min: 25, age_max: 65, placement: "facebook" }), "TN-ALL2565-FB");
+    assert.deepEqual(["Magic Kids", "Magickids.Official", "Annie Baby", "Magickids Store"].map(welcomeTemplate), ["New.Nút", "New.Nút", "Xin size - dễ thương, hài hước", null]);
   });
 
   it("hẹn giờ bắt đầu chạy: giờ Việt Nam, phải ở tương lai, nhóm vẫn tạm dừng", () => {
