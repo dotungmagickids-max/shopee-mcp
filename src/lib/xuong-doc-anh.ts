@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
 /**
@@ -11,6 +11,8 @@ import { z } from "zod";
 export type LoaiAnh = "cat" | "giao" | "vai";
 export const ANH_TOI_DA = 3_500_000; // ký tự base64, khoảng 2,6 MB ảnh
 export const CHUA_BAT_DOC_ANH = "Máy chủ chưa bật phần đọc ảnh";
+/** Mô hình đọc ảnh. */
+export const MO_HINH = "claude-haiku-5-5";
 
 const KIEU_ANH = ["image/jpeg", "image/png", "image/webp"] as const;
 type KieuAnh = (typeof KIEU_ANH)[number];
@@ -117,7 +119,7 @@ export type KetQuaDoc = { ok: true; loai: "cat" | "giao"; bang: BangDoc } | { ok
 export async function docAnhPhieu(anh: { loai: LoaiAnh; kieu: KieuAnh; duLieu: string }, homNay: string): Promise<KetQuaDoc> {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) return { ok: false, status: 501, error: CHUA_BAT_DOC_ANH };
   const client = new Anthropic({ timeout: 55_000, maxRetries: 0 });
-  const tinNhan: Anthropic.Beta.BetaMessageParam[] = [
+  const tinNhan: Anthropic.MessageParam[] = [
     {
       role: "user",
       content: [
@@ -126,15 +128,16 @@ export async function docAnhPhieu(anh: { loai: LoaiAnh; kieu: KieuAnh; duLieu: s
       ],
     },
   ];
-  // Từ chối vì lý do an toàn thì để máy chủ Anthropic tự chuyển sang mô hình dự phòng (fallbacks).
-  const chung = { model: "claude-opus-5-5", max_tokens: 16000, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const, system: HE_THONG, messages: tinNhan };
+  // Anh chọn 23/11: thử loại rẻ nhất trước (Claude Haiku 5.5). Mô hình này không có fallback phía máy chủ khi từ chối,
+  // nên từ chối được báo thành "chưa đọc được ảnh". Đọc sai nhiều trên phiếu viết tay thì đổi MO_HINH lên loại cao hơn.
+  const chung = { model: MO_HINH, max_tokens: 16000, system: HE_THONG, messages: tinNhan };
   try {
     if (anh.loai === "vai") {
-      const r = await client.beta.messages.parse({ ...chung, output_config: { effort: "medium", format: betaZodOutputFormat(Vai) } });
+      const r = await client.messages.parse({ ...chung, output_config: { effort: "high", format: zodOutputFormat(Vai) } });
       if (r.stop_reason === "refusal" || !r.parsed_output) return { ok: false, status: 422, error: "Chưa đọc được ảnh này. Chụp lại rõ hơn hoặc nhập tay." };
       return { ok: true, loai: "vai", vai: lamSachVai(r.parsed_output) };
     }
-    const r = await client.beta.messages.parse({ ...chung, output_config: { effort: "medium", format: betaZodOutputFormat(Bang) } });
+    const r = await client.messages.parse({ ...chung, output_config: { effort: "high", format: zodOutputFormat(Bang) } });
     if (r.stop_reason === "refusal" || !r.parsed_output) return { ok: false, status: 422, error: "Chưa đọc được ảnh này. Chụp lại rõ hơn hoặc nhập tay." };
     return { ok: true, loai: anh.loai, bang: lamSachBang(r.parsed_output) };
   } catch (err) {
