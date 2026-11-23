@@ -23,7 +23,7 @@ export default async function FbLayout({ children }: { children: ReactNode }) {
         <a href="/fb/tran">Bảng trần</a>
         <span className="spacer" />
         <span className="tag" title="Lên camp luôn tạo ở trạng thái tạm dừng. Nút ở màn Đánh giá chưa gọi lệnh ghi.">TẠO = TẠM DỪNG</span>
-        <a href="/admin">Shopee Autopilot</a>
+        <a href="/admin">Web quản trị</a>
       </nav>
       {children}
     </div>

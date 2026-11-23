@@ -35,7 +35,7 @@ async function loadPostAds(today: string): Promise<Map<string, PostAds>> {
 }
 
 /** Mã anh nhập tay cho từng bài (bảng fb_post_codes). Chưa áp migration thì coi như chưa có dòng nào. */
-async function loadManualCodes(): Promise<Map<string, string[]>> {
+export async function loadManualCodes(): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   const { data, error } = await db().from("fb_post_codes").select("post_id, codes").limit(5000);
   if (error) throw new Error("chưa có bảng fb_post_codes (chưa áp migration)");
@@ -45,28 +45,41 @@ async function loadManualCodes(): Promise<Map<string, string[]>> {
 
 const msg = (e: unknown) => scrub(e instanceof Error ? e.message : String(e)).slice(0, 160);
 
+/**
+ * Bài của MỘT page trong [since, until], thử lần lượt Pancake → Meta → Composio. Dùng chung cho màn Bài đã đăng và
+ * màn Lên camp. Không nguồn nào đọc được thì `source` = null và `error` ghi lý do từng nguồn.
+ */
+export async function readPagePosts(
+  id: string,
+  since: string,
+  until: string,
+  days: number
+): Promise<{ source: ContentSource | null; error: string | null; posts: (PagePost & { off_wall?: boolean })[] }> {
+  const composio = composioConfig();
+  const token = pancakePageTokens().get(id);
+  const sources: [ContentSource, () => Promise<PagePost[]>][] = [];
+  if (token) sources.push(["pancake", () => pancakePosts(id, token, since, until)]);
+  sources.push(["meta", () => pagePosts(id, days)]);
+  if (composio) sources.push(["composio", () => composioPosts(composio, id, since, until)]);
+  const errors: string[] = [];
+  for (const [source, read] of sources) {
+    try {
+      return { source, error: null, posts: await read() };
+    } catch (e) {
+      errors.push(`${source}: ${msg(e)}`);
+    }
+  }
+  if (!token) errors.push("chưa có token Pancake của page này");
+  return { source: null, error: errors.join("; "), posts: [] };
+}
+
 export async function loadContent(since: string, until: string, today: string): Promise<ContentData> {
   const days = daysToFetch(since, today);
-  const tokens = pancakePageTokens();
-  const composio = composioConfig();
   const results = await Promise.all(
     Object.entries(PAGES).map(async ([id, name]) => {
-      const sources: [ContentSource, () => Promise<PagePost[]>][] = [];
-      const token = tokens.get(id);
-      if (token) sources.push(["pancake", () => pancakePosts(id, token, since, until)]);
-      sources.push(["meta", () => pagePosts(id, days)]);
-      if (composio) sources.push(["composio", () => composioPosts(composio, id, since, until)]);
-      const errors: string[] = [];
-      for (const [source, read] of sources) {
-        try {
-          const posts = (await read()).map((p) => toContentPost(id, p)).filter((p) => inRange(p, since, until));
-          return { id, name, source: source as ContentSource | null, error: null as string | null, posts };
-        } catch (e) {
-          errors.push(`${source}: ${msg(e)}`);
-        }
-      }
-      if (!token) errors.push("chưa có token Pancake của page này");
-      return { id, name, source: null, error: errors.join("; "), posts: [] as ContentPost[] };
+      const r = await readPagePosts(id, since, until, days);
+      const posts = r.posts.map((p) => toContentPost(id, p)).filter((p) => inRange(p, since, until));
+      return { id, name, source: r.source, error: r.error, posts };
     })
   );
   const notes: string[] = [];

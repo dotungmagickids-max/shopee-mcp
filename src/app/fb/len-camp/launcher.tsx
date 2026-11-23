@@ -10,10 +10,12 @@ const day = (iso: string) => (iso ? new Date(iso).toLocaleDateString("vi-VN", { 
 const HOT = 5;
 const STEADY = 1;
 
-type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[] };
+type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; preselect?: string[] };
 
-export default function Launcher({ pageId, pageName, posts, accounts, usedNames }: Props) {
-  const [picked, setPicked] = useState<string[]>([]);
+export default function Launcher({ pageId, pageName, posts, accounts, usedNames, preselect = [] }: Props) {
+  // Bài chọn sẵn từ màn Bài đã đăng; bài nào không còn trong 30 ngày gần nhất thì bỏ qua và báo số lượng.
+  const preFound = useMemo(() => preselect.filter((id) => posts.some((p) => p.id === id)).slice(0, MAX_ITEMS), [preselect, posts]);
+  const [picked, setPicked] = useState<string[]>(preFound);
   const [onlyNew, setOnlyNew] = useState(false);
   const [onlyStock, setOnlyStock] = useState(false);
   const [speed, setSpeed] = useState<"" | "hot" | "steady">("");
@@ -113,6 +115,12 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames 
           <input placeholder="Mã SP" value={q} onChange={(e) => setQ(e.target.value)} size={12} />
           <span className="sub">{shown.length}/{posts.length} bài</span>
         </div>
+        {preselect.length ? (
+          <p className="sub" style={{ marginBottom: 8 }}>
+            Đã chọn sẵn {preFound.length}/{preselect.length} bài từ màn Bài đã đăng
+            {preFound.length < preselect.length ? " (bài còn lại không nằm trong 30 ngày gần nhất hoặc là bài ngoài tường)" : ""}.
+          </p>
+        ) : null}
         <div className="table-wrap" style={{ maxHeight: 520, overflowY: "auto" }}>
           <table className="data">
             <thead>
@@ -138,7 +146,7 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames 
                       <div>
                         <div>{p.message.slice(0, 90) || "(không có chữ)"}</div>
                         <div className="sub">
-                          {p.kind === "added_video" ? "Video/reel" : "Bài"}
+                          {/video/i.test(p.kind) ? "Video/reel" : "Bài"}
                           {p.permalink ? <> · <a href={p.permalink} target="_blank" rel="noreferrer">mở bài</a></> : null}
                         </div>
                       </div>
