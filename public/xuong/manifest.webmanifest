@@ -1,0 +1,14 @@
+{
+  "name": "Magickids – Hàng xưởng",
+  "short_name": "Xưởng MK",
+  "lang": "vi",
+  "start_url": "/xuong",
+  "scope": "/xuong",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#0f7b4b",
+  "icons": [
+    { "src": "/xuong/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/xuong/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -2,7 +2,13 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f7b4b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Xưởng MK">
+<link rel="manifest" href="/xuong/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/xuong/icon-192.png">
 <meta name="robots" content="noindex,nofollow">
 <title>Magickids – Hàng xưởng</title>
 <style>
@@ -96,7 +102,26 @@ table.nhap button{padding:4px 10px}
 #sheet .sh-ky{display:grid;grid-template-columns:1fr 1fr;text-align:center;margin-top:26px;min-height:120px}
 #sheet .sh-ten-ky{margin-top:70px;font-weight:700}
 @media(max-width:480px){.cards{grid-template-columns:1fr 1fr}.kpi b{font-size:26px}.tabs button{font-size:14px}.row3{grid-template-columns:1fr 1fr}#sheet{padding:16px 14px}#sheet>*{min-width:520px}}
+.caiApp{display:flex;gap:8px;align-items:center;background:#e8f5ee;border:1px solid #b9dcc8;border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:14px}
+.caiApp span{flex:1}
+.caiApp button{padding:6px 10px;font-size:14px}
+.tabs button i{font-style:normal}
+.tabs button .ngan{display:none}
+@media(max-width:600px){
+  header{padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top))}
+  header h1{font-size:16px}
+  main{padding:10px 10px calc(76px + env(safe-area-inset-bottom))}
+  .tabs{position:fixed;left:0;right:0;bottom:0;top:auto;margin:0;padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:4px;background:#fff;border-top:1px solid var(--line);z-index:5;overflow:visible}
+  .tabs button{flex:1 1 0;min-width:0;padding:8px 2px;font-size:12px;line-height:1.2;white-space:normal;border-radius:10px;min-height:46px}
+  .tabs button .dai{display:none}
+  .tabs button .ngan{display:inline}
+  .loc button{padding:9px 14px;font-size:15px}
+  button{min-height:42px}
+  table.nhap input{padding:9px 4px;min-width:56px;font-size:16px}
+  .thumb{width:52px;height:52px}
+}
 @media print{
+  .caiApp{display:none!important}
   @page{size:A4;margin:14mm}
   body{background:#fff}
   header,.thu,#gate,#info,#cards,#tabs,.noprint{display:none!important}
@@ -124,14 +149,15 @@ table.nhap button{padding:4px 10px}
 </div>
 
 <main id="app" hidden>
+  <div class="caiApp" id="caiApp" hidden><span id="caiTxt"></span><button type="button" id="caiNut" hidden>Cài</button><button type="button" id="caiDong">Ẩn</button></div>
   <p class="info" id="info"></p>
   <div class="cards" id="cards"></div>
   <div class="tabs" id="tabs">
-    <button type="button" data-t="don">Đơn đã nhận</button>
-    <button type="button" data-t="tra">Tiến độ trả hàng</button>
-    <button type="button" data-t="sua">Cập nhật tiến độ</button>
-    <button type="button" data-t="nhap">Nhập phiếu</button>
-    <button type="button" data-t="phieu">Làm phiếu</button>
+    <button type="button" data-t="don"><i class="dai">Đơn đã nhận</i><i class="ngan">Đơn</i></button>
+    <button type="button" data-t="tra"><i class="dai">Tiến độ trả hàng</i><i class="ngan">Tiến độ</i></button>
+    <button type="button" data-t="sua"><i class="dai">Cập nhật tiến độ</i><i class="ngan">Cập nhật</i></button>
+    <button type="button" data-t="nhap"><i class="dai">Nhập phiếu</i><i class="ngan">Nhập phiếu</i></button>
+    <button type="button" data-t="phieu"><i class="dai">Làm phiếu</i><i class="ngan">Làm phiếu</i></button>
   </div>
   <div id="body"></div>
 </main>
@@ -142,6 +168,8 @@ table.nhap button{padding:4px 10px}
    Chỉ gọi /api/xuong (GET đọc sổ đã bỏ giá, POST ghi ngày hẹn / thông tin sản xuất). Thêm ?thu=1 để chạy thử bằng số giả.
    Màn Làm phiếu (đặt vải, đặt in thêu, giao may): phiếu lưu trên máy và trên máy chủ. */
 const THU=new URLSearchParams(location.search).has('thu');
+/* máy cảm ứng màn nhỏ: hiện nút chụp ảnh bằng camera, gợi ý cài lên màn hình chính */
+const DI_DONG=matchMedia('(pointer:coarse)').matches&&Math.min(screen.width,screen.height)<=820;
 const API='/api/xuong';
 const CHUA_BAT='Máy chủ chưa bật phần ghi thông tin sản xuất';
 const $=id=>document.getElementById(id);
@@ -892,12 +920,16 @@ function thuNhoAnh(file){
 }
 /* nút "Đọc từ ảnh": chọn hoặc chụp ảnh → máy chủ đọc ra bảng → gọi nhan(kq). Trả [nút, dòng báo]. */
 function nutDocAnh(loai,nhan){
-  const w=mk('div','loc'),inp=document.createElement('input'),b=mk('button','','Đọc từ ảnh chụp phiếu'),tb=mk('div','msg m');
+  const w=mk('div','loc'),inp=document.createElement('input'),b=mk('button','',DI_DONG?'Chọn ảnh phiếu có sẵn':'Đọc từ ảnh chụp phiếu'),tb=mk('div','msg m');
   inp.type='file';inp.accept='image/*';inp.hidden=true;b.type='button';b.disabled=NP.docBusy;
-  b.onclick=()=>inp.click();
+  b.onclick=()=>{inp.removeAttribute('capture');inp.click();};
+  /* điện thoại: nút mở thẳng camera sau để chụp phiếu */
+  const bChup=mk('button','primary','Chụp ảnh phiếu');bChup.type='button';bChup.disabled=NP.docBusy;
+  bChup.onclick=()=>{inp.setAttribute('capture','environment');inp.click();};
+  if(DI_DONG)w.append(bChup);
   inp.onchange=async()=>{
     const f=inp.files&&inp.files[0];inp.value='';if(!f)return;
-    NP.docBusy=true;b.disabled=true;tb.className='msg m';tb.textContent='Đang đọc ảnh, chờ khoảng nửa phút…';
+    NP.docBusy=true;b.disabled=true;bChup.disabled=true;tb.className='msg m';tb.textContent='Đang đọc ảnh, chờ khoảng nửa phút…';
     try{
       const anh=await thuNhoAnh(f);
       const r=await goi('POST',{action:'doc_anh',loai,anh});
@@ -905,7 +937,7 @@ function nutDocAnh(loai,nhan){
       if(r.status!==200||!r.body||!r.body.ok){tb.className='msg err';tb.textContent=(r.body&&r.body.chuaBat?'Máy chủ chưa bật phần đọc ảnh: báo Magickids để bật. ':'')+'Chưa đọc được ảnh'+(r.body&&r.body.error&&!r.body.chuaBat?': '+r.body.error:'')+'. Nhập tay vẫn được.';return;}
       NP.docBusy=false;nhan(r.body);
     }catch(e){tb.className='msg err';tb.textContent='Chưa đọc được ảnh ('+(e.message&&e.name!=='AbortError'&&e.name!=='TypeError'?e.message:loiMang(e))+'). Nhập tay vẫn được.';}
-    finally{NP.docBusy=false;b.disabled=false;}
+    finally{NP.docBusy=false;b.disabled=false;bChup.disabled=false;}
   };
   w.append(b,inp);return [w,tb];
 }
@@ -1034,6 +1066,20 @@ function veNhap(d,body){
   const bXoa=mk('button','','Xóa trắng');bXoa.type='button';bXoa.onclick=()=>{NP.p=nhapMoi(p.loai);NP.msg=null;ve();};hang.append(bXoa);
   body.append(hang,msg);
 }
+
+/* ---------- điện thoại: gợi ý cài trang lên màn hình chính để mở như một app ---------- */
+(function(){
+  const daCai=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+  if(!DI_DONG||daCai||store.get('mk_xuong_an_cai'))return;
+  const hop=$('caiApp'),txt=$('caiTxt'),nut=$('caiNut');let su=null;
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  txt.textContent=ios?'Để mở nhanh như app: bấm nút Chia sẻ của Safari rồi chọn "Thêm vào MH chính".':'Để mở nhanh như app: bấm ⋮ của trình duyệt rồi chọn "Thêm vào màn hình chính".';
+  hop.hidden=false;
+  addEventListener('beforeinstallprompt',e=>{e.preventDefault();su=e;txt.textContent='Cài trang này lên màn hình chính để mở nhanh như app.';nut.hidden=false;});
+  nut.onclick=async()=>{if(!su)return;su.prompt();try{await su.userChoice;}catch(e){}su=null;hop.hidden=true;};
+  addEventListener('appinstalled',()=>{hop.hidden=true;});
+  $('caiDong').onclick=()=>{hop.hidden=true;store.set('mk_xuong_an_cai','1');};
+})();
 
 /* ---------- nút ---------- */
 for(const b of $('tabs').children)b.onclick=()=>{S.tab=b.dataset.t;S.saved=null;PH.xem=false;ve();};
