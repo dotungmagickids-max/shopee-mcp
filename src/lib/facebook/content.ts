@@ -55,7 +55,7 @@ export const daysToFetch = (since: string, today: string): number => Math.max(1,
 
 export function kindOf(statusType: string, permalink: string | null): ContentKind {
   if (permalink && /\/reels?\//i.test(permalink)) return "reel";
-  if (/video/i.test(statusType)) return "video";
+  if (/video|live/i.test(statusType)) return "video";
   if (/photo/i.test(statusType)) return "photo";
   return "other";
 }

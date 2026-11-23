@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { countByCode, countByPage, KIND_LABEL, matches, normCode, type ContentKind, type ContentPost } from "@/lib/facebook/content";
 
-type PageInfo = { id: string; name: string; error: string | null };
+type PageInfo = { id: string; name: string; source: "meta" | "pancake" | null; error: string | null };
 const KINDS: [ContentKind | "", string][] = [
   ["", "Mọi loại"],
   ["video", "Video"],
@@ -66,6 +66,7 @@ export default function Board({ posts, pages, initialCode, initialPage }: { post
                   <span className="pc-num">{c.total}</span>
                   <span className="pc-sub">
                     {c.video} video · {c.photo} ảnh · {c.noCode} chưa gắn mã · mới nhất {fmtDay(c.lastDay)}
+                    {p.source === "pancake" ? " · lấy qua Pancake" : ""}
                   </span>
                 </>
               )}

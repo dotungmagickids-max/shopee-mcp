@@ -1,6 +1,7 @@
 /** FB Magic Tool, màn Nội dung: khoảng ngày, loại bài, lọc theo page/mã, đếm theo page và theo mã. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { fromPancakePost, pancakePageTokens, pickImage, vnRangeUnix } from "../src/lib/facebook/pancake-posts";
 import { contentRange, countByCode, countByPage, daysToFetch, inRange, kindOf, matches, toContentPost } from "../src/lib/facebook/content";
 
 const raw = (id: string, message: string, created_time: string, kind = "added_photos", permalink: string | null = null) => ({
@@ -58,5 +59,27 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
       { code: "BD24066", posts: 1 },
       { code: "BD26011", posts: 1 },
     ]);
+  });
+
+  it("bài lấy qua Pancake: giờ UTC đổi sang ngày Việt Nam, loại bài, bỏ bài đã gỡ, ảnh nếu có", () => {
+    const p = fromPancakePost({ id: "111_9", message: "Mã: ADT25002", type: "video", inserted_at: "2026-11-21T18:00:14", attachments: { data: [{ media: { image: { src: "https://example.test/v.jpg" } } }] } })!;
+    const c = toContentPost("111", p);
+    assert.equal(c.day, "2026-11-22");
+    assert.equal(c.kind, "video");
+    assert.deepEqual(c.codes, ["ADT25002"]);
+    assert.equal(c.picture, "https://example.test/v.jpg");
+    assert.equal(c.permalink, "https://www.facebook.com/111_9");
+    assert.equal(fromPancakePost({ id: "111_8", type: "photo", inserted_at: "2026-11-21T03:00:00" })!.picture, null);
+    assert.equal(fromPancakePost({ id: "111_7", removed: true }), null);
+    assert.equal(toContentPost("111", fromPancakePost({ id: "111_6", type: "livestream", inserted_at: "2026-11-21T03:00:00" })!).kind, "video");
+    assert.equal(pickImage({ attachments: { data: [{ url: "https://example.test/clip.mp4" }] } }), null);
+    assert.deepEqual(vnRangeUnix("2026-11-20", "2026-11-20"), { since: 1795107600, until: 1795193999 });
+  });
+
+  it("token Pancake từng page: đọc JSON, sai định dạng thì coi như chưa có", () => {
+    assert.deepEqual([...pancakePageTokens('{"111":"abc"," 222 ":" def ","333":""}')], [["111", "abc"], ["222", "def"]]);
+    assert.equal(pancakePageTokens("không phải json").size, 0);
+    assert.equal(pancakePageTokens(undefined).size, 0);
+    assert.equal(pancakePageTokens("[1]").size, 0);
   });
 });
