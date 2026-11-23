@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
+import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, welcomeTemplate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
 import type { LaunchDraft, LaunchResult, PostRow } from "@/lib/facebook/launch-data";
 
 const vnd = (n: number | null | undefined) => (n == null ? "–" : Math.round(n).toLocaleString("vi-VN"));
@@ -395,7 +395,9 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
             <div className="warnbox" style={{ marginBottom: 10 }}>
               <b>Trước khi bật, làm 2 việc trong Trình quản lý quảng cáo cho từng quảng cáo</b> (Meta không cho web làm thay với bài có sẵn):
               <br />
-              1. Mục Cuộc trò chuyện: chọn tab Mẫu đã lưu, lấy mẫu chào chuẩn của tài khoản đó (hỏi tuổi, cân nặng; 1 câu hỏi Tư vấn; tắt câu hỏi được cá nhân hóa).
+              1. Mục Cuộc trò chuyện: chọn tab Mẫu đã lưu, rồi chọn mẫu{" "}
+              {welcomeTemplate(pageName) ? <b>{welcomeTemplate(pageName)}</b> : "chào chuẩn của page này (page này chưa có mẫu ghi sẵn trên web)"} (hỏi tuổi, cân nặng của bé; 1
+              câu hỏi Tư vấn). Đừng để tab Mẫu nên dùng do AI tạo.
               <br />
               2. Mục Nguồn quảng cáo: kiểm đang <b>tắt</b> sản phẩm từ danh mục (web đã gửi lệnh tắt lúc tạo; dòng nào báo chưa tắt được thì anh tắt tay).
             </div>
