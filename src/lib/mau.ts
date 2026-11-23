@@ -44,6 +44,8 @@ export const NHAN_TRANG_THAI: Record<TrangThai, string> = { dang_xem: "Đang xem
 export const SUA_TT = ["chua_giao", "dang_lam", "cho_duyet", "da_duyet"] as const;
 export const NGUON_LOAI = ["taobao", "suu_tam", "xuong", "tu_thiet_ke", "ma_cu"] as const;
 export const GIOI = ["", "trai", "gai", "unisex"] as const;
+/** Loại sản phẩm của mẫu; rỗng = chưa chọn. */
+export const LOAI = ["", "Áo", "Quần", "Bộ", "Váy", "Khác"] as const;
 
 /** Một dòng `mau_ho_so` như database trả về. */
 export interface HoSoRow {
@@ -145,7 +147,7 @@ const TRUONG: Record<string, { ten: string; kieu: Kieu; chiQuanLy?: true }> = {
   ten: { ten: "Tên gợi ý", kieu: { k: "chu", max: 150 } },
   thuong_hieu: { ten: "Thương hiệu", kieu: { k: "chu", max: 40 } },
   gioi: { ten: "Bé trai / bé gái", kieu: { k: "chon", ds: GIOI } },
-  loai: { ten: "Loại", kieu: { k: "chu", max: 40 } },
+  loai: { ten: "Loại", kieu: { k: "chon", ds: LOAI } },
   mua: { ten: "Mùa", kieu: { k: "chu", max: 60 } },
   nguon_loai: { ten: "Loại nguồn", kieu: { k: "chon", ds: NGUON_LOAI } },
   nguon_link: { ten: "Link nguồn", kieu: { k: "link" } },

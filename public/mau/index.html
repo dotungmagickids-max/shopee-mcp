@@ -111,7 +111,7 @@ const store={
   set(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}}
 };
 const S={key:store.get('mk_mau_key'),ten:store.get('mk_mau_ten'),vai:'',ds:[],at:0,busy:false,err:'',
-  loc:'tat',gioi:'',tim:'',mo:null,them:false,nk:null,anh:new Map()};
+  loc:'tat',gioi:'',loai:'',tim:'',mo:null,them:false,nk:null,anh:new Map()};
 
 const TT={dang_xem:'Đang xem',chon_lam:'Chọn làm',co_media:'Đã có media',bo:'Bỏ'};
 const CHUYEN={dang_xem:['chon_lam','bo'],chon_lam:['co_media','dang_xem','bo'],co_media:['chon_lam','bo'],bo:['dang_xem']};
@@ -119,6 +119,7 @@ const NUT={chon_lam:'Chọn làm',co_media:'Duyệt: đã có media',dang_xem:'�
 const SUA={chua_giao:'Chưa giao',dang_lam:'Đang làm',cho_duyet:'Chờ duyệt',da_duyet:'Đã duyệt'};
 const NGUON={taobao:'Link Taobao / Tmall',suu_tam:'Ảnh sưu tầm',xuong:'Mẫu xưởng gửi',tu_thiet_ke:'Tự thiết kế',ma_cu:'Mã cũ làm lại'};
 const GIOI={'':'Chưa rõ',trai:'Bé trai',gai:'Bé gái',unisex:'Unisex'};
+const LOAI={'':'Chưa chọn','Áo':'Áo','Quần':'Quần','Bộ':'Bộ','Váy':'Váy','Khác':'Khác'};
 const hhmm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
 const ngayGio=iso=>{const d=new Date(iso);return isNaN(d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+hhmm(d);};
 const laLink=v=>typeof v==='string'&&/^https:\/\/[^\s<>"'`]+$/.test(v);
@@ -263,7 +264,9 @@ function veDanhSach(body){
   tim.addEventListener('input',()=>{S.tim=tim.value;veLuoi(luoi);});
   const gioi=mk('select');for(const [v,t] of [['','Trai và gái'],['trai','Bé trai'],['gai','Bé gái'],['unisex','Unisex']]){const o=mk('option',null,t);o.value=v;gioi.append(o);}
   gioi.value=S.gioi;gioi.addEventListener('change',()=>{S.gioi=gioi.value;veLuoi(luoi);});
-  bar.append(tim,gioi);
+  const loai=mk('select');for(const v in LOAI){const o=mk('option',null,v?LOAI[v]:'Mọi loại');o.value=v;loai.append(o);}
+  loai.value=S.loai;loai.addEventListener('change',()=>{S.loai=loai.value;veLuoi(luoi);});
+  bar.append(tim,gioi,loai);
   if(duocGhi()){const b=mk('button','primary','+ Thêm mẫu');b.type='button';b.addEventListener('click',()=>{S.them=true;ve();});bar.append(b);}
   body.append(bar);
   if(S.vai!=='xem'){
@@ -279,7 +282,7 @@ function veDanhSach(body){
 function veLuoi(luoi){
   luoi.textContent='';
   const tu=S.tim.trim().toLowerCase();
-  const ds=S.ds.filter(h=>(S.loc==='tat'||S.vai==='xem'||h.trang_thai===S.loc)&&(!S.gioi||h.gioi===S.gioi)&&(!tu||(h.ma+' '+(h.ma_chinh_thuc||'')+' '+h.ten).toLowerCase().includes(tu)));
+  const ds=S.ds.filter(h=>(S.loc==='tat'||S.vai==='xem'||h.trang_thai===S.loc)&&(!S.gioi||h.gioi===S.gioi)&&(!S.loai||h.loai===S.loai)&&(!tu||(h.ma+' '+(h.ma_chinh_thuc||'')+' '+h.ten).toLowerCase().includes(tu)));
   if(!ds.length){
     luoi.append(mk('div','rong',S.ds.length?'Không có mẫu nào khớp bộ lọc.':S.vai==='xem'?'Chưa có mẫu nào có media.':'Chưa có mẫu nào. Bấm "+ Thêm mẫu" để bắt đầu.'));return;
   }
@@ -287,7 +290,7 @@ function veLuoi(luoi){
   for(const h of ds){
     const b=mk('button','the');b.type='button';
     const t=mk('div','t');
-    t.append(mk('div','code',h.ma),mk('div','ten',h.ten||'(chưa đặt tên)'),mk('span','nhan '+h.trang_thai,TT[h.trang_thai]||h.trang_thai));
+    t.append(mk('div','code',h.ma),mk('div','ten',h.ten||'(chưa đặt tên)'),mk('div','m',[h.loai,h.gioi?GIOI[h.gioi]:''].filter(Boolean).join(' · ')||'Chưa phân loại'),mk('span','nhan '+h.trang_thai,TT[h.trang_thai]||h.trang_thai));
     b.append(khungAnh(h),t);
     b.addEventListener('click',()=>{S.mo=h.id;S.nk=null;ve();window.scrollTo(0,0);});
     g.append(b);
@@ -391,7 +394,7 @@ function veTrangThai(h){
 
 /* Ô nhập của hồ sơ, gom theo nhóm. [khóa, nhãn, kiểu, tùy chọn] */
 const NHOM=[
-  ['Nhận diện',true,[['ten','Tên gợi ý','text',150],['thuong_hieu','Thương hiệu','chon',{'':'Chưa chọn','Magickids':'Magickids','Annie Baby':'Annie Baby'}],['gioi','Bé trai / bé gái','chon',GIOI],['loai','Loại (áo, quần, bộ, váy…)','text',40],['mua','Mùa, đợt bán dự kiến','text',60]]],
+  ['Nhận diện',true,[['ten','Tên gợi ý','text',150],['thuong_hieu','Thương hiệu','chon',{'':'Chưa chọn','Magickids':'Magickids','Annie Baby':'Annie Baby'}],['gioi','Bé trai / bé gái','chon',GIOI],['loai','Loại','chon',LOAI],['mua','Mùa, đợt bán dự kiến','text',60]]],
   ['Nguồn mẫu',true,[['nguon_loai','Loại nguồn','chon',NGUON],['nguon_link','Link nguồn (https)','link'],['nguon_shop','Shop nguồn','text',100],['ly_do','Lý do chọn','area',500],['thong_tin_nguon','Thông tin sản phẩm nguồn','area',8000],['phan_tich','Phân tích sản phẩm','area',8000]]],
   ['Thông tin thật',false,[['chat_lieu','Chất liệu','area',300],['mau_sac','Màu','text',200],['bang_size','Bảng size','area',2000],['co_mau_that','Đã có mẫu thật','bool'],['ngay_mau_ve','Ngày mẫu về','date'],['gia_ban','Giá bán dự kiến','area',200],['gia_nhap','Giá nhập, giá sản xuất (chỉ quản lý thấy)','area',200]]],
   ['Media',true,[['link_goc','Thư mục ảnh gốc (https)','link'],['link_anh','Thư mục ảnh đã chỉnh (https)','link'],['link_video','Thư mục video (https)','link'],['link_shopee','Thư mục ảnh Shopee (https)','link'],['so_anh','Số ảnh đã chỉnh','num'],['so_video','Số video','num'],['sua_tt','Việc chỉnh ảnh','chon',SUA],['sua_nguoi','Người chỉnh','text',40],['sua_yeu_cau','Yêu cầu chỉnh','area',1000],['sua_xong','Ngày chỉnh xong','date']]],
