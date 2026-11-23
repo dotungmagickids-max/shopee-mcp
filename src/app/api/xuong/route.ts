@@ -4,6 +4,8 @@ import { db } from "@/lib/supabase";
 import { pancakeStock } from "@/lib/kho";
 import { cached } from "@/lib/kho-store";
 import { checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, soChoXuong } from "@/lib/xuong";
+import { docAnhPhieu, docAnhVao } from "@/lib/xuong-doc-anh";
+import { docLenhNhap, loiNhap } from "@/lib/xuong-nhap";
 import { CHUA_BAT_PHIEU, chuaCoBang, docPhieu, soTiep, trungSo, type PhieuDaLuu, type PhieuGui } from "@/lib/xuong-phieu";
 
 export const runtime = "nodejs";
@@ -46,9 +48,12 @@ export async function GET(request: Request) {
  * Xưởng tự cập nhật một lô ĐÃ CÓ. Header bắt buộc: x-mk-key. Thân JSON:
  *   { action: "hen", ma_hang, lo, ngay_hen, ly_do, nguoi }                                      → đổi ngày hẹn trả (lưu lịch sử)
  *   { action: "thongtin", ma_hang, lo, ngay_chot?, xuong?, ngay_vai_ve?, thong_tin_sx?, nguoi } → ghi thông tin sản xuất (cần migration 0026)
+ *   { action: "cat", ma_hang, lo, ngay_cat, hen_tra?, dot_dat?, ghi_de?, dong: [{ mau, size, so }], nguoi }     → phiếu cắt: số cắt vào sổ ngay
+ *   { action: "giao", ma_hang, lo, ngay, so_phieu?, dong: [{ mau, size, so }], nguoi }                        → phiếu đóng gói: số xưởng giao, chờ kho đếm
+ *   { action: "doc_anh", loai: "cat" | "giao" | "vai", anh: "data:image/…;base64,…" }                         → AI đọc ảnh phiếu ra bảng để soát, KHÔNG ghi gì
  *   { action: "phieu_luu", id?, nguoi?, phieu }                                                → lưu phiếu gửi đối tác, trả { ok, id, so }
  *   { action: "phieu_xoa", id, nguoi? }                                                        → xóa mềm phiếu
- * Trả { ok: true } hoặc { error } tiếng Việt. Không ghi số cắt, số hàng về, không đụng Pancake.
+ * Trả { ok: true } hoặc { error } tiếng Việt. Không ghi số kho đếm, không đụng Pancake.
  */
 export async function POST(request: Request) {
   const tuChoi = chan(request);
@@ -62,6 +67,8 @@ export async function POST(request: Request) {
   const action = (body as { action?: unknown } | null)?.action;
   if (action === "phieu_luu") return luuPhieu(body);
   if (action === "phieu_xoa") return xoaPhieu(body);
+  if (action === "cat" || action === "giao") return nhapPhieu(body);
+  if (action === "doc_anh") return docAnh1(body);
   const lenh = docLenhGhi(body, homNayVN());
   if (!lenh.ok) return json({ error: lenh.error }, 400);
   try {
@@ -171,5 +178,49 @@ async function docAnh(ma: string[]): Promise<Response> {
   } catch (err) {
     console.error("[xuong] đọc ảnh lỗi:", err instanceof Error ? err.message : err);
     return json({ anh: {}, loi: true });
+  }
+}
+
+// ---------- Xưởng nhập phiếu cắt, phiếu đóng gói (vào sổ ngay) ----------
+
+async function nhapPhieu(body: unknown): Promise<Response> {
+  const lenh = docLenhNhap(body, homNayVN());
+  if (!lenh.ok) return json({ error: lenh.error }, 400);
+  try {
+    if (lenh.loai === "cat") {
+      // Lô đã có số cắt thì phải bấm ghi đè rõ ràng, tránh nhập nhầm tên lô làm mất số cũ.
+      const co = await db().from("sx_lo_cat").select("id").eq("ma_hang", lenh.ma).eq("lo", lenh.lo).maybeSingle();
+      if (co.error) {
+        console.error("[xuong] kiểm lô lỗi:", co.error.message);
+        return json({ error: loiNhap({}).error }, 502);
+      }
+      if (co.data && !lenh.ghiDe) return json({ error: `Lô ${lenh.ma} ${lenh.lo} đã có số cắt`, daCo: true }, 409);
+      if (!co.data && lenh.ghiDe) return json({ error: `Chưa có lô ${lenh.ma} ${lenh.lo} để ghi đè` }, 400);
+    }
+    const { error } = await db().rpc(lenh.fn, lenh.args);
+    if (error) {
+      const loi = loiNhap(error);
+      if (loi.status === 502) console.error(`[xuong] ${lenh.fn} lỗi:`, error.message);
+      return json({ error: loi.error }, loi.status);
+    }
+    return json({ ok: true, tong: lenh.tong });
+  } catch (err) {
+    console.error(`[xuong] ${lenh.fn} lỗi:`, err);
+    return json({ error: loiNhap({}).error }, 502);
+  }
+}
+
+// ---------- Đọc ảnh phiếu ra bảng (không ghi database) ----------
+
+async function docAnh1(body: unknown): Promise<Response> {
+  const anh = docAnhVao(body);
+  if (!anh.ok) return json({ error: anh.error }, 400);
+  try {
+    const r = await docAnhPhieu(anh, homNayVN());
+    if (!r.ok) return json({ error: r.error, chuaBat: r.status === 501 ? true : undefined }, r.status);
+    return json(r.loai === "vai" ? { ok: true, loai: r.loai, vai: r.vai } : { ok: true, loai: r.loai, bang: r.bang });
+  } catch (err) {
+    console.error("[xuong] đọc ảnh lỗi:", err instanceof Error ? err.message : err);
+    return json({ error: "Máy đọc ảnh đang lỗi, thử lại sau hoặc nhập tay" }, 502);
   }
 }

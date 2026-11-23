@@ -19,6 +19,7 @@
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "@congminh1254/shopee-sdk": "^2.9.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@supabase/supabase-js": "^2.117.2",
