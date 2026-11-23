@@ -1,15 +1,20 @@
 /**
  * Quản lý chất lượng CSKH, đợt 2: AI đọc từng cuộc chat, phân loại, chấm điểm và đề xuất việc nên làm với từng khách.
  *
- * Nhà cung cấp AI đổi được bằng cấu hình, không sửa code: mọi bên có cổng kiểu OpenAI (`/chat/completions`) đều dùng được.
- *   CSKH_AI_BASE_URL   ví dụ https://api.deepseek.com/v1
- *   CSKH_AI_API_KEY    khóa của bên đó
- *   CSKH_AI_MODEL      tên model
+ * Nhà cung cấp AI đổi được bằng cấu hình, không sửa code. Hai đường:
+ *   1. Claude (mặc định khi không đặt CSKH_AI_BASE_URL): gọi bằng SDK chính thức của Anthropic.
+ *        ANTHROPIC_API_KEY  khóa Claude (hoặc CSKH_AI_API_KEY nếu muốn dùng khóa riêng cho phần này)
+ *        CSKH_AI_MODEL      tên model Claude; không đặt thì dùng claude-opus-5-5
+ *   2. Bên khác có cổng kiểu OpenAI (`/chat/completions`):
+ *        CSKH_AI_BASE_URL   ví dụ https://api.deepseek.com/v1
+ *        CSKH_AI_API_KEY    khóa của bên đó
+ *        CSKH_AI_MODEL      tên model
  *   CSKH_AI_HUONG_DAN  (tùy chọn) hướng dẫn riêng của shop: bảng size, chính sách, điều sale phải làm
  *
  * Nội dung chat chỉ đi qua bộ nhớ: đọc từ Pancake, che SĐT, email, đường dẫn, gửi cho AI, rồi bỏ. Không lưu chữ của khách.
  * Tên khách không được gửi đi (chỉ ghi "Khách").
  */
+import Anthropic from "@anthropic-ai/sdk";
 import type { DongCuoc, KetQuaNgay, Tin } from "./tinh";
 
 export interface TinCoChu extends Tin {
@@ -143,18 +148,27 @@ export function docKetQua(text: string): KetQuaCham | null {
 }
 
 export interface CauHinhAi {
+  /** "claude" = SDK Anthropic; "openai" = bên khác có cổng kiểu OpenAI. */
+  ben: "claude" | "openai";
   baseUrl: string;
   khoa: string;
   model: string;
   huongDanRieng: string;
 }
 
+export const MODEL_CLAUDE_MAC_DINH = "claude-opus-5-5";
+
 export function cauHinhAi(model?: string): CauHinhAi | null {
-  const baseUrl = process.env.CSKH_AI_BASE_URL?.trim().replace(/\/+$/, "");
-  const khoa = process.env.CSKH_AI_API_KEY?.trim();
+  const baseUrl = process.env.CSKH_AI_BASE_URL?.trim().replace(/\/+$/, "") ?? "";
+  const huongDanRieng = process.env.CSKH_AI_HUONG_DAN?.trim() ?? "";
   const m = (model || process.env.CSKH_AI_MODEL || "").trim();
-  if (!baseUrl || !khoa || !m || !/^https:\/\//.test(baseUrl)) return null;
-  return { baseUrl, khoa, model: m, huongDanRieng: process.env.CSKH_AI_HUONG_DAN?.trim() ?? "" };
+  if (!baseUrl) {
+    const khoa = process.env.CSKH_AI_API_KEY?.trim() || process.env.ANTHROPIC_API_KEY?.trim();
+    return khoa ? { ben: "claude", baseUrl: "", khoa, model: m || MODEL_CLAUDE_MAC_DINH, huongDanRieng } : null;
+  }
+  const khoa = process.env.CSKH_AI_API_KEY?.trim();
+  if (!khoa || !m || !/^https:\/\//.test(baseUrl)) return null;
+  return { ben: "openai", baseUrl, khoa, model: m, huongDanRieng };
 }
 
 export interface LuotCham {
@@ -166,6 +180,7 @@ export interface LuotCham {
 /** Gửi một cuộc chat đã soạn cho AI. Lỗi mạng hoặc lỗi của bên AI thì ném lỗi (không kèm khóa). */
 export async function chamMot(hoiThoai: string, c: CauHinhAi): Promise<LuotCham> {
   const he = c.huongDanRieng ? `${HUONG_DAN}\n\nHướng dẫn riêng của shop:\n${c.huongDanRieng}` : HUONG_DAN;
+  if (c.ben === "claude") return chamBangClaude(he, hoiThoai, c);
   const than = (jsonMode: boolean) =>
     JSON.stringify({
       model: c.model,
@@ -184,6 +199,38 @@ export async function chamMot(hoiThoai: string, c: CauHinhAi): Promise<LuotCham>
   const body: any = await res.json();
   const text = String(body?.choices?.[0]?.message?.content ?? "");
   return { kq: docKetQua(text), tokenVao: Number(body?.usage?.prompt_tokens ?? 0) || 0, tokenRa: Number(body?.usage?.completion_tokens ?? 0) || 0 };
+}
+
+/** Các model Claude có tự chuyển sang model dự phòng khi bộ lọc an toàn từ chối (Haiku không có). */
+const CO_DU_PHONG = /^claude-(opus-5|sonnet-5-5|fable-5)/;
+const khachClaude = new Map<string, Anthropic>();
+
+async function chamBangClaude(he: string, hoiThoai: string, c: CauHinhAi): Promise<LuotCham> {
+  let client = khachClaude.get(c.khoa);
+  if (!client) khachClaude.set(c.khoa, (client = new Anthropic({ apiKey: c.khoa })));
+  // Phần hướng dẫn giống nhau ở mọi cuộc nên đặt mốc lưu đệm; việc phân loại không cần suy nghĩ sâu nên để effort thấp.
+  const chung = {
+    model: c.model,
+    max_tokens: 16000,
+    output_config: { effort: "low" as const },
+    system: [{ type: "text" as const, text: he, cache_control: { type: "ephemeral" as const } }],
+    messages: [{ role: "user" as const, content: `Cuộc chat cần chấm:
+
+${hoiThoai}` }],
+  };
+  try {
+    const msg = CO_DU_PHONG.test(c.model) ? await client.beta.messages.create({ ...chung, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }) : await client.messages.create(chung);
+    if (msg.stop_reason === "refusal") throw new Error("AI từ chối chấm cuộc này");
+    let text = "";
+    for (const b of msg.content) if (b.type === "text") text += b.text;
+    const u = msg.usage;
+    return { kq: docKetQua(text), tokenVao: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), tokenRa: u.output_tokens ?? 0 };
+  } catch (err) {
+    if (err instanceof Anthropic.RateLimitError) throw new Error("Claude đang giới hạn tốc độ, lượt sau chấm tiếp");
+    if (err instanceof Anthropic.AuthenticationError) throw new Error("Khóa Claude không đúng hoặc đã hết hiệu lực");
+    if (err instanceof Anthropic.APIError) throw new Error(`Claude API lỗi ${err.status ?? ""}`.trim());
+    throw err;
+  }
 }
 
 /* ------------------------------- gộp điểm cho trang ------------------------------- */

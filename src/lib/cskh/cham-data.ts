@@ -63,7 +63,7 @@ export async function docCham(ngay: string, model: string): Promise<DongCham[]> 
 
 /** Bảng điểm đã gộp của một ngày cho trang; null khi chưa đặt model hoặc bảng chưa có. */
 export async function layCham(k: KetQuaNgay): Promise<ReturnType<typeof gopCham> | null> {
-  const model = process.env.CSKH_AI_MODEL?.trim();
+  const model = cauHinhAi()?.model;
   if (!model) return null;
   try {
     return gopCham(k, await docCham(k.ngay, model), model);
@@ -78,7 +78,7 @@ export async function layCham(k: KetQuaNgay): Promise<ReturnType<typeof gopCham>
  */
 export async function chamNgay(ngay = congNgay(ngayVN(), -1), opts: { model?: string; hanMs?: number; toiDa?: number; lai?: boolean } = {}) {
   const c = cauHinhAi(opts.model);
-  if (!c) throw new Error("Chưa đặt CSKH_AI_BASE_URL, CSKH_AI_API_KEY, CSKH_AI_MODEL");
+  if (!c) throw new Error("Chưa đặt khóa AI: ANTHROPIC_API_KEY (Claude), hoặc CSKH_AI_BASE_URL + CSKH_AI_API_KEY + CSKH_AI_MODEL (bên khác)");
   const pages = new Map(pageTokens().map((p) => [p.id, p]));
   if (!pages.size) throw new Error("Chưa đặt PANCAKE_PAGE_TOKENS");
   const batDau = Date.now();
