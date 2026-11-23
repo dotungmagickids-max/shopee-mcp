@@ -4,6 +4,7 @@ import type { Vai } from "./mau";
  * Màn "Mã đang bán" của trang /mau: các mã đã bán, xếp theo số bán trong năm, để tham khảo khi chọn mẫu mới.
  * Chỉ đọc. Hàm thuần, không gọi database: route `/api/mau?ban=<năm>` và test dùng chung.
  * Trai/gái, loại, mùa lấy theo danh mục sản phẩm trên Pancake POS (đã đồng bộ về bảng pancake_variations).
+ * Ảnh: cột image_url được điền MỘT lần từ Pancake rồi thôi (đồng bộ đêm không ghi cột này); ảnh về sau do người dùng tự đăng lên từng mã.
  */
 
 export interface BienTheRow {
@@ -39,6 +40,8 @@ export interface MaBan {
   duBan: number | null;
   giaBan: number | null;
   anh: string | null;
+  /** Dấu phiên bản của ảnh tự đăng cho mã này (ưu tiên hơn `anh`); lấy ảnh qua `/api/mau?anhma=<mã>`. */
+  anhRieng?: string;
   /** Số cái bán được trong năm đang xem (đã trừ hủy, hoàn). */
   slBan: number;
   /** Mã đang bị ẩn khỏi tab (ví dụ hàng xả) và lý do; chỉ vai quản lý nhận được các mã này. */
@@ -135,6 +138,11 @@ export function apMaAn(ds: MaBan[], an: Map<string, string>, vai: Vai): MaBan[] 
   if (!an.size) return ds;
   if (vai !== "quan_ly") return ds.filter((m) => !an.has(m.ma));
   return ds.map((m) => (an.has(m.ma) ? { ...m, an: true as const, lyDoAn: an.get(m.ma) ?? "" } : m));
+}
+
+/** Gắn dấu ảnh tự đăng vào từng mã. */
+export function apAnhRieng(ds: MaBan[], anh: Map<string, string>): MaBan[] {
+  return anh.size ? ds.map((m) => (anh.has(m.ma) ? { ...m, anhRieng: anh.get(m.ma)! } : m)) : ds;
 }
 
 /** Năm xem số bán: từ 2023 tới năm hiện tại (giờ Việt Nam); sai thì lấy năm hiện tại. */

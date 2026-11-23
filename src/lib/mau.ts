@@ -211,6 +211,8 @@ function docTruong(ten: string, kieu: Kieu, v: unknown): { ok: true; v: string |
   }
 }
 
+/** Mã hàng đang bán: 1 đến 4 chữ in hoa rồi 5 số (QD26001). */
+const MA_BAN = /^[A-Z]{1,4}\d{5}$/;
 const MA_MAU = /^[A-Z0-9][A-Z0-9._-]{2,29}$/;
 const sai = (error: string) => ({ ok: false as const, error });
 
@@ -228,6 +230,7 @@ export type LenhMau =
   | { ok: true; viec: "sua"; nguoi: string; id: number; cot: Record<string, string | number | boolean | null> }
   | { ok: true; viec: "trang_thai"; nguoi: string; id: number; den: TrangThai; ghiChu: string }
   | { ok: true; viec: "anh"; nguoi: string; id: number; kieu: string; duLieu: string }
+  | { ok: true; viec: "anh_ma"; nguoi: string; ma: string; kieu: string; duLieu: string }
   | { ok: true; viec: "an_ma"; nguoi: string; ma: string; an: boolean; lyDo: string }
   | { ok: false; error: string; status?: number };
 
@@ -240,6 +243,7 @@ export const ANH_TOI_DA = 300_000;
  *   { action: "sua", id, nguoi, ...trường cần đổi }    → sửa hồ sơ (quan_ly, lam)
  *   { action: "trang_thai", id, den, ghi_chu, nguoi }  → đổi trạng thái (chỉ quan_ly)
  *   { action: "anh", id, du_lieu: "data:image/…;base64,…", nguoi } → ảnh đại diện (quan_ly, lam)
+ *   { action: "anh_ma", ma, du_lieu: "data:image/…;base64,…", nguoi } → ảnh tự đăng cho một mã đang bán (quan_ly, lam)
  *   { action: "an_ma", ma, an: true|false, ly_do?, nguoi } → ẩn / hiện lại một mã ở tab Mã đang bán (chỉ quan_ly)
  */
 export function docLenhMau(body: unknown, vai: Vai): LenhMau {
@@ -281,19 +285,21 @@ export function docLenhMau(body: unknown, vai: Vai): LenhMau {
     return { ok: true, viec: "trang_thai", nguoi, id, den: b.den as TrangThai, ghiChu };
   }
 
-  if (b.action === "anh") {
-    const id = docId(b.id);
-    if (id == null) return sai("Thiếu id hồ sơ");
+  if (b.action === "anh" || b.action === "anh_ma") {
+    const id = b.action === "anh" ? docId(b.id) : null;
+    const ma = b.action === "anh_ma" ? (chu(b.ma, false)?.toUpperCase() ?? "") : "";
+    if (b.action === "anh" && id == null) return sai("Thiếu id hồ sơ");
+    if (b.action === "anh_ma" && !MA_BAN.test(ma)) return sai("Mã hàng không hợp lệ");
     const m = typeof b.du_lieu === "string" ? /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(b.du_lieu) : null;
     if (!m) return sai("Ảnh đại diện phải là JPG, PNG hoặc WEBP");
     if (m[2].length > ANH_TOI_DA) return sai("Ảnh đại diện quá nặng, chọn ảnh nhỏ hơn");
     if (!dungLoaiAnh(m[1], Buffer.from(m[2].slice(0, 24), "base64"))) return sai("Tệp không phải ảnh JPG, PNG hoặc WEBP");
-    return { ok: true, viec: "anh", nguoi, id, kieu: m[1], duLieu: m[2] };
+    return id != null ? { ok: true, viec: "anh", nguoi, id, kieu: m[1], duLieu: m[2] } : { ok: true, viec: "anh_ma", nguoi, ma, kieu: m[1], duLieu: m[2] };
   }
   if (b.action === "an_ma") {
     if (vai !== "quan_ly") return { ...sai("Chỉ quản lý được ẩn hoặc hiện lại mã"), status: 403 };
     const ma = chu(b.ma, false)?.toUpperCase() ?? "";
-    if (!/^[A-Z]{1,4}\d{5}$/.test(ma)) return sai("Mã hàng không hợp lệ");
+    if (!MA_BAN.test(ma)) return sai("Mã hàng không hợp lệ");
     if (typeof b.an !== "boolean") return sai("Thiếu lựa chọn ẩn hay hiện lại");
     const lyDo = trong(b.ly_do) ? "" : chu(b.ly_do, false);
     if (lyDo == null || lyDo.length > 200) return sai("Lý do không hợp lệ hoặc dài quá 200 ký tự");

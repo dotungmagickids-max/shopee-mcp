@@ -1,8 +1,7 @@
 /** Trang Mẫu và media (/mau): vai theo mã truy cập, bản đọc theo vai, kiểm tra lệnh ghi, luật chuyển trạng thái. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { anhDau } from "../src/lib/autopilot/pancake";
-import { apMaAn, gioiTuDanhMuc, gomMaBan, loaiTuDanhMuc, muaTuDanhMuc, namXem, type BienTheRow, type LaiRow } from "../src/lib/mau-ban";
+import { apAnhRieng, apMaAn, gioiTuDanhMuc, gomMaBan, loaiTuDanhMuc, muaTuDanhMuc, namXem, type BienTheRow, type LaiRow } from "../src/lib/mau-ban";
 import { ANH_TOI_DA, docLenhMau, dungLoaiAnh, hoSoTheoVai, linkHopLe, loiChuyen, thieuDeCoMedia, tomTatSua, vaiCuaKhoa, type HoSoRow } from "../src/lib/mau";
 
 const hs = (x: Partial<HoSoRow> = {}): HoSoRow => ({
@@ -296,10 +295,16 @@ describe("mã đang bán (gomMaBan)", () => {
     assert.match(loi({ ...l, ly_do: "x".repeat(201) })!.error, /Lý do/);
   });
 
-  it("bộ đồng bộ chỉ nhận đường dẫn ảnh https", () => {
-    assert.equal(anhDau({ images: ["http://example.com/a.jpg", "https://example.com/b.jpg"] }), "https://example.com/b.jpg");
-    assert.equal(anhDau({ images: [], product: { image: "https://example.com/c.jpg" } }), "https://example.com/c.jpg");
-    assert.equal(anhDau({ images: ["javascript:alert(1)", 5, null] }), null);
-    assert.equal(anhDau({}), null);
+  it("ảnh tự đăng cho mã: gắn dấu phiên bản; lệnh đăng ảnh cho quản lý và người làm", () => {
+    const r = apAnhRieng(gomMaBan(rows, lai, "lam"), new Map([["MA26001", "2026-11-23T10:00:00Z"]]));
+    assert.deepEqual(r.map((x) => [x.ma, x.anhRieng ?? null]), [["MB25002", null], ["MA26001", "2026-11-23T10:00:00Z"], ["AO24001", null], ["MV26003", null]]);
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(40)]).toString("base64");
+    const l = { action: "anh_ma", ma: "ma26001", nguoi: "Người B", du_lieu: `data:image/jpeg;base64,${jpg}` };
+    assert.deepEqual(docLenhMau(l, "lam"), { ok: true, viec: "anh_ma", nguoi: "Người B", ma: "MA26001", kieu: "image/jpeg", duLieu: jpg });
+    assert.equal(docLenhMau(l, "quan_ly").ok, true);
+    const loi = (b: unknown, vai: "lam" | "xem" = "lam") => { const x = docLenhMau(b, vai); return x.ok ? null : x; };
+    assert.equal(loi(l, "xem")!.status, 403);
+    assert.match(loi({ ...l, ma: "SP27001X" })!.error, /Mã hàng/);
+    assert.match(loi({ ...l, du_lieu: "https://example.com/a.jpg" })!.error, /JPG, PNG hoặc WEBP/);
   });
 });

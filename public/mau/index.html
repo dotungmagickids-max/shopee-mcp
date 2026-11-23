@@ -367,9 +367,28 @@ function mockBan(nam){
   ds.sort((a,b)=>b.slBan-a.slBan);
   MOCK_AN=MOCK_AN||new Map([['MG25004','Hàng xả']]);
   const con=vai==='quan_ly'?ds.map(x=>MOCK_AN.has(x.ma)?Object.assign(x,{an:true,lyDoAn:MOCK_AN.get(x.ma)}):x):ds.filter(x=>!MOCK_AN.has(x.ma));
-  return {at:Date.now(),vai,nam,namNay:new Date().getFullYear(),capNhat:new Date().toISOString(),coAnh:true,thieuSoBan:false,anDuoc:true,ds:con};
+  con.forEach(x=>{if(MOCK_ANHMA.has(x.ma))x.anhRieng='v';});
+  return {at:Date.now(),vai,nam,namNay:new Date().getFullYear(),capNhat:new Date().toISOString(),coAnh:true,thieuSoBan:false,anDuoc:true,dangAnhDuoc:true,ds:con};
 }
-let MOCK_AN=null;
+let MOCK_AN=null;const MOCK_ANHMA=new Map();
+/* Ảnh tự đăng của một mã cần mã truy cập nên tải bằng fetch; chưa có thì dùng ảnh lấy từ Pancake lúc đầu. */
+function ganAnhMa(img,x){
+  if(THU){img.src=MOCK_ANHMA.get(x.ma)||x.anh||'';return;}
+  const khoa='ma|'+x.ma+'|'+x.anhRieng,co=S.anh.get(khoa);
+  if(co){img.src=co;return;}
+  fetch(API+'?anhma='+x.ma+'&v='+encodeURIComponent(x.anhRieng),{headers:{'x-mk-key':S.key}})
+    .then(r=>r.ok?r.blob():null).then(b=>{if(!b){if(laLink(x.anh))img.src=x.anh;return;}const u=URL.createObjectURL(b);S.anh.set(khoa,u);img.src=u;}).catch(()=>{});
+}
+async function dangAnhMa(x,file,m){
+  const nguoi=S.ten.length>=2?S.ten:'Quản lý';
+  try{
+    m.className='msg';m.textContent='Đang gửi ảnh…';
+    const du=await thuNho(file);
+    if(THU)MOCK_ANHMA.set(x.ma,du);
+    else{const r=await goi('POST',{action:'anh_ma',ma:x.ma,du_lieu:du,nguoi});if(r.status!==200)throw new Error(r.body.error||'máy chủ chưa lưu được');}
+    await taiBan(S.ban.nam);
+  }catch(e){m.className='msg err';m.textContent=e.name==='AbortError'||e.name==='TypeError'?loiMang(e):e.message;}
+}
 async function anMa(x,an,m){
   const nguoi=S.ten.length>=2?S.ten:'Quản lý';
   try{
@@ -411,6 +430,7 @@ function veBan(body){
   if(d.capNhat)ghi.push('Tồn và tốc độ bán theo Pancake lúc '+ngayGio(d.capNhat)+'.');
   if(d.thieuSoBan)ghi.push('CHƯA đọc được số bán theo năm: thứ hạng dưới đây chỉ theo tốc độ bán hiện tại.');
   if(!d.coAnh)ghi.push('Chưa có ảnh (máy chủ chưa bật cột ảnh).');
+  else ghi.push('Ảnh lấy từ Pancake một lần ngày 23/11; mã mới hoặc muốn đổi ảnh thì bấm "Đăng ảnh" trên thẻ.');
   const soAn=d.ds.filter(x=>x.an).length;
   if(d.vai==='quan_ly'){
     ghi.push(soAn?'Đang ẩn '+soAn+' mã (hàng xả…), không tính vào thứ hạng.':'Chưa ẩn mã nào.');
@@ -435,7 +455,7 @@ function veLuoiBan(luoi){
     const i=x.an?-1:hang++;
     const c=mk('div','the ban');
     const k=mk('div','hinh');
-    if(laLink(x.anh)||(THU&&x.anh)){const img=mk('img');img.alt='Ảnh '+x.ma;img.loading='lazy';img.referrerPolicy='no-referrer';img.addEventListener('error',()=>{k.textContent='Chưa có ảnh';});img.src=x.anh;k.append(img);}
+    if(x.anhRieng||laLink(x.anh)||(THU&&x.anh)){const img=mk('img');img.alt='Ảnh '+x.ma;img.loading='lazy';img.referrerPolicy='no-referrer';img.addEventListener('error',()=>{k.textContent='Chưa có ảnh';});if(x.anhRieng)ganAnhMa(img,x);else img.src=x.anh;k.append(img);}
     else k.textContent='Chưa có ảnh';
     c.append(k,mk('span','hang',x.an?'Đã ẩn':'#'+(i+1)));
     if(x.an)c.style.opacity='.6';
@@ -449,6 +469,13 @@ function veLuoiBan(luoi){
     else if(x.ton>=100&&x.banNgay<1)t.append(mk('span','nhan cham','Bán chậm'));
     /* "Bán tốt" = 10 mã bán nhiều nhất trong năm của bộ lọc đang chọn, trừ mã hiện đang bán chậm */
     if(B.xep==='ban'&&i>=0&&i<10&&x.slBan>0&&!d.thieuSoBan&&!(x.ton>=100&&x.banNgay<1))t.append(document.createTextNode(' '),mk('span','nhan hot','Bán tốt'));
+    if(duocGhi()&&d.dangAnhDuoc!==false){
+      const m=mk('div','msg'),f=mk('input'),b=mk('button',null,x.anhRieng||x.anh?'Đổi ảnh':'Đăng ảnh');
+      f.type='file';f.accept='image/jpeg,image/png,image/webp';f.hidden=true;b.type='button';b.style.cssText='margin-top:8px;padding:6px 10px;font-size:13px;width:100%';
+      b.addEventListener('click',()=>f.click());
+      f.addEventListener('change',()=>{if(!f.files||!f.files[0])return;b.disabled=true;dangAnhMa(x,f.files[0],m).finally(()=>{b.disabled=false;});});
+      t.append(f,b,m);
+    }
     if(d.vai==='quan_ly'&&d.anDuoc!==false){
       const m=mk('div','msg'),b=mk('button',null,x.an?'Hiện lại':'Ẩn (hàng xả)');b.type='button';b.style.cssText='margin-top:8px;padding:6px 10px;font-size:13px;width:100%';
       b.addEventListener('click',()=>{b.disabled=true;anMa(x,!x.an,m).finally(()=>{b.disabled=false;});});

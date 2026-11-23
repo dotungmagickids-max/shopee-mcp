@@ -1,5 +1,5 @@
 import { docLenhMau, hoSoTheoVai, loiChuyen, tomTatSua, vaiCuaKhoa, type HoSoRow, type Vai } from "@/lib/mau";
-import { apMaAn, gomMaBan, namXem, type BienTheRow, type LaiRow } from "@/lib/mau-ban";
+import { apAnhRieng, apMaAn, gomMaBan, namXem, type BienTheRow, type LaiRow } from "@/lib/mau-ban";
 import { allRows, db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -87,7 +87,12 @@ async function docMaBan(vai: Vai, namHoi: string | null) {
   const an = new Map<string, string>();
   const dsAn = await db().from("mau_ma_an").select("ma, ly_do").limit(2000);
   if (!dsAn.error) for (const r of dsAn.data ?? []) an.set(String(r.ma).toUpperCase(), String(r.ly_do ?? ""));
-  return { at: Date.now(), vai, nam, namNay: Number(homNay.slice(0, 4)), capNhat, coAnh, thieuSoBan, anDuoc: !dsAn.error, ds: apMaAn(gomMaBan(rows, lai, vai), an, vai) };
+  // Ảnh tự đăng cho từng mã (cùng migration 0033).
+  const anhRieng = new Map<string, string>();
+  const dsAnh = await db().from("mau_ma_anh").select("ma, cap_nhat_luc").limit(2000);
+  if (!dsAnh.error) for (const r of dsAnh.data ?? []) anhRieng.set(String(r.ma).toUpperCase(), String(r.cap_nhat_luc));
+  const ds = apAnhRieng(apMaAn(gomMaBan(rows, lai, vai), an, vai), anhRieng);
+  return { at: Date.now(), vai, nam, namNay: Number(homNay.slice(0, 4)), capNhat, coAnh, thieuSoBan, anDuoc: !dsAn.error, dangAnhDuoc: !dsAnh.error, ds };
 }
 
 /**
@@ -95,6 +100,7 @@ async function docMaBan(vai: Vai, namHoi: string | null) {
  *   GET /api/mau              → { at, vai, ds[] } hồ sơ theo vai (người xem chỉ thấy mẫu đã có media, không có giá nhập)
  *   GET /api/mau?anh=<id>     → ảnh đại diện của hồ sơ
  *   GET /api/mau?nhatky=<id>  → { ds[] } nhật ký của hồ sơ (không cho vai xem)
+ *   GET /api/mau?anhma=<mã>   → ảnh tự đăng của một mã đang bán
  *   GET /api/mau?ban=<năm>    → { nam, capNhat, coAnh, thieuSoBan, ds[] } mã đang bán xếp theo số bán trong năm (doanh số, lãi chỉ vai quản lý)
  */
 export async function GET(request: Request) {
@@ -107,6 +113,16 @@ export async function GET(request: Request) {
       if (id == null) return json({ error: "id không hợp lệ" }, 400);
       if (vai === "xem" && (await docHoSo(id))?.trang_thai !== "co_media") return json({ error: "Không có ảnh" }, 404);
       const { data, error } = await db().from("mau_anh").select("kieu, du_lieu").eq("ho_so_id", id).maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: "Không có ảnh" }, 404);
+      return new Response(new Uint8Array(Buffer.from(data.du_lieu as string, "base64")), {
+        headers: { "Content-Type": data.kieu as string, "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" },
+      });
+    }
+    if (q.has("anhma")) {
+      const ma = (q.get("anhma") ?? "").toUpperCase();
+      if (!/^[A-Z]{1,4}\d{5}$/.test(ma)) return json({ error: "Mã hàng không hợp lệ" }, 400);
+      const { data, error } = await db().from("mau_ma_anh").select("kieu, du_lieu").eq("ma", ma).maybeSingle();
       if (error) throw error;
       if (!data) return json({ error: "Không có ảnh" }, 404);
       return new Response(new Uint8Array(Buffer.from(data.du_lieu as string, "base64")), {
@@ -163,6 +179,12 @@ export async function POST(request: Request) {
         : await db().from("mau_ma_an").delete().eq("ma", lenh.ma);
       if (error) throw error;
       return json({ ok: true });
+    }
+
+    if (lenh.viec === "anh_ma") {
+      const { error } = await db().from("mau_ma_anh").upsert({ ma: lenh.ma, kieu: lenh.kieu, du_lieu: lenh.duLieu, nguoi: lenh.nguoi, cap_nhat_luc: luc });
+      if (error) throw error;
+      return json({ ok: true, anh: luc });
     }
 
     const cu = await docHoSo(lenh.id);
