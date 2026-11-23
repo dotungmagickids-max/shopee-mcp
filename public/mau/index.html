@@ -111,10 +111,13 @@ details.nhom>div{padding:0 12px 12px}
 .ngay.nay .d{color:var(--accent)}
 .chip{display:block;width:100%;box-sizing:border-box;user-select:none;text-align:left;border:0;border-radius:6px;padding:5px 7px;font-size:13px;line-height:1.25;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip.test{background:var(--accent);color:#fff;font-weight:700;cursor:grab}
+.chip.coanh{display:flex;align-items:center;gap:6px;padding:4px 6px}
+.chip.coanh img,.chip.coanh .oanh{width:34px;height:34px;flex:none;border-radius:5px;object-fit:cover;background:#e9ebf0;pointer-events:none}
+.chip.coanh span{overflow:hidden;text-overflow:ellipsis}
 .chip.viec{background:#eef0f4;color:var(--ink)}
 .chip.viec.tre{background:#fbe1e1;color:var(--red);font-weight:600}
 .chip.viec.xong{background:#dff3e8;color:var(--green);text-decoration:line-through}
-.chip.cho{background:#fff;border:1px solid var(--line);color:var(--ink);cursor:grab;width:auto;display:inline-block;max-width:220px}
+.chip.cho{background:#fff;border:1px solid var(--line);color:var(--ink);cursor:grab;width:auto;display:inline-flex;max-width:240px}
 .chip.on{outline:2px solid var(--ink)}
 .khay{display:flex;gap:6px;flex-wrap:wrap;min-height:38px;padding:8px;border:1px dashed var(--line);border-radius:8px;background:#fafbfc}
 .khay.tha{background:#ece4fa;border-color:var(--accent)}
@@ -774,7 +777,9 @@ async function ghiLich(body,m){
 /* Hộp ngày test + checklist của một mẫu; dùng ở hồ sơ mẫu và dưới bảng lịch. */
 function veLichMau(h,coTen){
   const hop=mk('div','hop');
-  hop.append(mk('h3',null,coTen?h.ma+(h.ten?' · '+h.ten:''):'Lịch test'));
+  if(coTen){const dau=mk('div');dau.style.cssText='display:flex;gap:10px;align-items:center;margin-bottom:6px';const k=khungAnh(h);k.style.cssText='width:64px;height:64px;flex:none;border-radius:8px;font-size:11px';
+    const t=mk('h3',null,h.ma+(h.ten?' · '+h.ten:''));t.style.margin='0';dau.append(k,t);hop.append(dau);}
+  else hop.append(mk('h3',null,'Lịch test'));
   if(h.ngay_test===undefined){hop.append(mk('div','m','Máy chủ chưa bật phần Lịch test.'));return hop;}
   const m=mk('div','msg');
   hop.append(mk('label',null,'Ngày bắt đầu chạy test quảng cáo'));
@@ -827,6 +832,10 @@ function veLich(body){
   const chip=(h,cls,chu)=>{const c=mk('div','chip '+cls+(L.mo===h.id?' on':''),chu);c.setAttribute('role','button');c.tabIndex=0;c.title=h.ma+(h.ten?' · '+h.ten:'');
     const mo=()=>{L.mo=L.mo===h.id?null:h.id;ve();};
     c.addEventListener('click',mo);c.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();mo();}});return c;};
+  /* Thẻ mẫu (trong khay và ở ngày chạy test) có ảnh đại diện nhỏ để nhận ra mẫu. */
+  const chipAnh=(h,cls,chu)=>{const c=chip(h,cls+' coanh','');
+    if(h.anh){const img=mk('img');img.alt='';img.draggable=false;ganAnh(img,h);c.append(img);}else c.append(mk('span','oanh'));
+    c.append(mk('span',null,chu));return c;};
   const keo=(c,h)=>{c.draggable=true;c.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',String(h.id));e.dataTransfer.effectAllowed='move';});};
 
   const cho=ds.filter(h=>!h.ngay_test);
@@ -834,7 +843,7 @@ function veLich(body){
   body.append(mk('div','m','Mẫu chưa có lịch ('+cho.length+')'));
   const khay=mk('div','khay');tha(khay,null);
   if(!cho.length)khay.append(mk('span','m',ds.length?'Mẫu nào cũng đã có lịch. Kéo một mẫu về đây để bỏ lịch.':'Chưa có mẫu nào. Thêm mẫu ở tab "Mẫu mới".'));
-  for(const h of cho){const c=chip(h,'cho',h.ma+(h.ten?' · '+h.ten:''));keo(c,h);khay.append(c);}
+  for(const h of cho){const c=chipAnh(h,'cho',h.ma);keo(c,h);khay.append(c);}
   khay.style.marginBottom='10px';body.append(khay);
 
   const bar=mk('div','bar');
@@ -848,7 +857,7 @@ function veLich(body){
     const ngay=doiNgay(L.dau,i),o=mk('div','ngay'+(ngay<nay?' qua':'')+(ngay===nay?' nay':''));tha(o,ngay);
     o.append(mk('div','d',thuVN(ngay)+' '+ngayVN(ngay)+(ngay===nay?' · hôm nay':'')));
     let co=false;
-    for(const h of coLich)if(h.ngay_test===ngay){const c=chip(h,'test','▶ '+h.ma);keo(c,h);o.append(c);co=true;}
+    for(const h of coLich)if(h.ngay_test===ngay){const c=chipAnh(h,'test','▶ '+h.ma);keo(c,h);o.append(c);co=true;}
     for(const h of coLich)for(const v of viecCua(h))if(v.han===ngay){o.append(chip(h,'viec'+(v.xong?' xong':v.tre?' tre':''),v.ten+' · '+h.ma));co=true;}
     if(!co&&ngay!==nay)o.classList.add('rong');
     luoi.append(o);
