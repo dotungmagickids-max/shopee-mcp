@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
       { source: "/kho", destination: "/kho/index.html" },
       // Trang Quản lý kho: đặt ngoài /kho để không dính bộ lưu sẵn (service worker) của trang quay đóng hàng.
       { source: "/quan-ly-kho", destination: "/quan-ly-kho/index.html" },
+      // Trang Quản lý chất lượng CSKH (chỉ đọc).
+      { source: "/cskh", destination: "/cskh/index.html" },
       { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/metadata" },
       { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/metadata" },
       { source: "/.well-known/openid-configuration", destination: "/api/oauth/metadata" },
