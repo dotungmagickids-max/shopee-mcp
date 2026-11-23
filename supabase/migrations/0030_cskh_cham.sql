@@ -10,11 +10,13 @@ create table if not exists cskh_cham (
   model text not null,
   loai text not null,                          -- hoi_gia_size | chot_don | hoi_ship | doi_tra | khieu_nai | hoi_don_da_dat | spam | khac
   ket_qua text not null,                       -- da_chot | xin_duoc_sdt | khach_im | ngoai_size | het_hang | dang_trao_doi | da_giai_quyet | khac
-  diem_size smallint,                          -- 0–2, null khi không áp dụng
+  diem_size smallint,                          -- 0–10, null khi không áp dụng
   diem_mua_kem smallint,
   diem_chot smallint,
   diem_thai_do smallint,
   san_pham text[] not null default '{}',       -- tên gọi hoặc mã sản phẩm khách hỏi
+  tiem_nang text not null default 'khong',     -- nong | am | lanh | khong (nóng, ấm: người chăm; lạnh: AI chăm)
+  ly_do_tiem_nang text not null default '',
   phan_hoi_xau boolean not null default false,
   mo_ta_xau text not null default '',
   do_dong_hang boolean not null default false,

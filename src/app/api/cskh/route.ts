@@ -25,7 +25,7 @@ function checkKey(request: Request): "ok" | "unset" | "bad" {
  *   GET /api/cskh?ngay=…&moi=1           → tính lại từ dữ liệu đã đồng bộ thay vì dùng bản chụp
  *   GET /api/cskh?xuhuong=30&ngay=…      → dòng gọn của N ngày tính đến `ngay` (tối đa 90)
  * Không trả tên, SĐT, nội dung tin của khách; hội thoại chỉ hiện 5 ký tự cuối của mã.
- * Riêng danh sách "việc với từng khách" và "phản hồi xấu" có đường dẫn mở cuộc chat trong Pancake (chỉ người có quyền vào page mới mở được).
+ * Riêng danh sách "khách tiềm năng", "việc với từng khách" và "phản hồi xấu" có đường dẫn mở cuộc chat trong Pancake (chỉ người có quyền vào page mới mở được).
  */
 export async function GET(request: Request) {
   const auth = checkKey(request);
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
     const link = (page: string, id: string) => `https://pancake.vn/${encodeURIComponent(page)}?c_id=${encodeURIComponent(id)}`;
     const g = await layCham(k);
     const boId = <T extends { page: string; id: string }>(xs: T[]) => xs.map(({ id, ...r }) => ({ ...r, link: link(r.page, id) }));
-    const cham = g ? { ...g, viec: boId(g.viec), xau: boId(g.xau) } : null;
+    const cham = g ? { ...g, viec: boId(g.viec), xau: boId(g.xau), khach: boId(g.khach) } : null;
     return json({ ...k, cuoc: k.cuoc.map(({ id: _id, ...r }) => r), tenPage: tenPage(), ton, tonLoi, cham });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 502);

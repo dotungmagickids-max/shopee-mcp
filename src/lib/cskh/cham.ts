@@ -50,19 +50,24 @@ export function soanHoiThoai(tin: TinCoChu[], d0: number, d1: number, truoc = 30
 
 export const LOAI = ["hoi_gia_size", "chot_don", "hoi_ship", "doi_tra", "khieu_nai", "hoi_don_da_dat", "spam", "khac"] as const;
 export const KET_QUA = ["da_chot", "xin_duoc_sdt", "khach_im", "ngoai_size", "het_hang", "dang_trao_doi", "da_giai_quyet", "khac"] as const;
+/** Cấp độ khách tiềm năng: nóng và ấm để người chăm, lạnh để AI chăm, "khong" là không cần chăm (đã mua, spam, ngoài size). */
+export const TIEM_NANG = ["nong", "am", "lanh", "khong"] as const;
+export type TiemNang = (typeof TIEM_NANG)[number];
 export type Loai = (typeof LOAI)[number];
 export type KetQua = (typeof KET_QUA)[number];
 
 export interface KetQuaCham {
   loai: Loai;
   ketQua: KetQua;
-  /** 0–2 mỗi tiêu chí; null khi tiêu chí không áp dụng cho cuộc này. */
+  /** 0–10 mỗi tiêu chí (anh Tùng chốt thang 10 ngày 23/11/2026); null khi tiêu chí không áp dụng cho cuộc này. */
   diemSize: number | null;
   diemMuaKem: number | null;
   diemChot: number | null;
   diemThaiDo: number | null;
   /** Tên gọi hoặc mã sản phẩm khách hỏi. */
   sanPham: string[];
+  tiemNang: TiemNang;
+  lyDoTiemNang: string;
   phanHoiXau: boolean;
   moTaXau: string;
   doDongHang: boolean;
@@ -78,13 +83,20 @@ Bạn nhận một cuộc chat giữa Khách, nhân viên (NV) và tin Tự đ�
 Các trường:
 - "loai": một trong ${LOAI.join(", ")}. Khách hỏi giá, mẫu, size, chất vải, xin tư vấn → hoi_gia_size. Khách nói lấy, đặt, gửi địa chỉ → chot_don. Hỏi phí ship, thời gian giao → hoi_ship. Hỏi về đơn đã đặt (bao giờ tới, đổi địa chỉ) → hoi_don_da_dat. Chê hàng, bực bội, đòi hoàn tiền, nhận sai/thiếu hàng → khieu_nai. Muốn đổi size, đổi mẫu, trả hàng → doi_tra. Tin rác, bán hàng, nhắn nhầm → spam.
 - "ket_qua": một trong ${KET_QUA.join(", ")}. da_chot = khách đã đồng ý mua và cho đủ thông tin nhận hàng. xin_duoc_sdt = có số điện thoại nhưng chưa chốt. khach_im = nhân viên trả lời xong khách không nhắn lại. ngoai_size = bé quá cỡ lớn nhất shop có. het_hang = hết mẫu/màu/size khách muốn. dang_trao_doi = cuộc chat còn dang dở, đang chờ một bên.
-- "diem": {"size", "mua_kem", "chot", "thai_do"}, mỗi mục 0, 1, 2 hoặc null nếu không áp dụng (ví dụ spam, hỏi về đơn đã đặt).
-  - size: 2 = hỏi/nhận chiều cao cân nặng rồi chốt rõ một size, có giải thích; 1 = có tư vấn nhưng hỏi lại điều khách đã nói, hoặc chỉ dán bảng size; 0 = khách cần mà không tư vấn.
-  - mua_kem: 2 = mời thêm mẫu phù hợp một cách tự nhiên (nêu lợi ích, ví dụ đủ mức miễn ship); 1 = có nhắc qua loa; 0 = không mời.
-  - chot: 2 = chủ động hỏi chốt, xin thông tin nhận hàng, nhắc lại khi khách im; 1 = chỉ chốt khi khách tự nói lấy; 0 = không hỏi chốt.
-  - thai_do: 2 = thân thiện, trả lời đúng câu khách hỏi, gọn; 1 = lịch sự nhưng máy móc, dán mẫu không khớp câu hỏi; 0 = cộc lốc, bỏ câu hỏi của khách, sai thông tin.
+- "diem": {"size", "mua_kem", "chot", "thai_do"}, mỗi mục là số nguyên từ 0 đến 10, hoặc null nếu không áp dụng (ví dụ spam, hỏi về đơn đã đặt). Mốc chấm:
+  - size: 9–10 = hỏi/nhận chiều cao cân nặng rồi chốt rõ một size, có giải thích; 4–6 = có tư vấn nhưng hỏi lại điều khách đã nói, hoặc chỉ dán bảng size; 0–2 = khách cần mà không tư vấn.
+  - mua_kem: 9–10 = mời thêm mẫu phù hợp một cách tự nhiên (nêu lợi ích, ví dụ đủ mức miễn ship); 4–6 = có nhắc qua loa; 0–2 = không mời.
+  - chot: 9–10 = chủ động hỏi chốt, xin thông tin nhận hàng, nhắc lại khi khách im; 4–6 = chỉ chốt khi khách tự nói lấy; 0–2 = không hỏi chốt.
+  - thai_do: 9–10 = thân thiện, trả lời đúng câu khách hỏi, gọn; 4–6 = lịch sự nhưng máy móc, dán mẫu không khớp câu hỏi; 0–2 = cộc lốc, bỏ câu hỏi của khách, sai thông tin.
+  Dùng các điểm ở giữa (3, 7, 8) khi cuộc chat nằm giữa hai mốc.
   Chỉ chấm việc nhân viên làm trong ngày chấm. Tin Tự động không tính là công của nhân viên.
 - "san_pham": mảng tối đa 5 tên gọi hoặc mã sản phẩm khách hỏi (viết thường, ngắn, ví dụ "quần kaki", "set nỉ"). Mảng rỗng nếu không rõ.
+- "tiem_nang": mức độ khách có thể mua, một trong ${TIEM_NANG.join(", ")}.
+  - nong: sắp mua. Khách đã chọn mẫu/màu/size, hỏi cách đặt, cho số điện thoại hay địa chỉ, hoặc nói sẽ lấy nhưng chưa xong đơn.
+  - am: quan tâm thật nhưng chưa quyết. Khách hỏi cụ thể (giá, size cho bé, chất vải, xin ảnh thật), có trả lời qua lại rồi dừng.
+  - lanh: gần như chưa tương tác. Khách chỉ bấm quảng cáo, gửi một câu chung chung hoặc im ngay sau tin đầu.
+  - khong: không cần chăm để bán. Đã chốt xong đơn, spam, ngoài size, chỉ hỏi về đơn đã đặt, hoặc đang khiếu nại.
+  "ly_do_tiem_nang": một câu ngắn nêu dấu hiệu khiến bạn xếp mức đó, tối đa 150 ký tự.
 - "phan_hoi_xau": true nếu khách phàn nàn, chê, bực, dọa trả hàng hay báo nhận sai/thiếu/lỗi. "mo_ta_xau": một câu nói rõ khách phàn nàn điều gì (rỗng nếu không có). "do_dong_hang": true nếu lỗi do đóng gói, giao sai, thiếu hàng.
 - "viec": MỘT việc cụ thể sale nên làm tiếp với khách này, viết như lời giao việc, tối đa 200 ký tự (ví dụ "Nhắn lại hỏi chị chọn màu nào để giữ size 150 quần kaki, nhắc mức miễn ship"). Chuỗi rỗng nếu không cần làm gì thêm (đã chốt xong, spam, khách ngoài size đã được báo rõ).
 - "muc_gap": 1 = cần làm ngay (khách đang chờ trả lời, khiếu nại, sắp chốt); 2 = trong ngày; 3 = khi rảnh.
@@ -93,7 +105,7 @@ Các trường:
 Tuyệt đối không ghi tên người, số điện thoại, địa chỉ vào bất kỳ trường nào. Viết tiếng Việt.`;
 
 const cat = (x: unknown, n: number) => cheThongTin(String(x ?? "").replace(/\s+/g, " ").trim()).slice(0, n);
-const diem = (x: unknown): number | null => (x === null || x === undefined || x === "" || !Number.isFinite(Number(x)) ? null : Math.max(0, Math.min(2, Math.round(Number(x)))));
+const diem = (x: unknown): number | null => (x === null || x === undefined || x === "" || !Number.isFinite(Number(x)) ? null : Math.max(0, Math.min(10, Math.round(Number(x)))));
 
 /** Đọc câu trả lời của AI: lấy khối JSON, chỉ nhận giá trị hợp lệ, cắt độ dài, che lại SĐT nếu AI lỡ chép. */
 export function docKetQua(text: string): KetQuaCham | null {
@@ -119,6 +131,8 @@ export function docKetQua(text: string): KetQuaCham | null {
     diemChot: diem(d.chot),
     diemThaiDo: diem(d.thai_do),
     sanPham: [...new Set((Array.isArray(o.san_pham) ? o.san_pham : []).map((x: unknown) => cat(x, 40).toLowerCase()).filter(Boolean))].slice(0, 5) as string[],
+    tiemNang: (TIEM_NANG as readonly string[]).includes(o.tiem_nang) ? (o.tiem_nang as TiemNang) : "khong",
+    lyDoTiemNang: cat(o.ly_do_tiem_nang, 200),
     phanHoiXau: o.phan_hoi_xau === true,
     moTaXau: o.phan_hoi_xau === true ? cat(o.mo_ta_xau, 300) : "",
     doDongHang: o.phan_hoi_xau === true && o.do_dong_hang === true,
@@ -212,6 +226,11 @@ export function gopCham(k: KetQuaNgay, rows: DongCham[], model: string) {
     xau: r.phanHoiXau,
     moTaXau: r.moTaXau,
     doDongHang: r.doDongHang,
+    capDo: r.tiemNang,
+    lyDo: r.lyDoTiemNang,
+    sanPham: r.sanPham,
+    // Anh Tùng chốt 23/11/2026: khách lạnh để AI chăm, khách nóng và ấm để người chăm.
+    aiCham: r.tiemNang === "lanh",
   });
   const tat = co.map(dong);
   return {
@@ -225,5 +244,8 @@ export function gopCham(k: KetQuaNgay, rows: DongCham[], model: string) {
     // Việc với từng khách: việc gấp trước; cuộc đã có đơn thì không cần nhắc chốt nữa.
     viec: tat.filter((d) => d.viec && !(d.chot && d.ketQua === "da_chot")).sort((a, b) => a.mucGap - b.mucGap || a.duoi.localeCompare(b.duoi)),
     xau: tat.filter((d) => d.xau),
+    tiemNang: TIEM_NANG.map((capDo) => ({ capDo, cuoc: tat.filter((d) => d.capDo === capDo).length })),
+    // Khách tiềm năng: nóng trước, rồi ấm, rồi lạnh. Cuộc đã có đơn POS thì không còn là khách cần chăm.
+    khach: tat.filter((d) => d.capDo !== "khong" && !d.chot).sort((a, b) => TIEM_NANG.indexOf(a.capDo) - TIEM_NANG.indexOf(b.capDo) || a.mucGap - b.mucGap || a.duoi.localeCompare(b.duoi)),
   };
 }

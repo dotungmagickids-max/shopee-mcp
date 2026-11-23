@@ -92,7 +92,7 @@ td.bar{width:38%;min-width:160px}
 
 <div class="tabs" id="tabs">
   <button data-tab="tq">Tổng quan</button><button data-tab="gio">Theo giờ</button><button data-tab="ma">Mã được hỏi</button>
-  <button data-tab="nv">Người trực</button><button data-tab="sot">Tin sót</button><button data-tab="vk">Việc với từng khách</button><button data-tab="dc">Điểm chat</button><button data-tab="px">Phản hồi xấu</button><button data-tab="the">Phân loại</button><button data-tab="xh">30 ngày</button>
+  <button data-tab="nv">Người trực</button><button data-tab="sot">Tin sót</button><button data-tab="kt">Khách tiềm năng</button><button data-tab="vk">Việc với từng khách</button><button data-tab="dc">Điểm chat</button><button data-tab="px">Phản hồi xấu</button><button data-tab="the">Phân loại</button><button data-tab="xh">30 ngày</button>
 </div>
 
 <section class="card" id="sec-tq" hidden>
@@ -125,6 +125,14 @@ td.bar{width:38%;min-width:160px}
   <h2>Tin sót</h2>
   <div class="hint" id="sotNote"></div>
   <div class="tw"><table><thead><tr><th>Hội thoại</th><th>Page</th><th>Khách nhắn lúc</th><th>Ca</th><th>Hạn trả lời</th><th>Trả lời lúc</th><th>Người trả lời</th><th></th></tr></thead><tbody id="tbSot"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-kt" hidden>
+  <h2>Khách tiềm năng theo cấp độ</h2>
+  <div class="hint" id="ktNote"></div>
+  <div class="cards" id="ktCards"></div>
+  <div class="filters"><select id="ktLoc"><option value="">Mọi cấp độ</option><option value="nong">Nóng</option><option value="am">Ấm</option><option value="lanh">Lạnh</option></select><select id="ktCham"><option value="">Người và AI</option><option value="nguoi">Người chăm</option><option value="ai">AI chăm</option></select></div>
+  <div class="tw"><table><thead><tr><th>Cấp độ</th><th>Ai chăm</th><th>Hội thoại</th><th>Page</th><th>Người trực</th><th>Hỏi gì</th><th>Vì sao xếp mức này</th><th>Việc nên làm</th><th></th></tr></thead><tbody id="tbKt"></tbody></table></div>
 </section>
 
 <section class="card" id="sec-vk" hidden>
@@ -219,10 +227,12 @@ function mockCham(r,n,tong,ten){
   const viecMau=['Nhắn lại hỏi chị chọn màu nào để giữ size, nhắc mức miễn ship','Khách đã cho chiều cao cân nặng: chốt size và báo giá mẫu khách hỏi','Khách xin ảnh thật: gửi ảnh và hỏi chốt','Khách hỏi bao giờ nhận hàng: tra đơn rồi báo ngày giao','Hết size khách cần: mời mẫu tương tự còn hàng'];
   const nxMau=['Trả lời nhanh nhưng dán mẫu, chưa trả lời đúng câu khách hỏi','Tư vấn size rõ, chưa mời mua kèm','Hỏi lại chiều cao cân nặng khi khách đã nói','Chốt tốt, có nhắc miễn ship'];
   const da=Math.round(tong.cuoc*0.9),viec=[],xau=[];
-  for(let i=0;i<24;i++){const g=i<5?1:i<16?2:3;viec.push({duoi:String(n(10000,99999)),page:i%4?'p1':'p2',nhom:i%3?'khach_moi':'khach_cu',nguoi:ten[i%2],loai:loai[n(0,3)],ketQua:kq[n(0,1)],diem:[n(0,2),n(0,2),n(0,2),n(1,2)],viec:viecMau[n(0,4)],mucGap:g,nhanXet:nxMau[n(0,3)],chot:false,xau:false,moTaXau:'',doDongHang:false,link:'#'});}
-  for(let i=0;i<3;i++)xau.push({duoi:String(n(10000,99999)),page:'p1',nhom:'khach_cu',nguoi:ten[i%2],loai:i?'khieu_nai':'doi_tra',ketQua:'dang_trao_doi',diem:[null,null,null,n(1,2)],viec:['Xin mã đơn và ảnh hàng nhận được, báo kho kiểm video đóng hàng','Hỏi khách muốn đổi size nào, hướng dẫn gửi lại','Xin lỗi khách, báo anh quyết hoàn tiền hay gửi lại'][i],mucGap:1,nhanXet:'',chot:false,xau:true,moTaXau:['Khách báo nhận thiếu một món so với đơn','Khách nói áo chật so với bảng size','Khách chê vải phai màu sau lần giặt đầu'][i],doDongHang:i===0,link:'#'});
-  const dd=t=>({ten:t,cuoc:t==='Tất cả'?da:Math.round(da*(t===ten[0]?0.68:0.32)),size:n(40,150)/100,muaKem:n(30,110)/100,chot:n(30,100)/100,thaiDo:n(100,190)/100});
-  return {model:'model-thu',canCham:tong.cuoc,daCham:da,loai:loai.map((l,i)=>({loai:l,cuoc:Math.max(1,Math.round(da*[0.6,0.12,0.08,0.1,0.04,0.03,0.03][i]))})),ketQua:kq.map((k,i)=>({ketQua:k,cuoc:Math.max(1,Math.round(da*[0.55,0.2,0.1,0.06,0.05,0.04][i]))})),diem:[dd('Tất cả'),dd(ten[0]),dd(ten[1])],sanPham:['áo thun','quần kaki','quần túi hộp','set nỉ','quần jean'].map((s,i)=>({ten:s,cuoc:n(30,40)-i*6})),viec:viec.concat(xau),xau};
+  const lyDo={nong:'Khách đã chọn mẫu và size, hỏi cách đặt',am:'Khách hỏi giá và size cho bé, trao đổi vài câu rồi dừng',lanh:'Khách chỉ bấm quảng cáo, chưa trả lời tin nào'},sp=['áo thun','quần kaki','quần túi hộp','set nỉ'];
+  for(let i=0;i<24;i++){const g=i<5?1:i<16?2:3,cd=i<5?'nong':i<14?'am':'lanh';viec.push({duoi:String(n(10000,99999)),page:i%4?'p1':'p2',nhom:i%3?'khach_moi':'khach_cu',nguoi:ten[i%2],loai:loai[n(0,3)],ketQua:kq[n(0,1)],diem:[n(0,10),n(0,10),n(0,10),n(5,10)],viec:viecMau[n(0,4)],mucGap:g,nhanXet:nxMau[n(0,3)],chot:false,xau:false,moTaXau:'',doDongHang:false,capDo:cd,lyDo:lyDo[cd],sanPham:[sp[n(0,3)]],aiCham:cd==='lanh',link:'#'});}
+  for(let i=0;i<3;i++)xau.push({duoi:String(n(10000,99999)),page:'p1',nhom:'khach_cu',nguoi:ten[i%2],loai:i?'khieu_nai':'doi_tra',ketQua:'dang_trao_doi',capDo:'khong',lyDo:'Khách đang khiếu nại',sanPham:[],aiCham:false,diem:[null,null,null,n(5,10)],viec:['Xin mã đơn và ảnh hàng nhận được, báo kho kiểm video đóng hàng','Hỏi khách muốn đổi size nào, hướng dẫn gửi lại','Xin lỗi khách, báo anh quyết hoàn tiền hay gửi lại'][i],mucGap:1,nhanXet:'',chot:false,xau:true,moTaXau:['Khách báo nhận thiếu một món so với đơn','Khách nói áo chật so với bảng size','Khách chê vải phai màu sau lần giặt đầu'][i],doDongHang:i===0,link:'#'});
+  const dd=t=>({ten:t,cuoc:t==='Tất cả'?da:Math.round(da*(t===ten[0]?0.68:0.32)),size:n(200,750)/100,muaKem:n(150,550)/100,chot:n(150,500)/100,thaiDo:n(500,950)/100});
+  const khach=viec.slice(),lanhThem=Math.round(da*0.45);
+  return {model:'model-thu',canCham:tong.cuoc,daCham:da,loai:loai.map((l,i)=>({loai:l,cuoc:Math.max(1,Math.round(da*[0.6,0.12,0.08,0.1,0.04,0.03,0.03][i]))})),ketQua:kq.map((k,i)=>({ketQua:k,cuoc:Math.max(1,Math.round(da*[0.55,0.2,0.1,0.06,0.05,0.04][i]))})),diem:[dd('Tất cả'),dd(ten[0]),dd(ten[1])],sanPham:['áo thun','quần kaki','quần túi hộp','set nỉ','quần jean'].map((s,i)=>({ten:s,cuoc:n(30,40)-i*6})),viec:viec.concat(xau),xau,khach,tiemNang:[{capDo:'nong',cuoc:5},{capDo:'am',cuoc:9},{capDo:'lanh',cuoc:10+lanhThem},{capDo:'khong',cuoc:Math.max(0,da-24-lanhThem)}]};
 }
 function mockXh(den){const out=[];for(let i=29;i>=0;i--){const g=congNgay(den,-i),d=mockNgay(g);out.push({ngay:g,tamTinh:d.tamTinh,cuoc:d.tong.cuoc,khachMoi:d.tong.khachMoi,tinKhach:d.tong.tinKhach,chotMoi:d.tong.chotMoi,sot:d.tong.sot,trungViGiay:d.nguoiTruc[0].trungViGiay});}return out;}
 
@@ -290,7 +300,14 @@ const TEN_LOAI={hoi_gia_size:'Hỏi giá, size, tư vấn',chot_don:'Chốt đơ
 const TEN_KQ={da_chot:'Đã chốt',xin_duoc_sdt:'Có SĐT, chưa chốt',khach_im:'Khách im',ngoai_size:'Ngoài size',het_hang:'Hết hàng',dang_trao_doi:'Đang trao đổi',da_giai_quyet:'Đã giải quyết',khac:'Khác'};
 const TEN_GAP={1:'<span class="tag late">Gấp</span>',2:'<span class="tag warn">Trong ngày</span>',3:'<span class="tag">Khi rảnh</span>'};
 const diem1=v=>v==null?'—':v.toLocaleString('vi-VN',{maximumFractionDigits:2});
-const oDiem=v=>'<td class="num'+(v===0?' d0':v===2?' d2':'')+'">'+(v==null?'—':v)+'</td>';
+const oDiem=v=>'<td class="num'+(v==null?'':v<=3?' d0':v>=8?' d2':'')+'">'+(v==null?'—':v)+'</td>';
+const TEN_CAP={nong:'<span class="tag late">Nóng</span>',am:'<span class="tag warn">Ấm</span>',lanh:'<span class="tag">Lạnh</span>',khong:'<span class="tag">Không cần chăm</span>'};
+function renderKt(){
+  const c=S.d.cham;if(!c)return;
+  const g=$('ktLoc').value,a=$('ktCham').value;
+  const ds=(c.khach||[]).filter(x=>(!g||x.capDo===g)&&(!a||(a==='ai')===!!x.aiCham));
+  $('tbKt').innerHTML=ds.slice(0,500).map(x=>'<tr><td>'+TEN_CAP[x.capDo]+'</td><td>'+(x.aiCham?'<span class="tag">AI</span>':'<span class="tag ok">Người</span>')+'</td><td class="code">…'+esc(x.duoi)+'</td><td>'+tenPage(x.page)+'</td><td>'+esc(x.nguoi||'')+'</td><td>'+esc((x.sanPham||[]).join(', '))+'</td><td class="wrap">'+esc(x.lyDo)+'</td><td class="wrap">'+esc(x.viec)+'</td><td>'+mo(x)+'</td></tr>').join('')||'<tr><td colspan="9">Không có khách nào ở mức này.</td></tr>';
+}
 const mo=x=>x.link&&x.link!=='#'?'<a href="'+esc(x.link)+'" target="_blank" rel="noopener noreferrer">Mở Pancake</a>':'';
 function renderVk(){
   const c=S.d.cham;if(!c)return;
@@ -300,11 +317,15 @@ function renderVk(){
 }
 function renderCham(){
   const c=S.d.cham,chua='AI chưa chấm ngày này (chưa bật AI, hoặc job chấm chưa chạy).';
-  for(const id of ['tbVk','tbDc','tbDcCuoc','tbPx','tbLoai','tbKq','tbSp'])$(id).innerHTML='';
-  if(!c||!c.daCham){for(const id of ['vkNote','dcNote','plNote'])$(id).textContent=chua;$('tbPx').innerHTML='<tr><td colspan="7">'+chua+'</td></tr>';return;}
+  for(const id of ['tbKt','ktCards','tbVk','tbDc','tbDcCuoc','tbPx','tbLoai','tbKq','tbSp'])$(id).innerHTML='';
+  if(!c||!c.daCham){for(const id of ['ktNote','vkNote','dcNote','plNote'])$(id).textContent=chua;$('tbPx').innerHTML='<tr><td colspan="7">'+chua+'</td></tr>';return;}
   const tinh='AI ('+c.model+') đã chấm '+so(c.daCham)+' trên '+so(c.canCham)+' cuộc có khách nhắn.';
   $('vkNote').textContent=tinh+' Mỗi dòng là một khách: AI đề xuất, sale xem lại trước khi làm. Cuộc đã chốt xong không hiện.';
-  $('dcNote').textContent=tinh+' Thang 0–2 mỗi tiêu chí; dấu — là tiêu chí không áp dụng cho cuộc đó.';
+  $('dcNote').textContent=tinh+' Thang 0–10 mỗi tiêu chí; dấu — là tiêu chí không áp dụng cho cuộc đó.';
+  $('ktNote').textContent=tinh+' Nóng và ấm: người chăm. Lạnh: để AI chăm (hiện mới là danh sách, AI chưa tự nhắn khách). Khách đã có đơn không nằm trong danh sách.';
+  const tn=Object.fromEntries((c.tiemNang||[]).map(x=>[x.capDo,x.cuoc]));
+  $('ktCards').innerHTML=kpi(so(tn.nong),'Nóng','sắp mua, người chăm ngay','bad')+kpi(so(tn.am),'Ấm','quan tâm thật, người chăm','amber')+kpi(so(tn.lanh),'Lạnh','gần như chưa tương tác, AI chăm')+kpi(so(tn.khong),'Không cần chăm','đã mua, spam, ngoài size, khiếu nại');
+  renderKt();
   $('plNote').textContent=tinh;
   const nguoi=[...new Set(c.viec.map(x=>x.nguoi||''))].filter(Boolean),cu=$('vkNguoi').value;
   $('vkNguoi').innerHTML='<option value="">Mọi người trực</option>'+nguoi.map(x=>'<option'+(x===cu?' selected':'')+'>'+esc(x)+'</option>').join('');
@@ -324,7 +345,7 @@ function renderXh(){
 function showTab(t){
   S.tab=t;
   for(const b of $('tabs').children)b.classList.toggle('on',b.dataset.tab===t);
-  for(const k of ['tq','gio','ma','nv','sot','vk','dc','px','the','xh'])$('sec-'+k).hidden=k!==t;
+  for(const k of ['tq','gio','ma','nv','sot','kt','vk','dc','px','the','xh'])$('sec-'+k).hidden=k!==t;
   if(t==='xh'&&!S.xh)loadXh();
 }
 async function loadXh(){
@@ -355,7 +376,7 @@ $('btnTruoc').onclick=()=>{S.ngay=congNgay(S.ngay,-1);$('fNgay').value=S.ngay;lo
 $('btnSau').onclick=()=>{S.ngay=congNgay(S.ngay,1);$('fNgay').value=S.ngay;load();};
 $('btnTai').onclick=()=>load(true);
 $('btnThoat').onclick=()=>{keyLS.set('');S.key='';gate('');};
-$('vkLoc').onchange=renderVk;$('vkNguoi').onchange=renderVk;
+$('ktLoc').onchange=renderKt;$('ktCham').onchange=renderKt;$('vkLoc').onchange=renderVk;$('vkNguoi').onchange=renderVk;
 $('tabs').onclick=e=>{const t=e.target.dataset&&e.target.dataset.tab;if(t)showTab(t);};
 if(TEST)start();else{S.key=keyLS.get();if(S.key)start();else gate('');}
 </script>
