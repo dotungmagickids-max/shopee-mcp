@@ -843,7 +843,7 @@ function veLich(body){
   body.append(mk('div','m','Mẫu chưa có lịch ('+cho.length+')'));
   const khay=mk('div','khay');tha(khay,null);
   if(!cho.length)khay.append(mk('span','m',ds.length?'Mẫu nào cũng đã có lịch. Kéo một mẫu về đây để bỏ lịch.':'Chưa có mẫu nào. Thêm mẫu ở tab "Mẫu mới".'));
-  for(const h of cho){const c=chipAnh(h,'cho',h.ma+(h.ten?' · '+h.ten:''));keo(c,h);khay.append(c);}
+  for(const h of cho){const c=chipAnh(h,'cho',h.ma);keo(c,h);khay.append(c);}
   khay.style.marginBottom='10px';body.append(khay);
 
   const bar=mk('div','bar');
