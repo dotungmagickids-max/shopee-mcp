@@ -11,6 +11,8 @@ const KINDS: [ContentKind | "", string][] = [
   ["photo", "Ảnh"],
 ];
 const PER_PAGE = 60;
+/** Số bài tối đa một lần lên camp (khớp MAX_ITEMS của màn Lên camp). */
+const MAX_PICK = 30;
 const fmtDay = (d: string | null) => (d ? d.split("-").reverse().slice(0, 2).join("/") : "–");
 
 export default function Board({ posts: loaded, pages, initialCode, initialPage }: { posts: ContentPost[]; pages: PageInfo[]; initialCode: string; initialPage: string }) {
@@ -55,6 +57,11 @@ export default function Board({ posts: loaded, pages, initialCode, initialPage }
   const total = counts.reduce((s, c) => s + c.total, 0);
   const reset = () => setShown(PER_PAGE);
 
+  const [picked, setPicked] = useState<string[]>([]);
+  const pick = (id: string) => setPicked((x) => (x.includes(id) ? x.filter((y) => y !== id) : x.length >= MAX_PICK ? x : [...x, id]));
+  const pickedPages = [...new Set(picked.map((id) => id.split("_")[0]))];
+  const launchHref = pickedPages.length === 1 ? `/fb/len-camp?page=${pickedPages[0]}&posts=${picked.join(",")}` : null;
+
   const copy = async (id: string) => {
     try {
       await navigator.clipboard.writeText(id);
@@ -67,6 +74,18 @@ export default function Board({ posts: loaded, pages, initialCode, initialPage }
 
   return (
     <>
+      {picked.length ? (
+        <div className="pickbar">
+          <b>Đã chọn {picked.length} bài</b>
+          {launchHref ? (
+            <a className="go" href={launchHref}>Lên camp {picked.length} bài →</a>
+          ) : (
+            <span className="warn">Mỗi lần lên camp chỉ một page: anh bỏ bớt bài của page khác.</span>
+          )}
+          <button type="button" className="secondary" onClick={() => setPicked([])}>Bỏ chọn</button>
+          <span className="sub">Sang màn Lên camp để cấu hình và xem trước; ở đây chưa tạo gì trên Meta.</span>
+        </div>
+      ) : null}
       <div className="pagecards">
         <button type="button" className={`pagecard${page === "" ? " on" : ""}`} onClick={() => { setPage(""); reset(); }}>
           <span className="pc-name">Tất cả page</span>
@@ -156,7 +175,7 @@ export default function Board({ posts: loaded, pages, initialCode, initialPage }
       ) : (
         <div className="postgrid">
           {list.slice(0, shown).map((p) => (
-            <article key={p.id} className="post">
+            <article key={p.id} className={`post${picked.includes(p.id) ? " picked" : ""}`}>
               <a className="thumb" href={p.permalink ?? "#"} target="_blank" rel="noreferrer" title="Mở bài trên Facebook">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 {p.picture ? <img src={p.picture} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="noimg">Không có ảnh</span>}
@@ -187,6 +206,11 @@ export default function Board({ posts: loaded, pages, initialCode, initialPage }
                   <span className="sub">{names.get(p.page_id)}</span>
                   <span className="spacer" />
                   <button type="button" className="secondary" onClick={() => editCodes(p)}>Sửa mã</button>
+                  {p.offWall ? null : (
+                    <label className="chk pick" title="Chọn để lên camp">
+                      <input type="checkbox" checked={picked.includes(p.id)} onChange={() => pick(p.id)} /> Chọn
+                    </label>
+                  )}
                   <button type="button" className="secondary" onClick={() => copy(p.id)}>{copied === p.id ? "Đã chép" : "Chép ID"}</button>
                 </div>
               </div>

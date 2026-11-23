@@ -6,7 +6,8 @@ import { addDays, vnDate } from "../autopilot/time";
 import { db } from "../supabase";
 import { loadStock } from "./jobs";
 import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, creativeParams, creativeParamsWithCta, isCreativeIncompatible, type LaunchConfig, type LaunchItem } from "./launch";
-import { adsInfo, createObject, listAccounts, pagePosts, scrub } from "./meta";
+import { loadManualCodes, readPagePosts } from "./content-data";
+import { adsInfo, createObject, listAccounts, scrub } from "./meta";
 import { realSpend } from "./rules";
 
 export type PostRow = {
@@ -61,12 +62,17 @@ export async function loadLaunch(pageId: string): Promise<LaunchData> {
     errors.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   };
-  const [posts, accounts, stock, history] = await Promise.all([
-    pagePosts(pageId, 30),
+  const today = vnDate();
+  const [read, accounts, stock, history, manual] = await Promise.all([
+    readPagePosts(pageId, addDays(today, -29), today, 31),
     listAccounts().catch(note("Tài khoản")),
     loadStock().catch(note("Tồn kho")),
     adHistory().catch(note("Kết quả cũ")),
+    loadManualCodes().catch(() => null), // chưa có bảng mã gắn tay: dùng mã đọc từ chữ trong bài
   ]);
+  if (!read.source) throw new Error(read.error ?? "Không đọc được bài của page");
+  // Bài ngoài tường page (video, ảnh tạo riêng cho quảng cáo) không đưa vào danh sách chọn.
+  const posts = read.posts.filter((p) => !p.off_wall).sort((a, b) => b.created_time.localeCompare(a.created_time));
   const byStory = new Map<string, NonNullable<PostRow["ran"]>>();
   if (history?.size) {
     const info = await adsInfo([...history.keys()]).catch(note("Bài gốc của quảng cáo cũ"));
@@ -82,7 +88,8 @@ export async function loadLaunch(pageId: string): Promise<LaunchData> {
     }
   }
   const rows: PostRow[] = posts.map((p) => {
-    const codes = codesFromText(p.message);
+    const typed = manual?.get(p.id);
+    const codes = typed?.length ? typed : codesFromText(p.message);
     const st = codes.map((c) => stock?.get(c) as { stock: number; days: number | null; rate?: number } | undefined).filter((x) => !!x);
     const days = st.map((x) => x!.days).filter((d): d is number => d != null);
     return {

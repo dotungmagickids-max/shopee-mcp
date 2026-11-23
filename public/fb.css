@@ -53,3 +53,8 @@
 .fb .post .adnote { position: absolute; left: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(0,0,0,.62); }
 .fb .post .adnote.on { background: #1a7f37; }
 .fb .post .src { font-size: 11px; color: var(--muted); align-self: center; }
+.fb .post.picked { border-color: #1877f2; box-shadow: 0 0 0 2px rgba(24,119,242,.25); }
+.fb .post .pick { font-size: 12px; font-weight: 600; }
+.fb .pickbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 14px; margin: 12px 0; border: 1px solid #1877f2; border-radius: 12px; background: var(--card); box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+.fb .pickbar .go { padding: 6px 14px; border-radius: 8px; background: #1877f2; color: #fff; font-weight: 700; text-decoration: none; }
+.fb .pickbar .warn { color: var(--error); font-weight: 600; }
