@@ -211,6 +211,7 @@ function docTruong(ten: string, kieu: Kieu, v: unknown): { ok: true; v: string |
   }
 }
 
+const MUA_BAN = ["", "Xuân hè", "Thu đông"] as const;
 /** Mã hàng đang bán: 1 đến 4 chữ in hoa rồi 5 số (QD26001). */
 const MA_BAN = /^[A-Z]{1,4}\d{5}$/;
 const MA_MAU = /^[A-Z0-9][A-Z0-9._-]{2,29}$/;
@@ -231,6 +232,9 @@ export type LenhMau =
   | { ok: true; viec: "trang_thai"; nguoi: string; id: number; den: TrangThai; ghiChu: string }
   | { ok: true; viec: "anh"; nguoi: string; id: number; kieu: string; duLieu: string }
   | { ok: true; viec: "anh_ma"; nguoi: string; ma: string; kieu: string; duLieu: string }
+  | { ok: true; viec: "ma_ban_them"; nguoi: string; ma: string }
+  | { ok: true; viec: "ma_ban_sua"; nguoi: string; ma: string; cot: Record<string, string> }
+  | { ok: true; viec: "ma_ban_nap"; nguoi: string; kieu: "dau" | "so_ban" }
   | { ok: true; viec: "an_ma"; nguoi: string; ma: string; an: boolean; lyDo: string }
   | { ok: false; error: string; status?: number };
 
@@ -244,6 +248,9 @@ export const ANH_TOI_DA = 300_000;
  *   { action: "trang_thai", id, den, ghi_chu, nguoi }  → đổi trạng thái (chỉ quan_ly)
  *   { action: "anh", id, du_lieu: "data:image/…;base64,…", nguoi } → ảnh đại diện (quan_ly, lam)
  *   { action: "anh_ma", ma, du_lieu: "data:image/…;base64,…", nguoi } → ảnh tự đăng cho một mã đang bán (quan_ly, lam)
+ *   { action: "ma_ban_them", ma, nguoi }                 → thêm một mã vào tab Mã bán tốt (quan_ly, lam)
+ *   { action: "ma_ban_sua", ma, ten?, gioi?, loai?, mua?, nguoi } → sửa thông tin một mã ở tab đó (quan_ly, lam)
+ *   { action: "ma_ban_nap", kieu: "dau"|"so_ban", nguoi } → nạp lần đầu / cập nhật số bán, chỉ khi bấm (chỉ quan_ly)
  *   { action: "an_ma", ma, an: true|false, ly_do?, nguoi } → ẩn / hiện lại một mã ở tab Mã đang bán (chỉ quan_ly)
  */
 export function docLenhMau(body: unknown, vai: Vai): LenhMau {
@@ -296,6 +303,26 @@ export function docLenhMau(body: unknown, vai: Vai): LenhMau {
     if (!dungLoaiAnh(m[1], Buffer.from(m[2].slice(0, 24), "base64"))) return sai("Tệp không phải ảnh JPG, PNG hoặc WEBP");
     return id != null ? { ok: true, viec: "anh", nguoi, id, kieu: m[1], duLieu: m[2] } : { ok: true, viec: "anh_ma", nguoi, ma, kieu: m[1], duLieu: m[2] };
   }
+  if (b.action === "ma_ban_them" || b.action === "ma_ban_sua") {
+    const ma = chu(b.ma, false)?.toUpperCase() ?? "";
+    if (!MA_BAN.test(ma)) return sai("Mã hàng gồm 1 đến 4 chữ in hoa rồi 5 số (ví dụ QD26001)");
+    if (b.action === "ma_ban_them") return { ok: true, viec: "ma_ban_them", nguoi, ma };
+    const cot: Record<string, string> = {};
+    for (const khoa of ["ten", "gioi", "loai", "mua"] as const) {
+      if (!(khoa in b)) continue;
+      const kieu: Kieu = khoa === "ten" ? { k: "chu", max: 150 } : khoa === "gioi" ? { k: "chon", ds: GIOI } : khoa === "loai" ? { k: "chon", ds: LOAI } : { k: "chon", ds: MUA_BAN };
+      const r = docTruong({ ten: "Tên", gioi: "Bé trai / bé gái", loai: "Loại", mua: "Mùa" }[khoa], kieu, b[khoa]);
+      if (!r.ok) return sai(r.error);
+      cot[khoa] = String(r.v ?? "");
+    }
+    if (!Object.keys(cot).length) return sai("Chưa có thông tin nào để ghi");
+    return { ok: true, viec: "ma_ban_sua", nguoi, ma, cot };
+  }
+  if (b.action === "ma_ban_nap") {
+    if (vai !== "quan_ly") return { ...sai("Chỉ quản lý được nạp hoặc cập nhật số bán"), status: 403 };
+    if (b.kieu !== "dau" && b.kieu !== "so_ban") return sai("Kiểu nạp không hợp lệ");
+    return { ok: true, viec: "ma_ban_nap", nguoi, kieu: b.kieu };
+  }
   if (b.action === "an_ma") {
     if (vai !== "quan_ly") return { ...sai("Chỉ quản lý được ẩn hoặc hiện lại mã"), status: 403 };
     const ma = chu(b.ma, false)?.toUpperCase() ?? "";
@@ -305,7 +332,7 @@ export function docLenhMau(body: unknown, vai: Vai): LenhMau {
     if (lyDo == null || lyDo.length > 200) return sai("Lý do không hợp lệ hoặc dài quá 200 ký tự");
     return { ok: true, viec: "an_ma", nguoi, ma, an: b.an, lyDo };
   }
-  return sai('action phải là "tao", "sua", "trang_thai", "anh" hoặc "an_ma"');
+  return sai("action không hợp lệ");
 }
 
 /** So mấy byte đầu của tệp với kiểu ảnh khai báo, để không lưu nhầm thứ khác dưới tên ảnh. */

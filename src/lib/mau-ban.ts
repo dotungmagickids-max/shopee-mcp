@@ -1,10 +1,10 @@
 import type { Vai } from "./mau";
 
 /**
- * Màn "Mã đang bán" của trang /mau: các mã đã bán, xếp theo số bán trong năm, để tham khảo khi chọn mẫu mới.
- * Chỉ đọc. Hàm thuần, không gọi database: route `/api/mau?ban=<năm>` và test dùng chung.
- * Trai/gái, loại, mùa lấy theo danh mục sản phẩm trên Pancake POS (đã đồng bộ về bảng pancake_variations).
- * Ảnh: cột image_url được điền MỘT lần từ Pancake rồi thôi (đồng bộ đêm không ghi cột này); ảnh về sau do người dùng tự đăng lên từng mã.
+ * Tab "Mã bán tốt" của trang /mau: danh sách mã tham khảo để làm content, do người dùng tự quản (bảng mau_ma_ban).
+ * KHÔNG đồng bộ tự động. Số liệu chỉ được chụp từ dữ liệu bán hàng khi người dùng thêm một mã, nạp lần đầu,
+ * hoặc quản lý bấm cập nhật số bán. Phân tích kinh doanh (tồn, lãi, tốc độ bán) không thuộc tab này.
+ * Hàm thuần, không gọi database: route `/api/mau` và test dùng chung.
  */
 
 export interface BienTheRow {
@@ -22,8 +22,6 @@ export interface BienTheRow {
 export interface LaiRow {
   ma: string;
   sl_ban: number | null;
-  doanh_so: number | null;
-  lai_truoc_qc: number | null;
 }
 
 export interface MaBan {
@@ -40,16 +38,8 @@ export interface MaBan {
   duBan: number | null;
   giaBan: number | null;
   anh: string | null;
-  /** Dấu phiên bản của ảnh tự đăng cho mã này (ưu tiên hơn `anh`); lấy ảnh qua `/api/mau?anhma=<mã>`. */
-  anhRieng?: string;
   /** Số cái bán được trong năm đang xem (đã trừ hủy, hoàn). */
   slBan: number;
-  /** Mã đang bị ẩn khỏi tab (ví dụ hàng xả) và lý do; chỉ vai quản lý nhận được các mã này. */
-  an?: true;
-  lyDoAn?: string;
-  /** Chỉ vai quản lý có hai số dưới. */
-  doanhSo?: number | null;
-  lai?: number | null;
 }
 
 const MA_HANG = /^([A-Z]{1,4})(\d{2})\d{3}$/;
@@ -86,9 +76,9 @@ const laAnh = (u: unknown): u is string => typeof u === "string" && /^https:\/\/
 
 /**
  * Gom biến thể thành từng mã, ghép số bán trong năm, xếp theo số bán giảm dần.
- * Bỏ mã không đúng dạng mã hàng, và mã vừa hết tồn vừa không bán được cái nào trong năm.
+ * Bỏ mã không đúng dạng mã hàng, và (trừ khi `giuHet`) mã vừa hết tồn vừa không bán được cái nào trong năm.
  */
-export function gomMaBan(rows: BienTheRow[], lai: LaiRow[], vai: Vai): MaBan[] {
+export function gomMaBan(rows: BienTheRow[], lai: LaiRow[], giuHet = false): MaBan[] {
   const theoMa = new Map<string, BienTheRow[]>();
   for (const r of rows) {
     const ma = (r.product_code ?? "").trim().toUpperCase();
@@ -105,7 +95,7 @@ export function gomMaBan(rows: BienTheRow[], lai: LaiRow[], vai: Vai): MaBan[] {
     const banNgay = Math.round(ds.reduce((a, r) => a + Math.max(0, Number(r.selling_avg) || 0), 0) * 10) / 10;
     const l = ban.get(ma);
     const slBan = Math.max(0, Math.round(Number(l?.sl_ban) || 0));
-    if (ton === 0 && slBan === 0) continue;
+    if (!giuHet && ton === 0 && slBan === 0) continue;
     const ten = ds.map((r) => (r.product_name ?? "").replace(/\s+/g, " ").trim()).filter((t) => t && t.toUpperCase() !== ma).sort((a, b) => b.length - a.length)[0] ?? "";
     const gia = ds.map((r) => Number(r.retail_price) || 0).filter((g) => g > 0).sort((a, b) => a - b);
     const m: MaBan = {
@@ -122,32 +112,71 @@ export function gomMaBan(rows: BienTheRow[], lai: LaiRow[], vai: Vai): MaBan[] {
       anh: ds.map((r) => r.image_url).find(laAnh) ?? null,
       slBan,
     };
-    if (vai === "quan_ly") {
-      m.doanhSo = l?.doanh_so == null ? null : Math.round(Number(l.doanh_so));
-      m.lai = l?.lai_truoc_qc == null ? null : Math.round(Number(l.lai_truoc_qc));
-    }
     out.push(m);
   }
   return out.sort((a, b) => b.slBan - a.slBan || b.banNgay - a.banNgay || a.ma.localeCompare(b.ma));
 }
 
-/**
- * Bỏ các mã đã ẩn (hàng xả…) khỏi danh sách. Vai quản lý vẫn nhận các mã đó, có đánh dấu `an`, để hiện lại được.
- */
-export function apMaAn(ds: MaBan[], an: Map<string, string>, vai: Vai): MaBan[] {
-  if (!an.size) return ds;
-  if (vai !== "quan_ly") return ds.filter((m) => !an.has(m.ma));
-  return ds.map((m) => (an.has(m.ma) ? { ...m, an: true as const, lyDoAn: an.get(m.ma) ?? "" } : m));
+/** Một dòng bảng mau_ma_ban. */
+export interface MaBanRow {
+  ma: string;
+  ten: string;
+  gioi: string;
+  loai: string;
+  mua: string;
+  nam: number | null;
+  anh_url: string | null;
+  sl_ban: number;
+  nam_ban: number | null;
+  so_ban_luc: string | null;
+  nguon: string;
+  an: boolean;
+  ly_do_an: string;
 }
 
-/** Gắn dấu ảnh tự đăng vào từng mã. */
-export function apAnhRieng(ds: MaBan[], anh: Map<string, string>): MaBan[] {
-  return anh.size ? ds.map((m) => (anh.has(m.ma) ? { ...m, anhRieng: anh.get(m.ma)! } : m)) : ds;
+/** Mã gửi ra trang. `an`, `lyDoAn` chỉ có ở mã đang ẩn, và chỉ vai quản lý nhận được mã đang ẩn. */
+export interface MaBanXem {
+  ma: string;
+  ten: string;
+  gioi: string;
+  loai: string;
+  mua: string;
+  nam: number | null;
+  anh: string | null;
+  /** Dấu phiên bản của ảnh tự đăng (ưu tiên hơn `anh`); lấy ảnh qua `/api/mau?anhma=<mã>`. */
+  anhRieng?: string;
+  slBan: number;
+  namBan: number | null;
+  soBanLuc: string | null;
+  nguon: string;
+  an?: true;
+  lyDoAn?: string;
 }
 
-/** Năm xem số bán: từ 2023 tới năm hiện tại (giờ Việt Nam); sai thì lấy năm hiện tại. */
-export function namXem(v: string | null, homNay: string): number {
-  const nay = Number(homNay.slice(0, 4));
-  const n = v && /^\d{4}$/.test(v) ? Number(v) : nay;
-  return n >= 2023 && n <= nay ? n : nay;
+/** Danh sách theo vai, xếp theo số bán giảm dần. Mã đang ẩn (hàng xả…) chỉ vai quản lý thấy. */
+export function maBanTheoVai(rows: MaBanRow[], anhRieng: Map<string, string>, vai: Vai): MaBanXem[] {
+  return rows
+    .filter((r) => !r.an || vai === "quan_ly")
+    .map((r) => {
+      const x: MaBanXem = { ma: r.ma, ten: r.ten, gioi: r.gioi, loai: r.loai, mua: r.mua, nam: r.nam, anh: laAnh(r.anh_url) ? r.anh_url : null, slBan: r.sl_ban, namBan: r.nam_ban, soBanLuc: r.so_ban_luc, nguon: r.nguon };
+      const rieng = anhRieng.get(r.ma);
+      if (rieng) x.anhRieng = rieng;
+      if (r.an) {
+        x.an = true;
+        x.lyDoAn = r.ly_do_an;
+      }
+      return x;
+    })
+    .sort((a, b) => b.slBan - a.slBan || a.ma.localeCompare(b.ma));
+}
+
+/** Dòng để ghi vào mau_ma_ban từ số đã gom (thêm một mã, hoặc nạp lần đầu). */
+export function dongTuSo(m: MaBan, namBan: number, nguoi: string, luc: string) {
+  return { ma: m.ma, ten: m.ten, gioi: m.gioi, loai: m.loai, mua: m.mua, nam: m.nam, anh_url: m.anh, sl_ban: m.slBan, nam_ban: namBan, so_ban_luc: luc, nguon: "pancake", nguoi, cap_nhat_luc: luc };
+}
+
+/** Năm ra mã đọc từ mã hàng (QD26001 → 2026); null nếu mã không đúng dạng. */
+export function namTuMa(ma: string): number | null {
+  const m = MA_HANG.exec(ma);
+  return m ? 2000 + Number(m[2]) : null;
 }

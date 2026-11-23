@@ -1,5 +1,5 @@
 import { docLenhMau, hoSoTheoVai, loiChuyen, tomTatSua, vaiCuaKhoa, type HoSoRow, type Vai } from "@/lib/mau";
-import { apAnhRieng, apMaAn, gomMaBan, namXem, type BienTheRow, type LaiRow } from "@/lib/mau-ban";
+import { dongTuSo, gomMaBan, maBanTheoVai, namTuMa, type BienTheRow, type LaiRow, type MaBanRow } from "@/lib/mau-ban";
 import { allRows, db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -50,49 +50,37 @@ async function ghiNhatKy(hoSoId: number, nguoi: string, vai: Vai, viec: string, 
   if (error) console.error("[mau] ghi nhật ký lỗi:", error.message);
 }
 
-/**
- * Mã đang bán để tham khảo: tồn, tốc độ bán, danh mục, ảnh từ bảng pancake_variations (đồng bộ đêm từ Pancake POS),
- * số bán trong năm từ hàm mk_product_profit. Chỉ đọc. Thiếu nguồn nào thì báo cờ, không bịa số.
- */
-async function docMaBan(vai: Vai, namHoi: string | null) {
-  const homNay = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-  const nam = namXem(namHoi, homNay);
-  const cot = "product_code, product_name, categories, stock, selling_avg, retail_price, updated_at";
-  const doc = (them: string) => allRows<BienTheRow>(() => db().from("pancake_variations").select(cot + them).order("sku"));
-  let coAnh = true;
-  let rows: BienTheRow[];
-  try {
-    rows = await doc(", image_url");
-  } catch (err) {
-    // Database chưa có cột ảnh (migration 0032): vẫn trả danh sách, không có hình.
-    if (!/image_url/.test(err instanceof Error ? err.message : "")) throw err;
-    coAnh = false;
-    rows = await doc("");
-  }
-  let lai: LaiRow[] = [];
-  let thieuSoBan = false;
+const homNayVN = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+
+/** Biến thể Pancake đã có sẵn trong database (không gọi Pancake), của một mã hoặc của mọi mã. */
+function docBienThe(ma?: string): Promise<BienTheRow[]> {
+  return allRows<BienTheRow>(() => {
+    const q = db().from("pancake_variations").select("product_code, product_name, categories, stock, selling_avg, retail_price, image_url");
+    return (ma ? q.eq("product_code", ma) : q).order("sku");
+  });
+}
+
+/** Số cái đã bán trong năm (đã trừ hủy, hoàn) theo mã, từ hàm database mk_product_profit. */
+async function docSoBan(nam: number, ma?: string): Promise<LaiRow[]> {
+  const homNay = homNayVN();
   const { data, error } = await db().rpc("mk_product_profit", {
     p_agent: "web_mau",
     p_from: `${nam}-01-01`,
     p_to: String(nam) === homNay.slice(0, 4) ? homNay : `${nam}-12-31`,
-    p_code: null,
+    p_code: ma ?? null,
     p_limit: 500,
   });
-  if (error || !Array.isArray(data)) {
-    thieuSoBan = true;
-    if (error) console.error("[mau] đọc số bán theo mã lỗi:", error.message);
-  } else lai = data as LaiRow[];
-  const capNhat = rows.reduce<string | null>((a, r) => (r.updated_at && (!a || r.updated_at > a) ? r.updated_at : a), null);
-  // Mã đã ẩn (hàng xả…). Database chưa có bảng (migration 0033) thì coi như chưa ẩn mã nào.
-  const an = new Map<string, string>();
-  const dsAn = await db().from("mau_ma_an").select("ma, ly_do").limit(2000);
-  if (!dsAn.error) for (const r of dsAn.data ?? []) an.set(String(r.ma).toUpperCase(), String(r.ly_do ?? ""));
-  // Ảnh tự đăng cho từng mã (cùng migration 0033).
-  const anhRieng = new Map<string, string>();
-  const dsAnh = await db().from("mau_ma_anh").select("ma, cap_nhat_luc").limit(2000);
-  if (!dsAnh.error) for (const r of dsAnh.data ?? []) anhRieng.set(String(r.ma).toUpperCase(), String(r.cap_nhat_luc));
-  const ds = apAnhRieng(apMaAn(gomMaBan(rows, lai, vai), an, vai), anhRieng);
-  return { at: Date.now(), vai, nam, namNay: Number(homNay.slice(0, 4)), capNhat, coAnh, thieuSoBan, anDuoc: !dsAn.error, dangAnhDuoc: !dsAnh.error, ds };
+  if (error) throw error;
+  return Array.isArray(data) ? (data as LaiRow[]) : [];
+}
+
+/** Tab "Mã bán tốt": đọc danh sách tự quản. Không gọi Pancake, không tự cập nhật. */
+async function docMaBan(vai: Vai) {
+  const [rows, anh] = await Promise.all([
+    allRows<MaBanRow>(() => db().from("mau_ma_ban").select("ma, ten, gioi, loai, mua, nam, anh_url, sl_ban, nam_ban, so_ban_luc, nguon, an, ly_do_an").order("ma")),
+    allRows<{ ma: string; cap_nhat_luc: string }>(() => db().from("mau_ma_anh").select("ma, cap_nhat_luc").order("ma")),
+  ]);
+  return { at: Date.now(), vai, namNay: Number(homNayVN().slice(0, 4)), ds: maBanTheoVai(rows, new Map(anh.map((a) => [a.ma, a.cap_nhat_luc])), vai) };
 }
 
 /**
@@ -101,7 +89,7 @@ async function docMaBan(vai: Vai, namHoi: string | null) {
  *   GET /api/mau?anh=<id>     → ảnh đại diện của hồ sơ
  *   GET /api/mau?nhatky=<id>  → { ds[] } nhật ký của hồ sơ (không cho vai xem)
  *   GET /api/mau?anhma=<mã>   → ảnh tự đăng của một mã đang bán
- *   GET /api/mau?ban=<năm>    → { nam, capNhat, coAnh, thieuSoBan, ds[] } mã đang bán xếp theo số bán trong năm (doanh số, lãi chỉ vai quản lý)
+ *   GET /api/mau?ban=1        → { ds[] } danh sách mã bán tốt tự quản (mã đang ẩn chỉ vai quản lý nhận)
  */
 export async function GET(request: Request) {
   const vai = vaiHoacTuChoi(request);
@@ -129,7 +117,7 @@ export async function GET(request: Request) {
         headers: { "Content-Type": data.kieu as string, "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" },
       });
     }
-    if (q.has("ban")) return json(await docMaBan(vai, q.get("ban")));
+    if (q.has("ban")) return json(await docMaBan(vai));
     if (q.has("nhatky")) {
       if (vai === "xem") return json({ error: "Mã truy cập này chỉ được xem" }, 403);
       const id = idTu(q.get("nhatky"));
@@ -173,14 +161,49 @@ export async function POST(request: Request) {
       return json({ ok: true, id: data.id });
     }
 
+    if (lenh.viec === "ma_ban_them") {
+      const nam = Number(homNayVN().slice(0, 4));
+      const [bt, ban] = await Promise.all([docBienThe(lenh.ma), docSoBan(nam, lenh.ma).catch(() => [] as LaiRow[])]);
+      const m = gomMaBan(bt, ban.filter((l) => String(l.ma).toUpperCase() === lenh.ma), true)[0];
+      const dong = m ? dongTuSo(m, nam, lenh.nguoi, luc) : { ma: lenh.ma, nam: namTuMa(lenh.ma), nguon: "tay", nguoi: lenh.nguoi, cap_nhat_luc: luc };
+      const { error } = await db().from("mau_ma_ban").insert(dong);
+      if (error?.code === "23505") return json({ error: `Mã ${lenh.ma} đã có trong danh sách (có thể đang ẩn)` }, 400);
+      if (error) throw error;
+      return json({ ok: true, coSo: !!m });
+    }
+    if (lenh.viec === "ma_ban_sua") {
+      const { data, error } = await db().from("mau_ma_ban").update({ ...lenh.cot, nguoi: lenh.nguoi, cap_nhat_luc: luc }).eq("ma", lenh.ma).select("ma");
+      if (error) throw error;
+      if (!data?.length) return json({ error: "Không có mã này trong danh sách" }, 404);
+      return json({ ok: true });
+    }
+    if (lenh.viec === "ma_ban_nap") {
+      const nam = Number(homNayVN().slice(0, 4));
+      const ban = await docSoBan(nam);
+      if (lenh.kieu === "dau") {
+        // Nạp lần đầu: mọi mã có bán trong năm. Mã đã có trong bảng (kể cả mã đang ẩn) giữ nguyên.
+        const ds = gomMaBan(await docBienThe(), ban).filter((m) => m.slBan > 0).map((m) => dongTuSo(m, nam, lenh.nguoi, luc));
+        if (ds.length) {
+          const { error } = await db().from("mau_ma_ban").upsert(ds, { onConflict: "ma", ignoreDuplicates: true });
+          if (error) throw error;
+        }
+        return json({ ok: true, so: ds.length });
+      }
+      // Cập nhật số bán: chỉ các mã đang có trong danh sách, không thêm mã mới, không đổi tên, ảnh, phân loại.
+      const co = await allRows<{ ma: string }>(() => db().from("mau_ma_ban").select("ma").order("ma"));
+      const soBan = new Map(ban.map((l) => [String(l.ma).toUpperCase(), Math.max(0, Math.round(Number(l.sl_ban) || 0))]));
+      const ds = co.map((r) => ({ ma: r.ma, sl_ban: soBan.get(r.ma) ?? 0, nam_ban: nam, so_ban_luc: luc }));
+      if (ds.length) {
+        const { error } = await db().from("mau_ma_ban").upsert(ds, { onConflict: "ma" });
+        if (error) throw error;
+      }
+      return json({ ok: true, so: ds.length });
+    }
     if (lenh.viec === "an_ma") {
-      const { error } = lenh.an
-        ? await db().from("mau_ma_an").upsert({ ma: lenh.ma, ly_do: lenh.lyDo, nguoi: lenh.nguoi, luc })
-        : await db().from("mau_ma_an").delete().eq("ma", lenh.ma);
+      const { error } = await db().from("mau_ma_ban").upsert({ ma: lenh.ma, an: lenh.an, ly_do_an: lenh.an ? lenh.lyDo : "", nguoi: lenh.nguoi, cap_nhat_luc: luc }, { onConflict: "ma" });
       if (error) throw error;
       return json({ ok: true });
     }
-
     if (lenh.viec === "anh_ma") {
       const { error } = await db().from("mau_ma_anh").upsert({ ma: lenh.ma, kieu: lenh.kieu, du_lieu: lenh.duLieu, nguoi: lenh.nguoi, cap_nhat_luc: luc });
       if (error) throw error;
