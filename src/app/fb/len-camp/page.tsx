@@ -35,7 +35,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
         {error ? <p className="error">Không tải được bài: {error}</p> : null}
         {data?.errors.length ? <p className="error">Thiếu số: {data.errors.join("; ").slice(0, 500)}</p> : null}
       </div>
-      {data ? <Launcher pageId={pageId} pageName={PAGES[pageId]} posts={data.posts} accounts={data.accounts} usedNames={data.usedNames} usedCampaigns={data.usedCampaigns} preselect={preselect} /> : null}
+      {data ? <Launcher pageId={pageId} pageName={PAGES[pageId]} posts={data.posts} accounts={data.accounts} usedNames={data.usedNames} usedCampaigns={data.usedCampaigns} drafts={data.drafts} preselect={preselect} /> : null}
     </>
   );
 }

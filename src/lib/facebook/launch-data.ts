@@ -5,7 +5,7 @@
 import { addDays, vnDate } from "../autopilot/time";
 import { db } from "../supabase";
 import { loadStock } from "./jobs";
-import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, creativeParams, creativeParamsWithCta, isCreativeIncompatible, type LaunchConfig, type LaunchItem } from "./launch";
+import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, creativeParams, creativeParamsWithCta, explainMetaError, isCreativeIncompatible, type LaunchConfig, type LaunchItem } from "./launch";
 import { loadManualCodes, readPagePosts } from "./content-data";
 import { adsInfo, createObject, listAccounts, scrub } from "./meta";
 import { realSpend } from "./rules";
@@ -26,7 +26,21 @@ export type PostRow = {
   ran: { ads: number; spendReal: number; orders: number; revenue: number } | null;
 };
 
-export type LaunchData = { posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns: string[]; errors: string[] };
+export type LaunchDraft = { id: number; created_at: string; name: string; page_id: string; config: Partial<LaunchConfig>; items: LaunchItem[] };
+export type LaunchData = {
+  posts: PostRow[];
+  accounts: { id: string; name: string }[];
+  usedNames: string[];
+  usedCampaigns: string[];
+  /** Nháp đã lưu của page này; null = chưa có bảng (chưa áp migration), nút lưu nháp sẽ báo lỗi. */
+  drafts: LaunchDraft[] | null;
+  errors: string[];
+};
+
+async function loadDrafts(pageId: string): Promise<LaunchDraft[] | null> {
+  const { data, error } = await db().from("fb_launch_drafts").select("id, created_at, name, page_id, config, items").eq("page_id", pageId).order("created_at", { ascending: false }).limit(30);
+  return error ? null : ((data ?? []) as LaunchDraft[]);
+}
 
 type AdSum = { ad_name: string | null; campaign_name: string | null; spend: number; orders: number; revenue: number };
 
@@ -63,12 +77,13 @@ export async function loadLaunch(pageId: string): Promise<LaunchData> {
     return null;
   };
   const today = vnDate();
-  const [read, accounts, stock, history, manual] = await Promise.all([
+  const [read, accounts, stock, history, manual, drafts] = await Promise.all([
     readPagePosts(pageId, addDays(today, -29), today, 31),
     listAccounts().catch(note("Tài khoản")),
     loadStock().catch(note("Tồn kho")),
     adHistory().catch(note("Kết quả cũ")),
     loadManualCodes().catch(() => null), // chưa có bảng mã gắn tay: dùng mã đọc từ chữ trong bài
+    loadDrafts(pageId).catch(() => null),
   ]);
   if (!read.source) throw new Error(read.error ?? "Không đọc được bài của page");
   // Bài ngoài tường page (video, ảnh tạo riêng cho quảng cáo) không đưa vào danh sách chọn.
@@ -104,7 +119,7 @@ export async function loadLaunch(pageId: string): Promise<LaunchData> {
   });
   const usedNames = history ? [...history.values()].map((h) => h.ad_name ?? "").filter(Boolean) : [];
   const usedCampaigns = history ? [...new Set([...history.values()].map((h) => h.campaign_name ?? "").filter(Boolean))] : [];
-  return { posts: rows, accounts: (accounts ?? []).map((a) => ({ id: a.id, name: a.name })), usedNames, usedCampaigns, errors };
+  return { posts: rows, accounts: (accounts ?? []).map((a) => ({ id: a.id, name: a.name })), usedNames, usedCampaigns, drafts, errors };
 }
 
 export type LaunchResult = {
@@ -132,7 +147,7 @@ async function create(accountId: string, edge: Parameters<typeof createObject>[1
   } catch (e) {
     const error = scrub(e instanceof Error ? e.message : String(e));
     await logWrite({ action, account_id: accountId, target_id: null, target_name: params.name, after: params, ok: false, error });
-    throw new Error(error);
+    throw new Error(explainMetaError(error));
   }
 }
 
