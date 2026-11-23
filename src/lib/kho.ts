@@ -981,9 +981,15 @@ export interface GiaoRow {
   ngay: string;
   /** Còn trong báo cáo mới nhất. false = đã rời danh sách (giao xong hoặc chuyển sang hoàn). */
   con: boolean;
+  /**
+   * Chỉ có khi đơn đã rời danh sách: "hoan" = đơn nằm trong danh sách hoàn của Viettel Post (không cứu được),
+   * "giao" = không nằm trong danh sách hoàn, tức đã giao được (cứu được).
+   */
+  kq?: "giao" | "hoan";
 }
 
-export function shapeGiao(ma: string, d: VtpMailDoc, lastNgay: string): GiaoRow {
+export function shapeGiao(ma: string, d: VtpMailDoc, lastNgay: string, hoan = false): GiaoRow {
+  const con = d.ngay === lastNgay;
   return {
     ma,
     id: d.id || "",
@@ -993,21 +999,23 @@ export function shapeGiao(ma: string, d: VtpMailDoc, lastNgay: string): GiaoRow 
     items: (d.items ?? []).map((i) => ({ sku: i.sku, quantity: i.quantity })),
     since: d.first || null,
     ngay: d.ngay,
-    con: d.ngay === lastNgay,
+    con,
+    ...(con ? {} : { kq: hoan ? ("hoan" as const) : ("giao" as const) }),
   };
 }
 
 /**
  * Đơn giao có vấn đề theo báo cáo mail Viettel Post: đơn còn trong báo cáo mới nhất, và đơn đã rời danh sách
- * trong 14 ngày gần đây (để xem lại kết quả xử lý). Kèm kết quả xử lý đã ghi.
+ * trong 30 ngày gần đây (để tổng kết đơn cứu được). Kèm kết quả xử lý đã ghi.
+ * Đơn đã rời danh sách mà có trong danh sách hoàn (cùng báo cáo mail) là đơn hoàn; còn lại là đơn đã giao được.
  */
 export async function giaoProblems(now = Date.now()): Promise<{ at: number; ngay: string | null; rows: GiaoRow[]; marks: Record<string, Record<string, unknown>> }> {
-  const [mail, marks] = await Promise.all([vtpMailGet("giao"), giaoMarksGet()]);
+  const [mail, marks, hoan] = await Promise.all([vtpMailGet("giao"), giaoMarksGet(), vtpMailGet("hoan")]);
   if (!mail.last) return { at: now, ngay: null, rows: [], marks };
   const last = mail.last.ngay;
   const rows = Object.entries(mail.docs)
-    .map(([ma, d]) => shapeGiao(ma, d, last))
-    .filter((r) => r.con || reportAgeDays(r.ngay, now) <= 14)
+    .map(([ma, d]) => shapeGiao(ma, d, last, !!hoan.docs[ma]))
+    .filter((r) => r.con || reportAgeDays(r.ngay, now) <= 30)
     .sort((a, b) => Number(b.con) - Number(a.con) || (a.since ?? 0) - (b.since ?? 0));
   return { at: now, ngay: last, rows, marks };
 }

@@ -259,6 +259,10 @@ describe("kiện hoàn đang chờ về", () => {
     assert.equal(g.since, 1000);
     assert.ok(g.items.every((i) => Object.keys(i).sort().join() === "quantity,sku"));
     assert.equal(shapeGiao(row.ma, d, "2026-11-20").con, false);
+    // Đơn rời danh sách: có trong danh sách hoàn là hoàn, không có là đã giao được. Đơn còn trong danh sách thì chưa có kết quả.
+    assert.equal(shapeGiao(row.ma, d, "2026-11-20").kq, "giao");
+    assert.equal(shapeGiao(row.ma, d, "2026-11-20", true).kq, "hoan");
+    assert.equal(shapeGiao(row.ma, d, "2026-11-19", true).kq, undefined);
     assert.deepEqual(shapeGiao("PKE1", { status: "", reason: "", ngay: "2026-11-20", first: 0 }, "2026-11-20"), { ma: "PKE1", id: "", channel: "Viettel Post", status: "", reason: "", items: [], since: null, ngay: "2026-11-20", con: true });
   });
   it("hoàn Viettel: mail + đơn hoàn một phần của Pancake, không lấy đơn đang hoàn của Pancake, không trùng", () => {
