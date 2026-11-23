@@ -144,6 +144,17 @@ export function buildPlan(cfg: LaunchConfig, items: LaunchItem[]): PlannedCampai
   return out;
 }
 
+/**
+ * Tên mẫu chào đã lưu trong Trình quản lý quảng cáo của từng page (mẫu lưu theo page, dùng chung mọi tài khoản
+ * quảng cáo). Kiểm 23/11/2026. Page chưa có trong danh sách thì nhắc chung chung.
+ */
+export const welcomeTemplate = (pageName: string): string | null => {
+  const code = pageShort(pageName);
+  if (code === "MG" || code === "MGO") return "New.Nút";
+  if (code === "AB") return "Xin size - dễ thương, hài hước";
+  return null;
+};
+
 /** Mã page dùng trong tên chiến dịch (sổ tay Kiều Trang mục 4: `[Mục tiêu]-[Page]-[Mã SP/GOM]-[STT]`). */
 export const pageShort = (pageName: string): string => {
   const n = pageName.toLowerCase().replace(/\s+/g, "");
