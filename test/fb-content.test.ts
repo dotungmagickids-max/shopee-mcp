@@ -1,7 +1,7 @@
 /** FB Magic Tool, màn Nội dung: khoảng ngày, loại bài, lọc theo page/mã, đếm theo page và theo mã. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fromPancakePost, pancakePageTokens, pickImage, vnRangeUnix } from "../src/lib/facebook/pancake-posts";
+import { fromPancakePost, isOffWall, pancakePageTokens, pickImage, vnRangeUnix } from "../src/lib/facebook/pancake-posts";
 import { composioConfig, dayWindows, fromGraphPost, postsOf } from "../src/lib/facebook/composio-posts";
 import { contentRange, countByCode, countByPage, daysToFetch, inRange, kindOf, matches, toContentPost } from "../src/lib/facebook/content";
 
@@ -82,6 +82,15 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
     assert.equal(real.picture, "https://content.example.test/a/b.jpg");
     assert.equal(real.permalink, "https://www.facebook.com/reel/9/");
     assert.equal(toContentPost("111", real).kind, "reel");
+    assert.equal(real.off_wall, false);
+    // Video không nằm trên tường page (link /videos/): tách nhóm riêng, không đếm vào số bài đã đăng.
+    const off = toContentPost("111", fromPancakePost({ id: "111_2", message: "Mã: QD25009", type: "video", inserted_at: "2026-11-08T19:31:39", attachments: { data: [], target: { url: "https://www.facebook.com/111/videos/2" } } })!);
+    assert.equal(off.offWall, true);
+    assert.equal(matches(off, {}), false);
+    assert.equal(matches(off, { scope: "off" }), true);
+    assert.equal(matches(toContentPost("111", real), { scope: "off" }), false);
+    assert.equal(countByPage([off, toContentPost("111", real)].filter((p) => matches(p, {})), ["111"])[0].total, 1);
+    assert.equal(isOffWall("photo", "https://www.facebook.com/111/videos/2"), false);
     assert.equal(pickImage({ attachments: { data: [], target: { url: "https://www.facebook.com/reel/9/" } } }), null);
     assert.equal(toContentPost("111", fromPancakePost({ id: "111_6", type: "livestream", inserted_at: "2026-11-21T03:00:00" })!).kind, "video");
     assert.equal(pickImage({ attachments: { data: [{ url: "https://example.test/clip.mp4" }] } }), null);

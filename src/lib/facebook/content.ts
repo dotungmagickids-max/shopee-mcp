@@ -17,6 +17,8 @@ export type ContentPost = {
   permalink: string | null;
   kind: ContentKind;
   codes: string[];
+  /** Bài không nằm trên tường page (chỉ nguồn Pancake nhận ra): thường là video tạo riêng cho quảng cáo. */
+  offWall: boolean;
 };
 
 export const MAX_RANGE_DAYS = 180;
@@ -63,7 +65,7 @@ export function kindOf(statusType: string, permalink: string | null): ContentKin
 /** Bài thô của Meta → bài hiển thị: gắn page, ngày giờ VN, loại, mã sản phẩm; cắt ngắn nội dung. */
 export function toContentPost(
   pageId: string,
-  p: { id: string; message: string; created_time: string; picture: string | null; permalink: string | null; kind: string }
+  p: { id: string; message: string; created_time: string; picture: string | null; permalink: string | null; kind: string; off_wall?: boolean }
 ): ContentPost {
   return {
     id: p.id,
@@ -75,17 +77,20 @@ export function toContentPost(
     permalink: p.permalink,
     kind: kindOf(p.kind, p.permalink),
     codes: codesFromText(p.message),
+    offWall: p.off_wall === true,
   };
 }
 
 export const inRange = (p: ContentPost, since: string, until: string) => p.day >= since && p.day <= until;
 
-export type ContentFilter = { page?: string; code?: string; kind?: ContentKind | ""; noCode?: boolean };
+/** `scope`: "wall" (mặc định) chỉ lấy bài trên tường page; "off" chỉ lấy bài ngoài tường. */
+export type ContentFilter = { page?: string; code?: string; kind?: ContentKind | ""; noCode?: boolean; scope?: "wall" | "off" };
 
 /** Chuẩn hóa ô nhập mã: bỏ dấu cách, viết hoa. Gõ một phần mã ("ADT26") vẫn khớp. */
 export const normCode = (s: string | undefined) => String(s ?? "").replace(/\s+/g, "").toUpperCase();
 
 export function matches(p: ContentPost, f: ContentFilter): boolean {
+  if ((f.scope === "off") !== p.offWall) return false;
   if (f.page && p.page_id !== f.page) return false;
   if (f.kind && p.kind !== f.kind) return false;
   if (f.noCode) return p.codes.length === 0;

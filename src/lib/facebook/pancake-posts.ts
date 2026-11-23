@@ -49,20 +49,28 @@ export function pickImage(v: unknown, depth = 0): string | null {
 }
 
 /** Bài Pancake → cùng dạng với bài đọc từ Meta. Giờ của Pancake là UTC, không kèm múi giờ. Bài đã gỡ và ảnh con của album thì bỏ (null). */
-export function fromPancakePost(r: any): PagePost | null {
+/**
+ * Video trên tường page có link dạng /reel/<id>; video Pancake giữ mà không nằm trên tường (tạo riêng cho quảng cáo,
+ * tải lên thư viện) có link dạng /<page>/videos/<id>. Đối chiếu 23/11/2026 với danh sách bài trên tường của Facebook.
+ */
+export const isOffWall = (type: string, permalink: string | null): boolean => type === "video" && !!permalink && /\/videos\//.test(permalink);
+
+export function fromPancakePost(r: any): (PagePost & { off_wall: boolean }) | null {
   const id = String(r?.id ?? "");
   if (!id || r?.removed === true || r?.is_removed === true) return null;
   // Pancake đếm cả từng ảnh con của album thành một bài (ảnh, không có chữ): bỏ, để số bài khớp với Facebook.
   if (String(r?.type ?? "") === "photo" && !String(r?.message ?? "").trim()) return null;
   const at = String(r?.inserted_at ?? r?.created_time ?? "");
   const created = at && !/(Z|[+-]\d{2}:?\d{2})$/.test(at) ? `${at}Z` : at;
+  const permalink = typeof r?.attachments?.target?.url === "string" ? r.attachments.target.url : /^\d+_\d+$/.test(id) ? `https://www.facebook.com/${id}` : null;
   return {
     id,
     message: String(r?.message ?? ""),
     created_time: created,
     picture: pickImage({ attachments: r?.attachments, image_data: r?.image_data, full_picture: r?.full_picture, picture: r?.picture, thumbnail: r?.thumbnail }),
-    permalink: typeof r?.attachments?.target?.url === "string" ? r.attachments.target.url : /^\d+_\d+$/.test(id) ? `https://www.facebook.com/${id}` : null,
+    permalink,
     kind: String(r?.type ?? ""),
+    off_wall: isOffWall(String(r?.type ?? ""), permalink),
   };
 }
 
