@@ -2945,8 +2945,15 @@ function renderSoat(){
     rows.push({key:c,c,v,st,cls});
   }
   const extra=dh.filter(v=>dayStr(new Date(v.startedAt))===day&&!videoKeys(v).some(k=>want.has(k)));
-  const seen=new Set();
-  for(const v of extra){const k=norm(v.orderId||v.code);if(seen.has(k))continue;seen.add(k);rows.push({key:k,c:'',v,st:'Đóng ngoài danh sách',cls:'out'});}
+  /* đơn tồn: có trong danh sách các ngày trước, hôm nay mới đóng → tính là đơn của danh sách hôm nay, không báo "ngoài danh sách" (anh duyệt 23/11/2026) */
+  const oldDay=new Map();for(const o of (SOAT.oldFor===day?SOAT.old:[]))for(const c of o.codes)if(!oldDay.has(c))oldDay.set(c,o.day);
+  const seen=new Set();let oldDone=0;
+  for(const v of extra){
+    const ok=videoKeys(v).find(k=>oldDay.has(k));
+    if(ok){if(seen.has(ok))continue;seen.add(ok);oldDone++;rows.push({key:ok,c:ok,v,st:'Đã đóng',cls:'',old:oldDay.get(ok)});continue;}
+    const k=norm(v.orderId||v.code);if(seen.has(k))continue;seen.add(k);rows.push({key:k,c:'',v,st:'Đóng ngoài danh sách',cls:'out'});
+  }
+  const ngoai=seen.size-oldDone;
   SOAT.rows=rows;SOAT.vday=dh.filter(v=>dayStr(new Date(v.startedAt))===day);
   /* đơn cũ chưa đóng: có trong danh sách các ngày trước, chưa có video ngày nào, không nằm trong danh sách ngày đang xem */
   const oldRows=[],oldSeen=new Set();
@@ -2960,7 +2967,9 @@ function renderSoat(){
   const cards=$('soatCards');cards.textContent='';
   const kpi=(label,val,cls)=>{const c=document.createElement('div');c.className='kpi '+(cls||'');const b=document.createElement('b');b.textContent=val;const s=document.createElement('span');s.textContent=label;c.append(b,s);cards.append(c);};
   kpi('Đơn chuẩn bị',data.codes.length);kpi('Đã đóng trong ngày',done);
-  kpi('CHƯA ĐÓNG',miss,miss?'bad':'');kpi('Đã đóng ngày khác',other);kpi('Đóng ngoài danh sách',seen.size,seen.size?'amber':'');
+  kpi('CHƯA ĐÓNG',miss,miss?'bad':'');kpi('Đã đóng ngày khác',other);
+  if(oldDone)kpi('Đơn tồn ngày trước, đóng hôm nay',oldDone);
+  kpi('Đóng ngoài danh sách',ngoai,ngoai?'amber':'');
   const lech=LECH.entries.filter(e=>dayStr(new Date(e.at))===day).sort((a,b)=>a.at-b.at);
   kpi('Lấy hàng lệch',LECH.err?'?':lech.length,lech.length||LECH.err?'amber':'');
   kpi('Đơn cũ chưa xử lý xong',SOAT.oldErr&&!oldRows.length?'?':oldOpen,oldOpen||SOAT.oldErr?'bad':'');
@@ -2980,7 +2989,7 @@ function renderSoat(){
     cell(i,'num');cell(r.c||'–','code');cell(r.v?r.v.code:'','code');
     cell(r.v?vnTime(r.v.startedAt).slice(11,16):'');
     cell(r.v?(r.v.check||'–'):'',r.v&&/^Thiếu|sai/.test(r.v.check||'')?'warn':'');
-    cell(r.st,r.cls==='bad'?'warn':'');
+    cell(r.old?r.st+' (tồn ngày '+dm(r.old)+')':r.st,r.cls==='bad'?'warn':'');
     const note=data.notes[r.key]||{};
     for(const f of ['lyDo','xuLy']){
       const inp=document.createElement('input');inp.value=note[f]||'';inp.placeholder=f==='lyDo'?'Lý do':'Xử lý';
@@ -3002,7 +3011,7 @@ function renderTien(){
   const day=SOAT.day;$('tDay').value=day;el.textContent='';
   const mk=(tag,cls,txt)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(txt!=null)x.textContent=txt;return x;};
   const bar=(a,b)=>{const o=mk('div','tbar'),i=document.createElement('i');i.style.width=(b?Math.round(a*100/b):0)+'%';o.append(i);return o;};
-  const rows=SOAT.rows||[],inList=rows.filter(r=>r.c),tot=inList.length,done=inList.filter(r=>r.v).length,miss=tot-done,ngoai=rows.length-tot;
+  const rows=SOAT.rows||[],inList=rows.filter(r=>r.c&&!r.old),tot=inList.length,done=inList.filter(r=>r.v).length,miss=tot-done,ngoai=rows.filter(r=>r.cls==='out').length;
   const vday=SOAT.vday||[],last=vday.length?vday[vday.length-1].startedAt:0;
   const list=SOAT.err?[]:chuaList(),open=list.filter(x=>!x.state);
   const left=list.filter(x=>!CHUA.info.has(x.code)).length;
@@ -3403,7 +3412,7 @@ function soatCsv(){
   const esc=x=>'"'+String(x==null?'':x).replace(/"/g,'""')+'"';
   const lines=[['STT','Mã đơn chuẩn bị','Mã đã đóng','Giờ đóng','Soát sản phẩm','Kết quả','Lý do','Xử lý'].map(esc).join(',')];
   SOAT.rows.forEach((r,i)=>{const n=SOAT.data.notes[r.key]||{};
-    lines.push([i+1,r.c,r.v?r.v.code:'',r.v?vnTime(r.v.startedAt):'',r.v?(r.v.check||''):'',r.st,n.lyDo||'',n.xuLy||''].map(esc).join(','));});
+    lines.push([i+1,r.c,r.v?r.v.code:'',r.v?vnTime(r.v.startedAt):'',r.v?(r.v.check||''):'',r.old?r.st+' (tồn ngày '+dm(r.old)+')':r.st,n.lyDo||'',n.xuLy||''].map(esc).join(','));});
   downloadBlob(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv'}),'soat-don-'+SOAT.day+'.csv');
 }
 
