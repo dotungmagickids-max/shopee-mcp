@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Magickids – Chất lượng CSKH</title>
+<style>
+:root{--accent:#0f6e4a;--ink:#1c2430;--mut:#667085;--line:#d9dee5;--red:#c62828;--amber:#b26a00;--blue:#2f6fb5}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.4 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:#f4f6f8}
+button{font:inherit;padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+input,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--accent);color:#fff;flex-wrap:wrap}
+header h1{font-size:18px;margin:0 8px 0 0}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;font-size:14px}
+.chip{background:rgba(0,0,0,.22);padding:4px 10px;border-radius:999px;white-space:nowrap}
+.chip.bad{background:var(--red)}
+.banner{padding:10px 16px;font-weight:700}
+.banner.warn{background:#ffe6b3;color:#6b3f00}
+.banner.err{background:var(--red);color:#fff}
+main{max-width:1200px;margin:12px auto;padding:0 12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+h2{margin:0 0 10px;font-size:20px}
+h3{margin:18px 0 6px;font-size:15px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.hint{color:var(--mut);font-size:13px;margin:8px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:10px 0 4px}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi b{display:block;font-size:24px}
+.kpi span{color:var(--mut);font-size:13px}
+.kpi small{display:block;color:var(--mut);font-size:12px}
+.kpi.bad b{color:var(--red)}
+.kpi.amber b{color:var(--amber)}
+.tw{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{color:var(--mut);font-size:12px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.code{font-family:Consolas,monospace;font-weight:700}
+td.warn{color:var(--red);font-weight:700}
+tr.bad td{background:#fdeaea}
+tr.tot td{font-weight:700;background:#f4f6f8}
+.tabs{display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap}
+.tabs button{font-weight:700}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tag{display:inline-block;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;background:#eef0f3;color:var(--mut)}
+.tag.late{background:#fdeaea;color:var(--red)}
+.tag.warn{background:#fff4d6;color:var(--amber)}
+.tag.ok{background:#d9f2e3;color:#0b5c37}
+td.bar{width:38%;min-width:160px}
+.bar i{display:block;height:9px;border-radius:3px;background:var(--blue);margin:2px 0}
+.bar i.s{background:var(--accent)}
+.key{font-size:13px;color:var(--mut);margin:6px 0}
+.key i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px;vertical-align:-1px}
+#gate{max-width:460px;margin:60px auto;text-align:center}
+#gate input{width:100%;margin:10px 0}
+@media (max-width:700px){header{padding:8px 10px}header h1{font-size:16px}.chips{margin-left:0}main{padding:0 8px}.card{padding:10px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Magickids · Chất lượng CSKH</h1>
+  <div class="chips"><span class="chip" id="cNet">…</span><span class="chip" id="cAt" hidden></span></div>
+</header>
+<div id="banner" class="banner" hidden></div>
+
+<section id="gate" class="card" hidden>
+  <h2>Chất lượng CSKH</h2>
+  <div class="hint">Dán mã truy cập của trang CSKH. Mã chỉ lưu trong trình duyệt của máy này.</div>
+  <input id="gKey" type="password" autocomplete="off" placeholder="Mã truy cập">
+  <button id="btnGate" class="primary">Vào</button>
+  <div class="hint" id="gMsg"></div>
+</section>
+
+<main id="app" hidden>
+<section class="card">
+  <div class="filters">
+    <label>Ngày <input type="date" id="fNgay"></label>
+    <button id="btnTruoc">◀ Hôm trước</button>
+    <button id="btnSau">Hôm sau ▶</button>
+    <button id="btnTai">Tải lại</button>
+    <button id="btnThoat" hidden>Đổi mã</button>
+  </div>
+  <div class="hint" id="info"></div>
+  <div class="cards" id="cards"></div>
+</section>
+
+<div class="tabs" id="tabs">
+  <button data-tab="tq">Tổng quan</button><button data-tab="gio">Theo giờ</button><button data-tab="ma">Mã được hỏi</button>
+  <button data-tab="nv">Người trực</button><button data-tab="sot">Tin sót</button><button data-tab="the">Phân loại (theo thẻ)</button><button data-tab="xh">30 ngày</button>
+</div>
+
+<section class="card" id="sec-tq" hidden>
+  <h2>Lượng tin theo page</h2>
+  <div class="tw"><table><thead><tr><th>Page</th><th class="num">Cuộc chat</th><th class="num">Khách mới</th><th class="num">Khách cũ</th><th class="num">Khách cũ phản hồi</th><th class="num">Tin khách</th><th class="num">Tin nhân viên</th><th class="num">Tin tự động</th><th class="num">Có SĐT</th><th class="num">Chốt (mới)</th><th class="num">Tin sót</th><th class="num">Bình luận</th></tr></thead><tbody id="tbPage"></tbody></table></div>
+  <div class="hint" id="tqNote"></div>
+</section>
+
+<section class="card" id="sec-gio" hidden>
+  <h2>Tin theo giờ</h2>
+  <div class="key"><i style="background:var(--blue);margin-left:0"></i>Tin khách<i style="background:var(--accent)"></i>Tin nhân viên gõ (không tính tin tự động)</div>
+  <div class="tw"><table><thead><tr><th>Giờ</th><th>Ca</th><th class="num">Tin khách</th><th class="num">Tin nhân viên</th><th></th></tr></thead><tbody id="tbGio"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-ma" hidden>
+  <h2>Mã được hỏi nhiều và tồn kho</h2>
+  <div class="hint">Đếm số cuộc chat có nhắc tới mã (khách gõ hoặc nhân viên gửi) và tên gọi nhóm hàng (dấu #). Khách hay nói tên gọi thay vì mã nên danh sách này chưa đủ. Tồn là tồn thực hiện tại trên Pancake.</div>
+  <div class="tw"><table><thead><tr><th>Mã / nhóm</th><th class="num">Số cuộc</th><th class="num">Tồn thực</th><th class="num">Phân loại hết</th><th class="num">Đơn chờ hàng</th><th></th></tr></thead><tbody id="tbMa"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-nv" hidden>
+  <h2>Chất lượng theo người trực</h2>
+  <div class="hint">Người trực của một cuộc là người gửi tin trả lời đầu tiên. Trả lời đầu tính tới tin đầu tiên của nhân viên, kể cả tin mẫu bấm sẵn. Trung vị chỉ tính lượt khách nhắn trong giờ trực.</div>
+  <div class="tw"><table><thead><tr><th>Người trực</th><th class="num">Cuộc</th><th class="num">Khách mới</th><th class="num">Tin gửi</th><th class="num">Trả lời đầu (trung vị)</th><th class="num">90% dưới</th><th class="num">Chậm nhất</th><th class="num">Ngoài giờ</th><th class="num">Chốt</th><th class="num">Tỉ lệ chốt</th><th class="num">Chỉ dán mẫu rồi dừng</th><th class="num">Trả lời trễ ca</th></tr></thead><tbody id="tbNv"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-sot" hidden>
+  <h2>Tin sót</h2>
+  <div class="hint" id="sotNote"></div>
+  <div class="tw"><table><thead><tr><th>Hội thoại</th><th>Page</th><th>Khách nhắn lúc</th><th>Ca</th><th>Hạn trả lời</th><th>Trả lời lúc</th><th>Người trả lời</th><th></th></tr></thead><tbody id="tbSot"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-the" hidden>
+  <h2>Phân loại theo thẻ sale gắn</h2>
+  <div class="hint">Chưa chắc: sale gắn thẻ không đều. Phân loại bằng AI đọc từng cuộc là việc của đợt 2.</div>
+  <div class="tw"><table><thead><tr><th>Thẻ</th><th class="num">Số cuộc</th><th></th></tr></thead><tbody id="tbThe"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-xh" hidden>
+  <h2>30 ngày gần nhất</h2>
+  <div class="tw"><table><thead><tr><th>Ngày</th><th class="num">Cuộc chat</th><th class="num">Khách mới</th><th class="num">Tin khách</th><th class="num">Chốt (mới)</th><th class="num">Tỉ lệ chốt</th><th class="num">Tin sót</th><th class="num">Trả lời đầu (trung vị)</th><th></th></tr></thead><tbody id="tbXh"></tbody></table></div>
+</section>
+</main>
+
+<script>
+'use strict';
+/* Magickids – Quản lý chất lượng CSKH. Trang CHỈ ĐỌC: lấy số đã tính từ /api/cskh (máy chủ đọc Pancake chat và POS).
+   Không có tên, SĐT, nội dung tin của khách; hội thoại chỉ hiện 5 ký tự cuối của mã.
+   Không có khóa, mật khẩu nào trong mã nguồn. Thêm ?thu=1 để xem bằng dữ liệu giả, không cần mã truy cập. */
+const TEST=new URLSearchParams(location.search).has('thu');
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const so=n=>(Number(n)||0).toLocaleString('vi-VN');
+const pt=(a,b)=>b>0?(a/b*100).toLocaleString('vi-VN',{maximumFractionDigits:1})+'%':'—';
+const keyLS={get(){try{return localStorage.getItem('mkCskhKey')||'';}catch(e){return '';}},set(v){try{if(v)localStorage.setItem('mkCskhKey',v);else localStorage.removeItem('mkCskhKey');}catch(e){}}};
+const S={key:'',ngay:'',d:null,xh:null,tab:'tq'};
+
+function ngayVN(ms){return new Date(ms+7*3600e3).toISOString().slice(0,10);}
+function congNgay(ngay,n){return ngayVN(Date.parse(ngay+'T00:00:00+07:00')+n*864e5+1);}
+function thoiLuong(g){
+  if(g==null)return '—';
+  if(g<60)return g+' giây';
+  if(g<3600)return Math.floor(g/60)+' phút'+(g%60?' '+(g%60)+' giây':'');
+  return Math.floor(g/3600)+' giờ '+Math.floor(g%3600/60)+' phút';
+}
+function gio(ms,ngay){
+  if(!ms)return '—';
+  const d=new Date(ms+7*3600e3),p=n=>String(n).padStart(2,'0');
+  const hm=p(d.getUTCHours())+':'+p(d.getUTCMinutes());
+  return ngayVN(ms)===ngay?hm:hm+' ngày '+p(d.getUTCDate())+'/'+p(d.getUTCMonth()+1);
+}
+function banner(kind,text){const b=$('banner');b.hidden=!text;b.className='banner '+kind;b.textContent=text||'';}
+
+/* ---------- dữ liệu giả cho chế độ thử: mọi tên, mã, số đều bịa ---------- */
+function rnd(seed){let s=seed>>>0;return()=>((s=(s*1664525+1013904223)>>>0)/4294967296);}
+function mockNgay(ngay){
+  const r=rnd(Number(ngay.replace(/-/g,''))),n=(a,b)=>a+Math.floor(r()*(b-a+1));
+  const d0=Date.parse(ngay+'T00:00:00+07:00');
+  const mk=(heSo)=>{const moi=n(20,40)*heSo,cu=n(10,25)*heSo,ph=n(2,8)*heSo;return {cuoc:moi+cu+ph,khachMoi:moi,khachCu:cu,khachCuPhanHoi:ph,shopNhan:n(0,30)*heSo,tinKhach:(moi+cu+ph)*n(2,4),tinNhanVien:(moi+cu+ph)*n(4,7),tinTuDong:(moi+cu+ph)*n(2,3),tinNhanLai:n(0,40)*heSo,coSdt:n(2,9)*heSo,binhLuan:n(5,30)*heSo,chotMoi:n(1,4)*heSo,chotCu:n(0,3)*heSo,sot:n(0,3)*heSo,sotConTreo:n(0,1)};};
+  const pages=[Object.assign({page:'p1'},mk(3)),Object.assign({page:'p2'},mk(1))];
+  const tong={};for(const k of Object.keys(pages[0]))if(k!=='page')tong[k]=pages[0][k]+pages[1][k];
+  const hinh=[0,0,0,0,0,0,1,3,6,9,10,8,7,6,7,8,9,8,9,12,14,11,5,2],tk=hinh.reduce((a,b)=>a+b,0);
+  const theoGio={khach:hinh.map(h=>Math.round(tong.tinKhach*h/tk)),nhanVien:hinh.map(h=>h&&Math.round(tong.tinNhanVien*h/tk))};
+  const ten=['Nhân viên A','Nhân viên B'];
+  const nguoiTruc=ten.map((t,i)=>{const c=Math.round(tong.cuoc*(i?0.3:0.65)),km=Math.round(tong.khachMoi*(i?0.3:0.65));return {ten:t,cuoc:c,tin:c*n(4,6),trungViGiay:n(25,140),moc90Giay:n(300,900),chamNhatGiay:n(1200,5400),ngoaiGio:n(1,6),chot:n(1,5),khachMoi:km,chiDanMau:Math.round(km*n(40,70)/100),traLoiTre:n(0,2)};});
+  nguoiTruc.push({ten:'(chưa ai trả lời)',cuoc:tong.cuoc-nguoiTruc[0].cuoc-nguoiTruc[1].cuoc,tin:0,trungViGiay:null,moc90Giay:null,chamNhatGiay:null,ngoaiGio:0,chot:0,khachMoi:tong.khachMoi-nguoiTruc[0].khachMoi-nguoiTruc[1].khachMoi,chiDanMau:0,traLoiTre:0});
+  const ma=['AB12345','#set nỉ','CD23456','#quần kaki','EF34567','#áo thun','GH45678'].map((m,i)=>({ma:m,cuoc:Math.max(1,n(20,30)-i*4)}));
+  const ton={AB12345:{ton:0,phanLoai:8,het:8,choHang:3},CD23456:{ton:46,phanLoai:10,het:2,choHang:0},EF34567:{ton:212,phanLoai:12,het:0,choHang:0},GH45678:{ton:9,phanLoai:6,het:4,choHang:1}};
+  const the=[['Thẻ quan tâm',n(60,110)],['Thẻ cho size',n(15,30)],['Thẻ mua hàng',n(8,16)],['Thẻ đợi chốt',n(4,10)],['Thẻ không có size',n(3,12)]].map(([t,c])=>({the:t,cuoc:c}));
+  const caDen={'sáng':12,'chiều':18,'tối':22},sot=[];
+  for(let i=0;i<tong.sot;i++){const h=[9,10,14,16,19,21][n(0,5)],luc=d0+h*3600e3+n(0,59)*6e4,ca=h<12?'sáng':h<18?'chiều':'tối',han=d0+caDen[ca]*3600e3,treo=i<tong.sotConTreo;sot.push({duoi:String(n(10000,99999)),page:i%3?'p1':'p2',luc,han,traLoi:treo?null:han+n(5,180)*6e4,ca,nguoi:treo?null:ten[i%2]});}
+  sot.sort((a,b)=>a.luc-b.luc);
+  return {ngay,tinhLuc:Date.now(),tamTinh:Date.now()<d0+3*864e5,cauHinh:{ca:[{ten:'sáng',tu:8,den:12},{ten:'chiều',tu:12,den:18},{ten:'tối',tu:18,den:22}],chotGio:48,toiThieuPhut:15,nguongMau:5},tong,pages,theoGio,nguoiTruc,ma,the,sot,cuoc:[],tenPage:{p1:'Page thử 1',p2:'Page thử 2'},ton,tonLoi:''};
+}
+function mockXh(den){const out=[];for(let i=29;i>=0;i--){const g=congNgay(den,-i),d=mockNgay(g);out.push({ngay:g,tamTinh:d.tamTinh,cuoc:d.tong.cuoc,khachMoi:d.tong.khachMoi,tinKhach:d.tong.tinKhach,chotMoi:d.tong.chotMoi,sot:d.tong.sot,trungViGiay:d.nguoiTruc[0].trungViGiay});}return out;}
+
+/* ---------- gọi máy chủ ---------- */
+async function api(q){
+  if(TEST)return q.xuhuong?{ngay:mockXh(q.ngay)}:mockNgay(q.ngay);
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),60000);
+  try{
+    const r=await fetch('/api/cskh?'+new URLSearchParams(q),{headers:{'x-mk-key':S.key},signal:ctl.signal,cache:'no-store'});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===401){const e=new Error('Mã truy cập không đúng');e.auth=true;throw e;}
+    if(!r.ok)throw new Error(j.error||('Lỗi máy chủ '+r.status));
+    return j;
+  }finally{clearTimeout(t);}
+}
+
+/* ---------- vẽ ---------- */
+const tenPage=p=>esc((S.d.tenPage||{})[p]||p);
+function bar(v,max,cls){return '<i class="'+(cls||'')+'" style="width:'+(max>0?Math.max(v>0?1:0,v/max*100):0).toFixed(1)+'%"></i>';}
+function kpi(v,label,sub,cls){return '<div class="kpi '+(cls||'')+'"><b>'+v+'</b><span>'+esc(label)+'</span>'+(sub?'<small>'+esc(sub)+'</small>':'')+'</div>';}
+
+function render(){
+  const d=S.d,t=d.tong;
+  const ca=d.cauHinh.ca.map(c=>c.ten+' '+c.tu+'h–'+c.den+'h').join(', ');
+  const giay=d.nguoiTruc.filter(r=>r.trungViGiay!=null);
+  const tv=giay.length?giay.slice().sort((a,b)=>b.cuoc-a.cuoc)[0].trungViGiay:null;
+  $('info').textContent='Số tính lúc '+gio(d.tinhLuc,ngayVN(d.tinhLuc))+' ngày '+ngayVN(d.tinhLuc).split('-').reverse().join('/')+'. Ca trực: '+ca+'. Chốt = có đơn POS trong '+d.cauHinh.chotGio+' giờ.';
+  $('cards').innerHTML=
+    kpi(so(t.khachMoi),'Khách mới')+
+    kpi(so(t.cuoc),'Cuộc chat được tính','đã loại '+so(t.shopNhan)+' cuộc shop nhắn, khách không trả lời')+
+    kpi(so(t.tinKhach),'Tin khách')+
+    kpi(pt(t.chotMoi,t.khachMoi),'Tỉ lệ chốt khách mới',so(t.chotMoi)+' đơn'+(d.tamTinh?' · tạm tính, chưa đủ '+d.cauHinh.chotGio+' giờ':''),d.tamTinh?'amber':'')+
+    kpi(thoiLuong(tv),'Trả lời đầu (trung vị)','của người trực nhiều cuộc nhất')+
+    kpi(so(t.sot),'Tin sót',t.sotConTreo?so(t.sotConTreo)+' tin vẫn chưa ai trả lời':'đã trả lời hết, nhưng trễ ca',t.sot?'bad':'')+
+    kpi(so(t.coSdt),'Cuộc có SĐT');
+  const dong=(ten,s,cls)=>'<tr class="'+(cls||'')+'"><td>'+ten+'</td>'+[s.cuoc,s.khachMoi,s.khachCu,s.khachCuPhanHoi,s.tinKhach,s.tinNhanVien,s.tinTuDong,s.coSdt,s.chotMoi,s.sot,s.binhLuan].map((v,i)=>'<td class="num'+(i===9&&v?' warn':'')+'">'+so(v)+'</td>').join('')+'</tr>';
+  $('tbPage').innerHTML=d.pages.map(p=>dong(tenPage(p.page),p)).join('')+dong('Tổng',t,'tot');
+  $('tqNote').textContent='Đã loại '+so(t.tinNhanLai)+' tin shop gửi trước cho khách cũ. Bình luận đếm riêng, không tính vào trả lời đầu và tin sót.';
+
+  const mg=Math.max(1,...d.theoGio.khach,...d.theoGio.nhanVien);
+  $('tbGio').innerHTML=d.theoGio.khach.map((k,h)=>{
+    const c=d.cauHinh.ca.find(x=>h>=x.tu&&h<x.den),nv=d.theoGio.nhanVien[h];
+    if(!k&&!nv&&!c)return '';
+    return '<tr><td>'+String(h).padStart(2,'0')+':00</td><td>'+(c?esc(c.ten):'<span class="tag warn">ngoài giờ</span>')+'</td><td class="num">'+so(k)+'</td><td class="num">'+so(nv)+'</td><td class="bar">'+bar(k,mg)+bar(nv,mg,'s')+'</td></tr>';
+  }).join('')||'<tr><td colspan="5">Không có tin.</td></tr>';
+
+  const mm=Math.max(1,...d.ma.map(m=>m.cuoc));
+  $('tbMa').innerHTML=d.ma.map(m=>{
+    const tn=(d.ton||{})[m.ma],nhom=m.ma.charAt(0)==='#';
+    const c=nhom?'<td class="num">—</td><td class="num">—</td><td class="num">—</td>':tn?'<td class="num'+(tn.ton<=0?' warn':'')+'">'+so(tn.ton)+'</td><td class="num">'+so(tn.het)+'/'+so(tn.phanLoai)+'</td><td class="num">'+so(tn.choHang)+'</td>':'<td class="num" colspan="3">không thấy mã trên Pancake</td>';
+    return '<tr class="'+(tn&&tn.ton<=0?'bad':'')+'"><td class="code">'+esc(m.ma)+'</td><td class="num">'+so(m.cuoc)+'</td>'+c+'<td class="bar">'+bar(m.cuoc,mm)+'</td></tr>';
+  }).join('')||'<tr><td colspan="6">Chưa thấy mã nào được nhắc tới.</td></tr>';
+  if(d.tonLoi)$('tbMa').insertAdjacentHTML('afterbegin','<tr class="bad"><td colspan="6">Chưa lấy được tồn kho: '+esc(d.tonLoi)+'</td></tr>');
+
+  $('tbNv').innerHTML=d.nguoiTruc.map(r=>'<tr><td>'+esc(r.ten)+'</td><td class="num">'+so(r.cuoc)+'</td><td class="num">'+so(r.khachMoi)+'</td><td class="num">'+so(r.tin)+'</td><td class="num">'+thoiLuong(r.trungViGiay)+'</td><td class="num">'+thoiLuong(r.moc90Giay)+'</td><td class="num">'+thoiLuong(r.chamNhatGiay)+'</td><td class="num">'+so(r.ngoaiGio)+'</td><td class="num">'+so(r.chot)+'</td><td class="num">'+pt(r.chot,r.cuoc)+'</td><td class="num">'+so(r.chiDanMau)+'</td><td class="num'+(r.traLoiTre?' warn':'')+'">'+so(r.traLoiTre)+'</td></tr>').join('')||'<tr><td colspan="12">Chưa có cuộc nào.</td></tr>';
+
+  $('sotNote').textContent='Tin sót = tin khách đến hết ca vẫn chưa có người trả lời (tin đến sát cuối ca có thêm '+d.cauHinh.toiThieuPhut+' phút; tin ngoài giờ tính vào ca '+d.cauHinh.ca[0].ten+' kế tiếp). Gồm cả tin kết thúc như "ok", "cảm ơn": máy chưa phân biệt được.';
+  $('tbSot').innerHTML=d.sot.map(s=>'<tr class="'+(s.traLoi?'':'bad')+'"><td class="code">…'+esc(s.duoi)+'</td><td>'+tenPage(s.page)+'</td><td>'+gio(s.luc,d.ngay)+'</td><td>'+esc(s.ca)+'</td><td>'+gio(s.han,d.ngay)+'</td><td>'+(s.traLoi?gio(s.traLoi,d.ngay):'—')+'</td><td>'+esc(s.nguoi||'')+'</td><td>'+(s.traLoi?'<span class="tag warn">trả lời trễ</span>':'<span class="tag late">chưa ai trả lời</span>')+'</td></tr>').join('')||'<tr><td colspan="8">Không có tin sót.</td></tr>';
+
+  const mt=Math.max(1,...d.the.map(x=>x.cuoc));
+  $('tbThe').innerHTML=d.the.map(x=>'<tr><td>'+esc(x.the)+'</td><td class="num">'+so(x.cuoc)+'</td><td class="bar">'+bar(x.cuoc,mt)+'</td></tr>').join('')||'<tr><td colspan="3">Không có cuộc nào được gắn thẻ.</td></tr>';
+}
+function renderXh(){
+  const ds=S.xh||[],mx=Math.max(1,...ds.map(x=>x.khachMoi||0));
+  $('tbXh').innerHTML=ds.slice().reverse().map(x=>'<tr><td>'+esc(String(x.ngay).split('-').reverse().join('/'))+(x.tamTinh?' <span class="tag warn">tạm tính</span>':'')+'</td><td class="num">'+so(x.cuoc)+'</td><td class="num">'+so(x.khachMoi)+'</td><td class="num">'+so(x.tinKhach)+'</td><td class="num">'+so(x.chotMoi)+'</td><td class="num">'+pt(x.chotMoi,x.khachMoi)+'</td><td class="num'+(x.sot?' warn':'')+'">'+so(x.sot)+'</td><td class="num">'+thoiLuong(x.trungViGiay)+'</td><td class="bar">'+bar(x.khachMoi||0,mx)+'</td></tr>').join('')||'<tr><td colspan="9">Chưa có ngày nào được đồng bộ.</td></tr>';
+}
+function showTab(t){
+  S.tab=t;
+  for(const b of $('tabs').children)b.classList.toggle('on',b.dataset.tab===t);
+  for(const k of ['tq','gio','ma','nv','sot','the','xh'])$('sec-'+k).hidden=k!==t;
+  if(t==='xh'&&!S.xh)loadXh();
+}
+async function loadXh(){
+  try{S.xh=(await api({xuhuong:30,ngay:S.ngay})).ngay||[];renderXh();}
+  catch(e){$('tbXh').innerHTML='<tr class="bad"><td colspan="9">'+esc(e.message)+'</td></tr>';}
+}
+async function load(moi){
+  $('cNet').textContent='Đang tải…';$('cNet').className='chip';
+  try{
+    const q={ngay:S.ngay};if(moi)q.moi=1;
+    S.d=await api(q);S.xh=null;
+    render();showTab(S.tab);
+    $('cNet').textContent=TEST?'Chế độ thử':'Đã tải';
+    banner(TEST?'warn':'',TEST?'CHẾ ĐỘ THỬ: mọi số, tên, mã trên trang này là dữ liệu giả.':'');
+  }catch(e){
+    if(e.auth){keyLS.set('');S.key='';gate('Mã truy cập không đúng, dán lại.');return;}
+    $('cNet').textContent='Lỗi';$('cNet').className='chip bad';banner('err',e.message);
+  }
+}
+function gate(msg){$('app').hidden=true;$('gate').hidden=false;$('gMsg').textContent=msg||'';$('gKey').focus();}
+function start(){$('gate').hidden=true;$('app').hidden=false;$('btnThoat').hidden=TEST;$('fNgay').value=S.ngay;load();}
+
+S.ngay=congNgay(ngayVN(Date.now()),-1);
+$('btnGate').onclick=()=>{const v=$('gKey').value.trim();if(!v)return;S.key=v;keyLS.set(v);start();};
+$('gKey').onkeydown=e=>{if(e.key==='Enter')$('btnGate').click();};
+$('fNgay').onchange=()=>{if($('fNgay').value){S.ngay=$('fNgay').value;load();}};
+$('btnTruoc').onclick=()=>{S.ngay=congNgay(S.ngay,-1);$('fNgay').value=S.ngay;load();};
+$('btnSau').onclick=()=>{S.ngay=congNgay(S.ngay,1);$('fNgay').value=S.ngay;load();};
+$('btnTai').onclick=()=>load(true);
+$('btnThoat').onclick=()=>{keyLS.set('');S.key='';gate('');};
+$('tabs').onclick=e=>{const t=e.target.dataset&&e.target.dataset.tab;if(t)showTab(t);};
+if(TEST)start();else{S.key=keyLS.get();if(S.key)start();else gate('');}
+</script>
+</body>
+</html>
