@@ -49,9 +49,11 @@ export function pickImage(v: unknown, depth = 0): string | null {
 /** Bài Pancake → cùng dạng với bài đọc từ Meta. Giờ của Pancake là UTC, không kèm múi giờ. Bài đã gỡ và ảnh con của album thì bỏ (null). */
 /**
  * Video trên tường page có link dạng /reel/<id>; video Pancake giữ mà không nằm trên tường (tạo riêng cho quảng cáo,
- * tải lên thư viện) có link dạng /<page>/videos/<id>. Đối chiếu 23/11/2026 với danh sách bài trên tường của Facebook.
+ * tải lên thư viện) có link dạng /<page>/videos/<id>. Bài ảnh trên tường có status_type "added_photos"; bài ảnh
+ * ngoài tường có "shared_story". Đối chiếu 23/11/2026 với danh sách bài trên tường của Facebook (page Magic Kids).
  */
-export const isOffWall = (type: string, permalink: string | null): boolean => type === "video" && !!permalink && /\/videos\//.test(permalink);
+export const isOffWall = (type: string, permalink: string | null, statusType = ""): boolean =>
+  (type === "video" && !!permalink && /\/videos\//.test(permalink)) || (type === "photo" && statusType === "shared_story");
 
 export function fromPancakePost(r: any): (PagePost & { off_wall: boolean }) | null {
   const id = String(r?.id ?? "");
@@ -68,7 +70,7 @@ export function fromPancakePost(r: any): (PagePost & { off_wall: boolean }) | nu
     picture: pickImage({ attachments: r?.attachments, image_data: r?.image_data, full_picture: r?.full_picture, picture: r?.picture, thumbnail: r?.thumbnail }),
     permalink,
     kind: String(r?.type ?? ""),
-    off_wall: isOffWall(String(r?.type ?? ""), permalink),
+    off_wall: isOffWall(String(r?.type ?? ""), permalink, String(r?.status_type ?? "")),
   };
 }
 

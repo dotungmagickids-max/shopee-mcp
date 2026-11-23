@@ -38,8 +38,8 @@
 .fb .chip.none { cursor: default; color: var(--muted); font-weight: 400; }
 .fb .postgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; margin: 12px 0; }
 .fb .post { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--card); overflow: hidden; }
-.fb .post .thumb { position: relative; display: block; aspect-ratio: 1 / 1; background: var(--code-bg); }
-.fb .post .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fb .post .thumb { position: relative; display: block; width: 100%; height: 0; padding-bottom: 100%; overflow: hidden; background: var(--code-bg); }
+.fb .post .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; display: block; }
 .fb .post .noimg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 .fb .post .kind, .fb .post .day { position: absolute; top: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(0,0,0,.62); }
 .fb .post .kind { left: 8px; }
@@ -50,3 +50,6 @@
 .fb .post .msg { margin: 0; font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .fb .post .foot { display: flex; align-items: center; gap: 6px; margin-top: auto; }
 .fb .post .foot button { padding: 2px 8px; font-size: 12px; }
+.fb .post .adnote { position: absolute; left: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(0,0,0,.62); }
+.fb .post .adnote.on { background: #1a7f37; }
+.fb .post .src { font-size: 11px; color: var(--muted); align-self: center; }

@@ -2,6 +2,7 @@
  * FB Magic Tool — Nội dung: đếm và lọc bài đã đăng của từng page (hàm thuần, không gọi mạng, dễ test).
  */
 import { codesFromText } from "./launch";
+import { codesFromName } from "./magic";
 
 export type ContentKind = "video" | "reel" | "photo" | "other";
 export const KIND_LABEL: Record<ContentKind, string> = { video: "Video", reel: "Reel", photo: "Ảnh", other: "Khác" };
@@ -19,7 +20,14 @@ export type ContentPost = {
   codes: string[];
   /** Bài không nằm trên tường page (chỉ nguồn Pancake nhận ra): thường là video tạo riêng cho quảng cáo. */
   offWall: boolean;
+  /** Mã lấy từ đâu: chữ trong bài, tên quảng cáo của bài, hay anh nhập tay. null = chưa gắn mã. */
+  codeSource: CodeSource | null;
+  /** Quảng cáo dùng bài này có chi tiền trong 7 ngày gần nhất. null = không có. */
+  ads: PostAds | null;
 };
+
+export type CodeSource = "text" | "ads" | "manual";
+export type PostAds = { running: number; total: number; names: string[] };
 
 export const MAX_RANGE_DAYS = 180;
 export const RANGE_PRESETS = [7, 14, 30, 60, 90];
@@ -78,6 +86,8 @@ export function toContentPost(
     kind: kindOf(p.kind, p.permalink),
     codes: codesFromText(p.message),
     offWall: p.off_wall === true,
+    codeSource: codesFromText(p.message).length ? "text" : null,
+    ads: null,
   };
 }
 
@@ -121,4 +131,46 @@ export function countByCode(posts: ContentPost[]): { code: string; posts: number
   const m = new Map<string, number>();
   for (const p of posts) for (const c of p.codes) m.set(c, (m.get(c) ?? 0) + 1);
   return [...m.entries()].map(([code, n]) => ({ code, posts: n })).sort((a, b) => b.posts - a.posts || a.code.localeCompare(b.code));
+}
+
+/** Ô nhập mã của anh ("adt26001, BD26011") → danh sách mã hợp lệ, viết hoa, không trùng. Mã sai dạng bị bỏ. */
+export function parseCodes(input: string | null | undefined): string[] {
+  const parts = String(input ?? "").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  return [...new Set(parts.filter((c) => /^[A-Z]{2,4}\d{3,6}$/.test(c)))].slice(0, 10);
+}
+
+/**
+ * Gom quảng cáo theo bài gốc. `rows` = quảng cáo có chi tiền gần đây (mỗi quảng cáo một dòng), `info` = bài gốc và
+ * trạng thái hiện tại của từng quảng cáo. "Đang chạy" = quảng cáo, nhóm và chiến dịch đều bật (ACTIVE).
+ */
+export function adsByPost(
+  rows: { ad_id: string; ad_name: string | null }[],
+  info: Map<string, { story_id: string | null; status: string }>
+): Map<string, PostAds> {
+  const out = new Map<string, PostAds>();
+  for (const r of rows) {
+    const i = info.get(r.ad_id);
+    if (!i?.story_id) continue;
+    const a = out.get(i.story_id) ?? { running: 0, total: 0, names: [] };
+    a.total += 1;
+    if (i.status === "ACTIVE") a.running += 1;
+    if (r.ad_name && a.names.length < 5 && !a.names.includes(r.ad_name)) a.names.push(r.ad_name);
+    out.set(i.story_id, a);
+  }
+  return out;
+}
+
+/**
+ * Gắn quảng cáo và hoàn thiện mã cho bài. Thứ tự ưu tiên mã: anh nhập tay → chữ trong bài → tên quảng cáo của bài
+ * (quy ước MÃ-Pxx-Vxx). Dòng nhập tay rỗng nghĩa là anh chưa nhập, không xóa mã đọc được.
+ */
+export function enrich(posts: ContentPost[], ads: Map<string, PostAds>, manual: Map<string, string[]>): ContentPost[] {
+  return posts.map((p) => {
+    const a = ads.get(p.id) ?? null;
+    const m = manual.get(p.id);
+    if (m?.length) return { ...p, ads: a, codes: m, codeSource: "manual" };
+    if (p.codes.length || !a) return { ...p, ads: a };
+    const fromAds = [...new Set(a.names.flatMap((n) => codesFromName(n)))];
+    return fromAds.length ? { ...p, ads: a, codes: fromAds, codeSource: "ads" } : { ...p, ads: a };
+  });
 }

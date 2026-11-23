@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { fromPancakePost, isOffWall, pancakePageTokens, pickImage, vnRangeUnix } from "../src/lib/facebook/pancake-posts";
 import { composioConfig, dayWindows, fromGraphPost, postsOf } from "../src/lib/facebook/composio-posts";
+import { adsByPost, enrich, parseCodes } from "../src/lib/facebook/content";
 import { contentRange, countByCode, countByPage, daysToFetch, inRange, kindOf, matches, toContentPost } from "../src/lib/facebook/content";
 
 const raw = (id: string, message: string, created_time: string, kind = "added_photos", permalink: string | null = null) => ({
@@ -91,6 +92,9 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
     assert.equal(matches(toContentPost("111", real), { scope: "off" }), false);
     assert.equal(countByPage([off, toContentPost("111", real)].filter((p) => matches(p, {})), ["111"])[0].total, 1);
     assert.equal(isOffWall("photo", "https://www.facebook.com/111/videos/2"), false);
+    // Bài ảnh ngoài tường: status_type "shared_story".
+    assert.equal(fromPancakePost({ id: "111_12", message: "Quần nỉ", type: "photo", status_type: "shared_story", inserted_at: "2026-10-27T00:46:00" })!.off_wall, true);
+    assert.equal(fromPancakePost({ id: "111_13", message: "Quần nỉ", type: "photo", status_type: "added_photos", inserted_at: "2026-10-27T00:46:00" })!.off_wall, false);
     assert.equal(pickImage({ attachments: { data: [], target: { url: "https://www.facebook.com/reel/9/" } } }), null);
     assert.equal(toContentPost("111", fromPancakePost({ id: "111_6", type: "livestream", inserted_at: "2026-11-21T03:00:00" })!).kind, "video");
     assert.equal(pickImage({ attachments: { data: [{ url: "https://example.test/clip.mp4" }] } }), null);
@@ -128,5 +132,33 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
     assert.equal(c.day, "2026-11-18");
     assert.deepEqual(c.codes, ["ADT25003"]);
     assert.equal(fromGraphPost({}), null);
+  });
+
+  it("bài đang chạy quảng cáo và mã gắn với bài: nhập tay > chữ trong bài > tên quảng cáo", () => {
+    assert.deepEqual(parseCodes(" adt26001, BD26011 ; adt26001 abc 12345"), ["ADT26001", "BD26011"]);
+    assert.deepEqual(parseCodes(""), []);
+    const ads = adsByPost(
+      [
+        { ad_id: "a1", ad_name: "QD25009-P01-V01" },
+        { ad_id: "a2", ad_name: "QD25009-P01-V02" },
+        { ad_id: "a3", ad_name: "BD26011.BD24066-P02-V01" },
+        { ad_id: "a4", ad_name: "khong ro bai" },
+      ],
+      new Map([
+        ["a1", { story_id: "111_3", status: "ACTIVE" }],
+        ["a2", { story_id: "111_3", status: "PAUSED" }],
+        ["a3", { story_id: "111_1", status: "CAMPAIGN_PAUSED" }],
+        ["a4", { story_id: null, status: "ACTIVE" }],
+      ])
+    );
+    assert.deepEqual(ads.get("111_3"), { running: 1, total: 2, names: ["QD25009-P01-V01", "QD25009-P01-V02"] });
+    assert.equal(ads.get("111_1")!.running, 0);
+    assert.equal(ads.size, 2);
+    const out = enrich(posts, ads, new Map([["111_2", ["AO26004"]], ["222_1", []]]));
+    const by = (id: string) => out.find((p) => p.id === id)!;
+    assert.deepEqual([by("111_3").codes, by("111_3").codeSource, by("111_3").ads?.running], [["QD25009"], "ads", 1]); // bài không ghi mã: lấy từ tên QC
+    assert.deepEqual([by("111_1").codes, by("111_1").codeSource], [["ADT26001"], "text"]); // chữ trong bài thắng tên QC
+    assert.deepEqual([by("111_2").codes, by("111_2").codeSource], [["AO26004"], "manual"]); // nhập tay thắng tất cả
+    assert.deepEqual([by("222_1").codes, by("222_1").codeSource, by("222_1").ads], [["ADT26001"], "text", null]); // dòng nhập tay rỗng: giữ mã đọc được
   });
 });
