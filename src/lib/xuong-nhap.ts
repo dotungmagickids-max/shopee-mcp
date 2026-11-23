@@ -1,5 +1,5 @@
 import { loiDongTrung } from "./san-xuat";
-import { ngayHopLe } from "./xuong";
+import { NGUON_XUONG, ngayHopLe } from "./xuong";
 
 /**
  * Xưởng tự nhập phiếu cắt và phiếu đóng gói (giao hàng) ở trang /xuong. Số vào Sổ hàng xưởng NGAY (anh chốt 23/11),
@@ -12,6 +12,7 @@ import { ngayHopLe } from "./xuong";
 export type LenhNhap =
   | { ok: true; loai: "cat"; fn: "mk_sx_lot_save"; args: Record<string, unknown>; ma: string; lo: string; ghiDe: boolean; tong: number }
   | { ok: true; loai: "giao"; fn: "mk_sx_arrival_save"; args: Record<string, unknown>; ma: string; lo: string; tong: number }
+  | { ok: true; loai: "giao_sua"; fn: "mk_sx_arrival_save"; args: Record<string, unknown>; id: number; huy: boolean; tong: number }
   | { ok: false; error: string };
 
 const sai = (error: string): LenhNhap => ({ ok: false, error });
@@ -38,18 +39,24 @@ const gioVN = (now: number) => new Date(now + 7 * 3600_000).toISOString().slice(
  * Đọc thân POST của /api/xuong:
  *   { action: "cat",  ma_hang, lo, ngay_cat?, hen_tra?, dot_dat?, ghi_de?, dong: [{ mau, size, so }], nguoi }
  *   { action: "giao", ma_hang, lo, ngay, so_phieu?, dong: [{ mau, size, so }], nguoi }
+ *   { action: "giao_sua", id, ngay, so_phieu?, huy?, dong: [{ mau, size, so }], nguoi }   (sửa phiếu đóng gói kho chưa đếm; huy = đưa mọi dòng về 0)
  * Dòng có số 0 hoặc trống bị bỏ. `ghi_de` = thay số cắt của lô đã có (không đổi ngày hẹn ở đây).
  */
 export function docLenhNhap(body: unknown, homNay: string, now: number = Date.now()): LenhNhap {
   if (!body || typeof body !== "object" || Array.isArray(body)) return sai("Thân yêu cầu phải là một đối tượng JSON");
   const b = body as Record<string, unknown>;
-  if (b.action !== "cat" && b.action !== "giao") return sai('action phải là "cat" hoặc "giao"');
+  if (b.action !== "cat" && b.action !== "giao" && b.action !== "giao_sua") return sai('action phải là "cat", "giao" hoặc "giao_sua"');
   const nguoi = chu(b.nguoi);
   if (nguoi == null || nguoi.length < 2 || nguoi.length > 40) return sai("Cần tên người nhập (2 đến 40 ký tự)");
-  const ma = chu(b.ma_hang)?.toUpperCase() ?? "";
-  if (!/^[A-Z0-9][A-Z0-9._-]{2,29}$/.test(ma)) return sai("Mã hàng không hợp lệ");
-  const lo = chu(b.lo);
-  if (lo == null || lo.length < 1 || lo.length > 30) return sai("Tên lô không hợp lệ");
+  const laSua = b.action === "giao_sua";
+  const huy = laSua && b.huy === true;
+  const id = Number(b.id);
+  if (laSua && (!Number.isSafeInteger(id) || id <= 0)) return sai("Mã phiếu đóng gói không hợp lệ");
+  // Sửa phiếu không đổi mã hàng, lô: phiếu vẫn thuộc lô cũ.
+  const ma = laSua ? "" : (chu(b.ma_hang)?.toUpperCase() ?? "");
+  if (!laSua && !/^[A-Z0-9][A-Z0-9._-]{2,29}$/.test(ma)) return sai("Mã hàng không hợp lệ");
+  const lo = laSua ? "" : chu(b.lo);
+  if (!laSua && (lo == null || lo.length < 1 || lo.length > 30)) return sai("Tên lô không hợp lệ");
 
   if (!Array.isArray(b.dong) || b.dong.length > 300) return sai("Bảng màu × size không hợp lệ");
   const dong: { mau: string; size: string; so: number }[] = [];
@@ -61,7 +68,8 @@ export function docLenhNhap(body: unknown, homNay: string, now: number = Date.no
     if (size == null || size.length > 10) return sai("Size không hợp lệ");
     const so = soNguyen(d.so);
     if (so == null || so > 100_000) return sai(`Số lượng màu "${mau}" size "${size}" phải là số nguyên từ 0 đến 100.000`);
-    if (so > 0) dong.push({ mau, size, so });
+    // Hủy phiếu: giữ các dòng với số 0 (database cần ít nhất một dòng).
+    if (so > 0 || huy) dong.push({ mau, size, so: huy ? 0 : so });
   }
   if (!dong.length) return sai("Chưa có số lượng nào");
   const trung = loiDongTrung(dong);
@@ -87,9 +95,9 @@ export function docLenhNhap(body: unknown, homNay: string, now: number = Date.no
     const dot = trong(b.dot_dat) ? null : chu(b.dot_dat);
     if (dot != null && dot.length > 30) return sai("Đợt của phiếu đặt không hợp lệ");
     return {
-      ok: true, loai: "cat", fn: "mk_sx_lot_save", ma, lo, ghiDe, tong,
+      ok: true, loai: "cat", fn: "mk_sx_lot_save", ma, lo: lo as string, ghiDe, tong,
       args: {
-        p_agent: agent, p_ma_hang: ma, p_lo: lo, p_nguon: `Trang xưởng (/xuong), phiếu cắt: ${nguoi}`,
+        p_agent: agent, p_ma_hang: ma, p_lo: lo, p_nguon: `${NGUON_XUONG}, phiếu cắt: ${nguoi}`,
         p_lines: dong.map((d) => ({ mau: d.mau, size: d.size, so_cat: d.so })),
         p_ngay_cat: ngayCat,
         // Lô đã có thì ngày hẹn chỉ đổi qua mục "Đổi ngày hẹn trả" để giữ lịch sử.
@@ -104,12 +112,25 @@ export function docLenhNhap(body: unknown, homNay: string, now: number = Date.no
   if ((ngayGiao as string) > homNay) return sai("Ngày giao không được ở tương lai");
   const soPhieu = trong(b.so_phieu) ? "" : chu(b.so_phieu);
   if (soPhieu == null || soPhieu.length > 60) return sai("Số phiếu của xưởng không hợp lệ");
+  if (laSua) {
+    return {
+      ok: true, loai: "giao_sua", fn: "mk_sx_arrival_save", id, huy, tong,
+      args: {
+        p_agent: agent,
+        p_nguon: `${NGUON_XUONG}, phiếu đóng gói: ${nguoi} · ${huy ? "hủy" : "sửa"} lúc ${gioVN(now)}`,
+        p_id: id, p_ngay: ngayGiao,
+        p_lines: dong.map((d) => ({ mau: d.mau, size: d.size, xuong_giao: d.so })),
+        p_so_phieu_xuong: soPhieu || null,
+        p_ghi_chu: huy ? "Xưởng hủy phiếu nhập nhầm" : null,
+      },
+    };
+  }
   return {
-    ok: true, loai: "giao", fn: "mk_sx_arrival_save", ma, lo, tong,
+    ok: true, loai: "giao", fn: "mk_sx_arrival_save", ma, lo: lo as string, tong,
     args: {
       p_agent: agent,
       // Nguồn phải khác nhau giữa các lần giao cùng lô cùng ngày (database từ chối lần trùng lô, ngày, nguồn).
-      p_nguon: `Trang xưởng (/xuong), phiếu đóng gói: ${nguoi} · ${soPhieu ? `phiếu ${soPhieu}` : `nhập lúc ${gioVN(now)}`}`,
+      p_nguon: `${NGUON_XUONG}, phiếu đóng gói: ${nguoi} · ${soPhieu ? `phiếu ${soPhieu}` : `nhập lúc ${gioVN(now)}`}`,
       p_ma_hang: ma, p_lo: lo, p_ngay: ngayGiao,
       p_lines: dong.map((d) => ({ mau: d.mau, size: d.size, xuong_giao: d.so })),
       p_so_phieu_xuong: soPhieu || null,

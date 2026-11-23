@@ -207,10 +207,16 @@ let MOCK=null;
 const MOCKP=[];
 /* máy chủ giả cho nhập phiếu cắt, phiếu đóng gói và đọc ảnh */
 function mockNhap(b){
-  const tong=b.dong.reduce((a,x)=>a+x.so,0),x=MOCK.los.find(l=>l.ma===b.ma_hang&&l.lo===b.lo);
-  if(b.action==='giao'){
+  const tong=b.huy?0:b.dong.reduce((a,x)=>a+x.so,0),x=MOCK.los.find(l=>l.ma===b.ma_hang&&l.lo===b.lo);
+  if(b.action==='giao_sua'){
+    const lo=MOCK.los.find(l=>l.lanVe.some(v=>v.id===b.id)),v=lo&&lo.lanVe.find(q=>q.id===b.id);
+    if(!v)return {status:404,body:{error:'Không còn phiếu đóng gói này trong sổ'}};
+    if(!v.sua)return {status:409,body:{error:'Phiếu này kho Magickids đã đếm: không sửa được'}};
+    lo.daGiao+=tong-v.giao;lo.choKhoDem+=tong-v.giao;
+    if(b.huy)lo.lanVe=lo.lanVe.filter(q=>q.id!==b.id);else Object.assign(v,{ngay:b.ngay,giao:tong,soPhieu:b.so_phieu||'',dong:b.dong});
+  }else if(b.action==='giao'){
     if(!x)return {status:400,body:{error:'Chưa có lô cắt '+b.ma_hang+' '+b.lo+'. Nhập phiếu cắt của lô này trước'}};
-    x.lanVe.push({ngay:b.ngay,giao:tong,khoDem:0,choDem:true});x.daGiao+=tong;x.choKhoDem+=tong;
+    x.lanVe.push({id:Date.now(),sua:true,soPhieu:b.so_phieu||'',dong:b.dong,ngay:b.ngay,giao:tong,khoDem:0,choDem:true});x.daGiao+=tong;x.choKhoDem+=tong;
   }else{
     if(x&&!b.ghi_de)return {status:409,body:{error:'Lô '+b.ma_hang+' '+b.lo+' đã có số cắt',daCo:true}};
     if(x)x.soCat=tong;
@@ -262,7 +268,7 @@ async function goi(method,body,query){
     await new Promise(r=>setTimeout(r,200));
     if(!MOCK)MOCK=mock();
     if(query==='phieu'||(body&&/^phieu_/.test(body.action||'')))return mockPhieu(method,body);
-    if(body&&(body.action==='cat'||body.action==='giao'))return mockNhap(body);
+    if(body&&(body.action==='cat'||body.action==='giao'||body.action==='giao_sua'))return mockNhap(body);
     if(body&&body.action==='doc_anh'){await new Promise(r=>setTimeout(r,900));return mockDocAnh(body);}
     return method==='GET'?{status:200,body:JSON.parse(JSON.stringify(MOCK))}:mockGhi(body);
   }
@@ -430,9 +436,14 @@ function veTra(d,body){
     if(x.conNo<0)det.push(mk('div','amber','Trả thừa '+num(-x.conNo)+' cái so với số cắt.'));
     det.push(mk('div','sec','Các đợt trả'));
     if(x.lanVe.length){
-      const tb=mk('table'),bd=mk('tbody'),hr=mk('tr');hr.append(mk('th','','Ngày'),mk('th','num','Xưởng giao'),mk('th','num','Kho đã đếm'));
+      const tb=mk('table'),bd=mk('tbody'),hr=mk('tr'),coSua=x.lanVe.some(v=>v.sua);hr.append(mk('th','','Ngày'),mk('th','num','Xưởng giao'),mk('th','num','Kho đã đếm'));
+      if(coSua)hr.append(mk('th',''));
       const th=mk('thead');th.append(hr);
-      for(const v of x.lanVe){const r=mk('tr');r.append(mk('td','',day(v.ngay,true)),mk('td','num',num(v.giao)),mk('td','num'+(v.choDem?' hot':''),v.choDem&&!v.khoDem?'chờ đếm':num(v.khoDem)+(v.choDem?' (chờ đếm)':'')));bd.append(r);}
+      for(const v of x.lanVe){
+        const r=mk('tr');r.append(mk('td','',day(v.ngay,true)),mk('td','num',num(v.giao)),mk('td','num'+(v.choDem?' hot':''),v.choDem&&!v.khoDem?'chờ đếm':num(v.khoDem)+(v.choDem?' (chờ đếm)':'')));
+        if(coSua){const td=mk('td','num');if(v.sua){const b=mk('button','','Sửa');b.type='button';b.style.padding='4px 10px';b.onclick=()=>suaPhieuGiao(x,v);td.append(b);}r.append(td);}
+        bd.append(r);
+      }
       tb.append(th,bd);const w=mk('div','scroll');w.append(tb);det.push(w);
     }else det.push(mk('div','m','Chưa trả đợt nào.'));
     const moc=[x.ngayCat?'Cắt ngày '+day(x.ngayCat,true):'',x.mau?'Số cắt: '+x.mau:''].filter(Boolean);
@@ -856,6 +867,15 @@ function layNguonNhap(n){
   if(n.mt){p.sizes=n.mt.sizes.slice();p.hang=n.mt.hang.map(h=>({mau:h.mau,o:[]}));n.mt.hang.forEach(h=>h.o.forEach((v,i)=>{if(v)p.goiY[h.mau+'|'+i]=n.goi+' '+v;}));}
   else if(n.mau.length)p.hang=n.mau.map(m=>({mau:m,o:[]}));
 }
+/* mở lại một phiếu đóng gói do xưởng nhập (kho chưa đếm) để sửa số hoặc hủy */
+function suaPhieuGiao(x,v){
+  const cmp=(a,b)=>{const na=Number(a),nb=Number(b);return (isFinite(na)&&isFinite(nb)&&na!==nb)?na-nb:String(a).localeCompare(String(b),'vi');};
+  const sizes=[...new Set((v.dong||[]).map(d=>d.size))].sort(cmp),mau=[...new Set((v.dong||[]).map(d=>d.mau))];
+  const p=nhapMoi('giao');
+  Object.assign(p,{suaId:v.id,ma:x.ma,lo:x.lo,ngay:v.ngay,soPhieu:v.soPhieu||'',goc:(v.dong||[]).map(d=>({mau:d.mau,size:d.size,so:0})),
+    sizes:sizes.length?sizes:p.sizes,hang:mau.length?mau.map(m=>({mau:m,o:sizes.map(sz=>{const d=v.dong.find(q=>q.mau===m&&q.size===sz);return d&&d.so?String(d.so):'';})})):p.hang});
+  NP.p=p;NP.msg=null;S.tab='nhap';ve();scrollTo(0,0);
+}
 /* thu nhỏ ảnh trên máy trước khi gửi: cạnh dài tối đa 1800px, JPEG */
 function thuNhoAnh(file){
   return new Promise((ok,loi)=>{
@@ -917,14 +937,15 @@ function veNhap(d,body){
   const chon=mk('div','loc');
   for(const k in NHAN_NHAP){const b=mk('button',p.loai===k?'on':'',NHAN_NHAP[k].ten);b.type='button';b.onclick=()=>{if(p.loai!==k){NP.p=nhapMoi(k);NP.msg=null;ve();}};chon.append(b);}
   body.append(chon);
-  body.append(mk('div','note',p.loai==='cat'
+  if(p.suaId)body.append(mk('div','note','ĐANG SỬA phiếu đóng gói ngày '+day(p.ngay,true)+' của lô '+p.ma+' '+p.lo+'. Chỉ sửa được khi kho Magickids chưa đếm. Bấm "Phiếu cắt" hoặc "Xóa trắng" để thôi sửa.'));
+  else body.append(mk('div','note',p.loai==='cat'
     ?'Phiếu cắt: số cắt thật theo màu × size của một lô. Bấm lưu là số vào sổ ngay và Magickids thấy luôn.'
     :'Phiếu đóng gói: số xưởng đóng gói giao đi của một lô, mỗi lần giao một phiếu. Bấm lưu là Magickids thấy ngay ở mục "đã giao"; kho Magickids đếm xong mới trừ vào còn nợ.'));
   if(NP.msg)body.append(mk('div','msg '+NP.msg.k,NP.msg.t));
   const [wTen,iTen]=o('Tên người nhập (máy nhớ cho lần sau)','text',S.ten,40);
   iTen.onchange=()=>{S.ten=iTen.value.replace(/\s+/g,' ').trim();store.set('mk_xuong_ten',S.ten);};
   const c1=mk('div','card'),d1=mk('div','d');d1.append(wTen);
-  const ns=nguonNhap(d,p.loai);
+  const ns=p.suaId?[]:nguonNhap(d,p.loai);
   if(ns.length){
     const l=mk('label','',p.loai==='cat'?'Chọn phiếu đặt đang chờ cắt (điền sẵn màu, size)':'Chọn lô đang trả hàng (điền sẵn màu, size)'),sel=mk('select');
     sel.append(new Option('— chọn —',''));ns.forEach((n,i)=>sel.append(new Option(n.nhan,String(i))));
@@ -938,10 +959,11 @@ function veNhap(d,body){
     p.doc='Số trong bảng do máy đọc từ ảnh: SOÁT LẠI từng ô trước khi lưu.'+(b.ghiChu?' Máy ghi chú: '+b.ghiChu:'')+(b.sizes&&b.sizes.length?'':' Máy không đọc ra bảng nào.');
     ve();
   });
-  d1.append(nutAnh,tbAnh);
+  if(!p.suaId)d1.append(nutAnh,tbAnh);
   const noi=(k,i)=>{i.oninput=()=>{p[k]=i.value;p.daCo=false;};return i;};
   const [wMa,iMa]=o('Mã hàng','text',p.ma,30);noi('ma',iMa);
   const [wLo,iLo]=o(p.loai==='cat'?'Tên lô (ví dụ L2)':'Lô','text',p.lo,30);noi('lo',iLo);
+  if(p.suaId){iMa.disabled=true;iLo.disabled=true;}
   const r1=mk('div','row2');r1.append(wMa,wLo);d1.append(r1);
   const [wNg,iNg]=o(L.ngay,'date',p.ngay);iNg.max=homNay();noi('ngay',iNg);
   if(p.loai==='cat'){const [wH,iH]=o('Hẹn trả (bỏ trống được)','date',p.hen);noi('hen',iH);const r2=mk('div','row2');r2.append(wNg,wH);d1.append(r2);}
@@ -971,27 +993,43 @@ function veNhap(d,body){
     }
     if(!dong.length)return 'Chưa có số lượng nào.';
     const tong=dong.reduce((a,x)=>a+x.so,0);
-    const than=p.loai==='cat'?{action:'cat',ma_hang:ma,lo,ngay_cat:p.ngay,hen_tra:p.hen||undefined,dot_dat:p.dot||undefined,ghi_de:ghiDe||undefined,dong,nguoi:ten}
+    const than=p.suaId?{action:'giao_sua',id:p.suaId,ngay:p.ngay,so_phieu:p.soPhieu.trim()||undefined,dong,nguoi:ten}
+      :p.loai==='cat'?{action:'cat',ma_hang:ma,lo,ngay_cat:p.ngay,hen_tra:p.hen||undefined,dot_dat:p.dot||undefined,ghi_de:ghiDe||undefined,dong,nguoi:ten}
       :{action:'giao',ma_hang:ma,lo,ngay:p.ngay,so_phieu:p.soPhieu.trim()||undefined,dong,nguoi:ten};
     return {than,tong,ma,lo};
   };
   const luu=async(ghiDe,nut)=>{
     msg.className='msg err';
     const v=lay(ghiDe);if(typeof v==='string'){msg.textContent=v;return;}
-    if(!confirm((ghiDe?'THAY số cắt của lô ':'Lưu '+L.ten.toLowerCase()+' ')+v.ma+' '+v.lo+': tổng '+num(v.tong)+' cái?\nSố vào sổ ngay, Magickids thấy luôn.'))return;
+    if(!confirm((p.suaId?'SỬA phiếu đóng gói ':ghiDe?'THAY số cắt của lô ':'Lưu '+L.ten.toLowerCase()+' ')+v.ma+' '+v.lo+': tổng '+num(v.tong)+' cái?\nSố vào sổ ngay, Magickids thấy luôn.'))return;
     nut.disabled=true;NP.busy=true;msg.className='msg m';msg.textContent='Đang lưu…';
     try{
       const r=await goi('POST',v.than);
       if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
       if(r.status===409&&r.body&&r.body.daCo){p.daCo=true;NP.msg={k:'err',t:'Lô '+v.ma+' '+v.lo+' đã có số cắt trong sổ. Nếu đây là lô mới, đổi tên lô (ví dụ L3). Nếu muốn sửa số cắt của lô này, bấm "Thay số cắt của lô đã có".'};ve();return;}
       if(r.status!==200||!r.body||!r.body.ok){msg.className='msg err';msg.textContent='Chưa lưu được: '+(r.body&&r.body.error||'máy chủ báo lỗi '+r.status)+'.';nut.disabled=false;return;}
-      NP.msg={k:'ok',t:'Đã lưu lúc '+hhmm(Date.now())+': '+L.ten.toLowerCase()+' '+v.ma+' '+v.lo+', tổng '+num(v.tong)+' cái. Xem lại ở tab "Tiến độ trả hàng".'};
+      NP.msg={k:'ok',t:'Đã '+(p.suaId?'sửa':'lưu')+' lúc '+hhmm(Date.now())+': '+L.ten.toLowerCase()+' '+v.ma+' '+v.lo+', tổng '+num(v.tong)+' cái. Xem lại ở tab "Tiến độ trả hàng".'};
       NP.p=nhapMoi(p.loai);await tai();scrollTo(0,0);
     }catch(e){msg.className='msg err';msg.textContent='Chưa lưu được ('+loiMang(e)+'). Thử lại.';nut.disabled=false;}
     finally{NP.busy=false;}
   };
-  const bLuu=mk('button','primary','Lưu '+L.ten.toLowerCase()+' vào sổ');bLuu.type='button';bLuu.onclick=()=>luu(false,bLuu);
+  const bLuu=mk('button','primary',p.suaId?'Lưu phiếu đã sửa':'Lưu '+L.ten.toLowerCase()+' vào sổ');bLuu.type='button';bLuu.onclick=()=>luu(false,bLuu);
   const hang=mk('div','loc');hang.append(bLuu);
+  if(p.suaId){
+    const bHuy=mk('button','','Hủy phiếu này');bHuy.type='button';
+    bHuy.onclick=async()=>{
+      const ten=iTen.value.replace(/\s+/g,' ').trim();msg.className='msg err';
+      if(ten.length<2||ten.length>40){msg.textContent='Ghi tên người nhập trước (2 đến 40 ký tự).';return;}
+      if(!confirm('HỦY phiếu đóng gói ngày '+day(p.ngay,true)+' của lô '+p.ma+' '+p.lo+'?\nSố đã giao của phiếu này về 0 và phiếu không hiện nữa.'))return;
+      bHuy.disabled=true;msg.className='msg m';msg.textContent='Đang hủy…';
+      try{
+        const r=await goi('POST',{action:'giao_sua',id:p.suaId,huy:true,ngay:p.ngay,dong:p.goc,nguoi:ten});
+        if(r.status!==200||!r.body||!r.body.ok){msg.className='msg err';msg.textContent='Chưa hủy được: '+(r.body&&r.body.error||'máy chủ báo lỗi '+r.status)+'.';bHuy.disabled=false;return;}
+        NP.msg={k:'ok',t:'Đã hủy phiếu đóng gói ngày '+day(p.ngay,true)+' của lô '+p.ma+' '+p.lo+'.'};NP.p=nhapMoi('giao');await tai();scrollTo(0,0);
+      }catch(e){msg.className='msg err';msg.textContent='Chưa hủy được ('+loiMang(e)+'). Thử lại.';bHuy.disabled=false;}
+    };
+    hang.append(bHuy);
+  }
   if(p.loai==='cat'&&p.daCo){const bDe=mk('button','','Thay số cắt của lô đã có');bDe.type='button';bDe.onclick=()=>luu(true,bDe);hang.append(bDe);}
   const bXoa=mk('button','','Xóa trắng');bXoa.type='button';bXoa.onclick=()=>{NP.p=nhapMoi(p.loai);NP.msg=null;ve();};hang.append(bXoa);
   body.append(hang,msg);

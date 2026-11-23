@@ -30,7 +30,7 @@ export async function docSoSanXuat(): Promise<SoSanXuat> {
       db()
         .from("sx_hang_ve")
         .select(
-          "id, lo_id, ngay, so_phieu_xuong, nguoi_ky, so_phieu_pancake, khong_nhap_pancake, ghi_chu, " +
+          "id, lo_id, ngay, so_phieu_xuong, nguoi_ky, so_phieu_pancake, khong_nhap_pancake, ghi_chu, nguon, " +
             "dong:sx_hang_ve_dong(mau, size, xuong_giao, kho_dem)"
         )
         .order("id")

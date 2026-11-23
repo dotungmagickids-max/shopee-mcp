@@ -83,6 +83,41 @@ describe("docLenhNhap: phiếu đóng gói", () => {
   });
 });
 
+describe("docLenhNhap: sửa và hủy phiếu đóng gói", () => {
+  const sua = { action: "giao_sua", id: 7, ngay: "2026-11-22", so_phieu: "0457", dong, nguoi: "Người B" };
+  it("sửa: gọi mk_sx_arrival_save theo id, chỉ số xưởng giao, nguồn vẫn là trang xưởng, không đổi mã hàng và lô", () => {
+    const r = docLenhNhap(sua, nay, gio);
+    assert.ok(r.ok && r.loai === "giao_sua");
+    if (!r.ok || r.loai !== "giao_sua") return;
+    assert.deepEqual([r.id, r.huy, r.tong], [7, false, 1235]);
+    assert.deepEqual(r.args, {
+      p_agent: "Xưởng: Người B", p_nguon: "Trang xưởng (/xuong), phiếu đóng gói: Người B · sửa lúc 10:04:05", p_id: 7, p_ngay: "2026-11-22",
+      p_lines: [{ mau: "Đỏ", size: "130", xuong_giao: 1200 }, { mau: "Trắng", size: "130", xuong_giao: 35 }],
+      p_so_phieu_xuong: "0457", p_ghi_chu: null,
+    });
+    assert.ok(!/kho_dem|pancake|nguoi_ky|p_ma_hang|p_lo/.test(JSON.stringify(r.args)));
+  });
+  it("hủy: mọi dòng về 0, có ghi chú hủy", () => {
+    const r = docLenhNhap({ ...sua, huy: true, dong: [{ mau: "Đỏ", size: "130", so: 0 }] }, nay, gio);
+    assert.ok(r.ok && r.loai === "giao_sua" && r.huy && r.tong === 0);
+    if (!r.ok) return;
+    assert.deepEqual([r.args.p_lines, r.args.p_ghi_chu], [[{ mau: "Đỏ", size: "130", xuong_giao: 0 }], "Xưởng hủy phiếu nhập nhầm"]);
+  });
+  it("thiếu id, hoặc sửa mà không còn số nào thì từ chối", () => {
+    assert.equal(docLenhNhap({ ...sua, id: "x" }, nay, gio).ok, false);
+    assert.equal(docLenhNhap({ ...sua, dong: [{ mau: "Đỏ", size: "130", so: 0 }] }, nay, gio).ok, false);
+  });
+  it("tham số gửi đi có trong chữ ký hàm của migration", () => {
+    const sql = fs.readFileSync("supabase/migrations/0025_san_xuat.sql", "utf8");
+    const r = docLenhNhap(sua, nay, gio);
+    assert.ok(r.ok);
+    if (!r.ok) return;
+    const m = sql.match(/create or replace function public\.mk_sx_arrival_save\(([^)]*)\)/);
+    const params = [...m![1].matchAll(/\b(p_\w+)\s/g)].map((x) => x[1]);
+    for (const k of Object.keys(r.args)) assert.ok(params.includes(k), k);
+  });
+});
+
 describe("soNguyen, loiNhap", () => {
   it("đọc số gõ tay", () => {
     assert.deepEqual([soNguyen("1.200"), soNguyen(" 35 "), soNguyen(""), soNguyen(null), soNguyen(7), soNguyen("3,5"), soNguyen("-2"), soNguyen("12345678")], [1200, 35, 0, 0, 7, null, null, null]);
