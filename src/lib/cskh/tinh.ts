@@ -60,6 +60,11 @@ export interface CauHinh {
   toiThieuPhut: number;
   /** Một tin nhân viên giống hệt nhau ở từ chừng này cuộc trở lên trong ngày thì coi là tin mẫu. */
   nguongMau: number;
+  /**
+   * Shop chỉ được coi là nhắn trước khi tin của shop đi trước tin khách hơn chừng này phút.
+   * Dòng hệ thống "khách bấm quảng cáo" và tin chào tự động đến cùng lúc với tin khách nên không tính là shop nhắn trước.
+   */
+  moDauPhut: number;
 }
 
 /** Giờ ca anh Tùng chốt 23/11/2026. Số phút tối thiểu cuối ca là đề xuất, chưa chốt. */
@@ -72,6 +77,7 @@ export const MAC_DINH: CauHinh = {
   chotGio: 48,
   toiThieuPhut: 15,
   nguongMau: 5,
+  moDauPhut: 2,
 };
 
 const GIO = 3_600_000;
@@ -236,11 +242,13 @@ export function tinhNgay(ds: HoiThoai[], dons: DonKhop[], ngay: string, ch: CauH
     }
     const khach = ngayTin.filter((t) => t.ben === "khach");
     const moi = h.taoLuc >= d0 && h.taoLuc < d1;
-    const nhom: Nhom = !khach.length ? (moi ? "moi_tu_binh_luan" : "shop_nhan") : moi ? "khach_moi" : ngayTin[0].ben === "khach" ? "khach_cu" : "khach_cu_phan_hoi";
+    // Shop nhắn trước: hội thoại cũ, tin đầu ngày là của shop và đi trước tin khách đầu tiên hơn moDauPhut phút.
+    const mocKhach = khach[0]?.luc ?? Infinity;
+    const shopMoDau = !moi && ngayTin[0].ben !== "khach" && mocKhach - ngayTin[0].luc > (ch.moDauPhut ?? 0) * 60_000;
+    const nhom: Nhom = !khach.length ? (moi ? "moi_tu_binh_luan" : "shop_nhan") : moi ? "khach_moi" : shopMoDau ? "khach_cu_phan_hoi" : "khach_cu";
 
     // Tin shop gửi trước cho khách cũ (trước tin khách đầu tiên trong ngày) không tính vào lượng tin của shop.
-    const mocKhach = khach[0]?.luc ?? Infinity;
-    const nhanLai = (t: Tin) => !moi && t.ben !== "khach" && ngayTin[0].ben !== "khach" && t.luc < mocKhach;
+    const nhanLai = (t: Tin) => shopMoDau && t.ben !== "khach" && t.luc < mocKhach;
     for (const t of ngayTin) {
       if (nhanLai(t)) cong((s) => (s.tinNhanLai += 1));
       else if (t.ben === "khach") (cong((s) => (s.tinKhach += 1)), (theoGio.khach[gioVN(t.luc)] += 1));
