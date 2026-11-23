@@ -13,7 +13,9 @@ const KINDS: [ContentKind | "", string][] = [
 const PER_PAGE = 60;
 const fmtDay = (d: string | null) => (d ? d.split("-").reverse().slice(0, 2).join("/") : "–");
 
-export default function Board({ posts, pages, initialCode, initialPage }: { posts: ContentPost[]; pages: PageInfo[]; initialCode: string; initialPage: string }) {
+export default function Board({ posts: loaded, pages, initialCode, initialPage }: { posts: ContentPost[]; pages: PageInfo[]; initialCode: string; initialPage: string }) {
+  const [posts, setPosts] = useState(loaded);
+  const [onlyAds, setOnlyAds] = useState(false);
   const [page, setPage] = useState(pages.some((p) => p.id === initialPage) ? initialPage : "");
   const [code, setCode] = useState(normCode(initialCode));
   const [kind, setKind] = useState<ContentKind | "">("");
@@ -31,7 +33,25 @@ export default function Board({ posts, pages, initialCode, initialPage }: { post
   // Danh sách mã: theo page + loại đang lọc.
   const codes = useMemo(() => countByCode(posts.filter((p) => matches(p, { page, kind, scope }))), [posts, page, kind, scope]);
   const offCount = useMemo(() => posts.filter((p) => p.offWall && (!page || p.page_id === page)).length, [posts, page]);
-  const list = useMemo(() => posts.filter((p) => matches(p, { page, code, kind, noCode, scope })), [posts, page, code, kind, noCode, scope]);
+  const list = useMemo(
+    () => posts.filter((p) => matches(p, { page, code, kind, noCode, scope }) && (!onlyAds || (p.ads?.running ?? 0) > 0)),
+    [posts, page, code, kind, noCode, scope, onlyAds]
+  );
+  const runningCount = useMemo(() => posts.filter((p) => (p.ads?.running ?? 0) > 0 && (!page || p.page_id === page)).length, [posts, page]);
+
+  const editCodes = async (p: ContentPost) => {
+    const s = window.prompt("Mã sản phẩm của bài này, cách nhau bằng dấu phẩy (để trống = bỏ mã nhập tay):", p.codeSource === "manual" ? p.codes.join(", ") : "");
+    if (s == null) return;
+    try {
+      const res = await fetch("/api/fb/post-codes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ post_id: p.id, codes: s }) });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) return window.alert(body?.error ?? "Chưa lưu được.");
+      if (!body.codes.length) return window.location.reload(); // bỏ mã nhập tay: tải lại để lấy mã đọc tự động
+      setPosts((xs) => xs.map((x) => (x.id === p.id ? { ...x, codes: body.codes, codeSource: "manual" } : x)));
+    } catch {
+      window.alert("Chưa lưu được, anh thử lại.");
+    }
+  };
   const total = counts.reduce((s, c) => s + c.total, 0);
   const reset = () => setShown(PER_PAGE);
 
@@ -101,11 +121,16 @@ export default function Board({ posts, pages, initialCode, initialPage }: { post
               Ngoài tường ({offCount})
             </a>
           ) : null}
+          {runningCount ? (
+            <a href="#" className={onlyAds ? "on" : ""} onClick={(e) => { e.preventDefault(); setOnlyAds(!onlyAds); reset(); }}>
+              Đang chạy QC ({runningCount})
+            </a>
+          ) : null}
           <label className="chk">
             <input type="checkbox" checked={noCode} onChange={(e) => { setNoCode(e.target.checked); if (e.target.checked) setCode(""); reset(); }} /> Chỉ bài chưa gắn mã
           </label>
-          {code || kind || noCode || page || scope === "off" ? (
-            <button type="button" className="secondary" onClick={() => { setCode(""); setKind(""); setNoCode(false); setPage(""); setScope("wall"); reset(); }}>
+          {code || kind || noCode || page || scope === "off" || onlyAds ? (
+            <button type="button" className="secondary" onClick={() => { setCode(""); setKind(""); setNoCode(false); setPage(""); setScope("wall"); setOnlyAds(false); reset(); }}>
               Bỏ lọc
             </button>
           ) : null}
@@ -137,6 +162,11 @@ export default function Board({ posts, pages, initialCode, initialPage }: { post
                 {p.picture ? <img src={p.picture} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="noimg">Không có ảnh</span>}
                 <span className={`kind k-${p.kind}`}>{p.offWall ? "Ngoài tường" : KIND_LABEL[p.kind]}</span>
                 <span className="day">{fmtDay(p.day)}</span>
+                {p.ads?.running ? (
+                  <span className="adnote on" title={p.ads.names.join("\n")}>Đang chạy QC{p.ads.running > 1 ? ` · ${p.ads.running}` : ""}</span>
+                ) : p.ads ? (
+                  <span className="adnote" title={p.ads.names.join("\n")}>QC đã tắt</span>
+                ) : null}
               </a>
               <div className="body">
                 <div className="codes">
@@ -149,11 +179,14 @@ export default function Board({ posts, pages, initialCode, initialPage }: { post
                   ) : (
                     <span className="chip none">Chưa gắn mã</span>
                   )}
+                  {p.codeSource === "ads" ? <span className="src" title="Mã lấy từ tên quảng cáo của bài">từ QC</span> : null}
+                  {p.codeSource === "manual" ? <span className="src" title="Mã anh gắn tay">gắn tay</span> : null}
                 </div>
                 <p className="msg" title={p.message}>{p.message || "(bài không có chữ)"}</p>
                 <div className="foot">
                   <span className="sub">{names.get(p.page_id)}</span>
                   <span className="spacer" />
+                  <button type="button" className="secondary" onClick={() => editCodes(p)}>Sửa mã</button>
                   <button type="button" className="secondary" onClick={() => copy(p.id)}>{copied === p.id ? "Đã chép" : "Chép ID"}</button>
                 </div>
               </div>

@@ -19,7 +19,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <div className="card">
-        <h1>Nội dung đã đăng</h1>
+        <h1>Bài đã đăng</h1>
         <div className="filters">
           {RANGE_PRESETS.map((n) => (
             <a key={n} href={`/fb/noi-dung?r=${n}${keep("code")}${keep("page")}`} className={preset === String(n) ? "on" : ""}>
@@ -37,8 +37,10 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         </div>
         <p className="sub" style={{ marginTop: 8 }}>
           Bài và reel đã đăng từ {fmt(since)} đến {fmt(until)} (giờ Việt Nam), tối đa {MAX_RANGE_DAYS} ngày một lần xem. Mã sản phẩm đọc từ nội dung
-          bài (dạng BD26011, ADT25002). Trang này chỉ đọc.
+          bài (dạng BD26011, ADT25002), thiếu thì lấy từ tên quảng cáo của bài, hoặc anh bấm nút Sửa mã để gắn tay. Nhãn Đang chạy QC nghĩa là bài có
+          quảng cáo đang bật và có chi tiền trong 7 ngày gần nhất. Trang không ghi gì lên Meta hay Pancake.
         </p>
+        {data.notes.length ? <p className="error">{data.notes.join("; ").slice(0, 400)}</p> : null}
       </div>
       <Board posts={data.posts} pages={data.pages} initialCode={sp.code ?? ""} initialPage={sp.page ?? ""} />
     </>
