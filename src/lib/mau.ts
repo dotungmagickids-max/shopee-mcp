@@ -87,6 +87,10 @@ export interface HoSoRow {
   nguoi_tao: string;
   tao_luc: string;
   cap_nhat_luc: string;
+  /** Ngày bắt đầu chạy test quảng cáo; thiếu (undefined) khi database chưa có cột (migration 0035). */
+  ngay_test?: string | null;
+  /** Việc chuẩn bị đã xong: { <mục>: { nguoi, luc } }. */
+  chuan_bi?: Record<string, { nguoi: string; luc: string }> | null;
 }
 
 /** Hồ sơ gửi ra trang: thêm dấu ảnh đại diện; `gia_nhap` chỉ có với vai quản lý. */
@@ -232,6 +236,8 @@ export type LenhMau =
   | { ok: true; viec: "sua"; nguoi: string; id: number; cot: Record<string, string | number | boolean | null> }
   | { ok: true; viec: "trang_thai"; nguoi: string; id: number; den: TrangThai; ghiChu: string }
   | { ok: true; viec: "anh"; nguoi: string; id: number; kieu: string; duLieu: string }
+  | { ok: true; viec: "lich"; nguoi: string; id: number; ngay: string | null }
+  | { ok: true; viec: "chuan_bi"; nguoi: string; id: number; muc: MucChuanBi; xong: boolean }
   | { ok: true; viec: "anh_ma"; nguoi: string; ma: string; kieu: string; duLieu: string }
   | { ok: true; viec: "ma_ban_them"; nguoi: string; ma: string }
   | { ok: true; viec: "ma_ban_sua"; nguoi: string; ma: string; cot: Record<string, string> }
@@ -248,6 +254,8 @@ export const ANH_TOI_DA = 300_000;
  *   { action: "sua", id, nguoi, ...trường cần đổi }    → sửa hồ sơ (quan_ly, lam)
  *   { action: "trang_thai", id, den, ghi_chu, nguoi }  → đổi trạng thái (chỉ quan_ly)
  *   { action: "anh", id, du_lieu: "data:image/…;base64,…", nguoi } → ảnh đại diện (quan_ly, lam)
+ *   { action: "lich", id, ngay_test: "YYYY-MM-DD" | null, nguoi } → đặt, dời hoặc bỏ ngày chạy test (quan_ly, lam)
+ *   { action: "chuan_bi", id, muc, xong: true|false, nguoi }     → đánh dấu một việc chuẩn bị (quan_ly, lam)
  *   { action: "anh_ma", ma, du_lieu: "data:image/…;base64,…", nguoi } → ảnh tự đăng cho một mã đang bán (quan_ly, lam)
  *   { action: "ma_ban_them", ma, nguoi }                 → thêm một mã vào tab Mã bán tốt (quan_ly, lam)
  *   { action: "ma_ban_sua", ma, ten?, gioi?, loai?, mua?, nhom?, nguoi } → sửa thông tin một mã ở tab đó (quan_ly, lam)
@@ -283,6 +291,19 @@ export function docLenhMau(body: unknown, vai: Vai): LenhMau {
     return { ok: true, viec: "sua", nguoi, id, cot };
   }
 
+  if (b.action === "lich" || b.action === "chuan_bi") {
+    const id = docId(b.id);
+    if (id == null) return sai("Thiếu id hồ sơ");
+    if (b.action === "lich") {
+      if (trong(b.ngay_test)) return { ok: true, viec: "lich", nguoi, id, ngay: null };
+      if (!ngayHopLe(b.ngay_test) || b.ngay_test < "2024-01-01" || b.ngay_test > "2099-12-31") return sai("Ngày chạy test phải có dạng YYYY-MM-DD");
+      return { ok: true, viec: "lich", nguoi, id, ngay: b.ngay_test };
+    }
+    const muc = CHUAN_BI.find((m) => m.k === b.muc)?.k;
+    if (!muc) return sai("Việc chuẩn bị không hợp lệ");
+    if (typeof b.xong !== "boolean") return sai("Thiếu lựa chọn xong hay chưa");
+    return { ok: true, viec: "chuan_bi", nguoi, id, muc, xong: b.xong };
+  }
   if (b.action === "trang_thai") {
     if (vai !== "quan_ly") return { ...sai("Chỉ quản lý được chọn, bỏ hoặc duyệt mẫu"), status: 403 };
     const id = docId(b.id);
@@ -379,6 +400,52 @@ export function loiChuyen(r: HoSoRow, den: TrangThai, ghiChu: string, coAnh: boo
 }
 
 /** Tóm tắt một lần sửa cho nhật ký: tên các trường đã đổi, không chép nội dung (có thể dài hoặc là giá). */
+// ---------- Lịch test và việc chuẩn bị ----------
+
+/**
+ * Bốn việc phải xong trước ngày chạy test, và phải xong trước mấy ngày.
+ * Số ngày là mặc định ban đầu; đổi ở đây thì hạn của mọi mẫu đã lên lịch đổi theo.
+ */
+export const CHUAN_BI = [
+  { k: "thong_tin", ten: "Thông tin sản phẩm", truoc: 5 },
+  { k: "hinh_anh", ten: "Hình ảnh", truoc: 3 },
+  { k: "ma_hang", ten: "Mã hàng", truoc: 2 },
+  { k: "bai_ban", ten: "Bài bán hàng", truoc: 1 },
+] as const;
+export type MucChuanBi = (typeof CHUAN_BI)[number]["k"];
+
+/** Lùi (hoặc tiến) một ngày YYYY-MM-DD đi n ngày. */
+export function doiNgay(ngay: string, n: number): string {
+  return new Date(Date.parse(`${ngay}T00:00:00Z`) + n * 86400_000).toISOString().slice(0, 10);
+}
+
+export interface ViecChuanBi {
+  k: MucChuanBi;
+  ten: string;
+  han: string;
+  xong: boolean;
+  /** Chưa xong và đã quá hạn so với hôm nay. */
+  tre: boolean;
+  nguoi: string;
+}
+
+/** Checklist chuẩn bị của một mẫu đã có ngày test: hạn từng việc tính lùi từ ngày test. */
+export function viecChuanBi(ngayTest: string, chuanBi: HoSoRow["chuan_bi"], homNay: string): ViecChuanBi[] {
+  return CHUAN_BI.map((m) => {
+    const d = chuanBi?.[m.k];
+    const han = doiNgay(ngayTest, -m.truoc);
+    return { k: m.k, ten: m.ten, han, xong: !!d, tre: !d && han < homNay, nguoi: d?.nguoi ?? "" };
+  });
+}
+
+/** Ghi hoặc bỏ đánh dấu một việc chuẩn bị; trả bản mới của cột chuan_bi. */
+export function danhDauChuanBi(cu: HoSoRow["chuan_bi"], muc: MucChuanBi, xong: boolean, nguoi: string, luc: string): Record<string, { nguoi: string; luc: string }> {
+  const moi = { ...(cu ?? {}) };
+  if (xong) moi[muc] = { nguoi, luc };
+  else delete moi[muc];
+  return moi;
+}
+
 export function tomTatSua(cu: HoSoRow, cot: Record<string, unknown>): string {
   const doi = Object.keys(cot).filter((k) => (cu as unknown as Record<string, unknown>)[k] !== cot[k] && !(cot[k] === "" && (cu as unknown as Record<string, unknown>)[k] == null));
   return doi.map((k) => TRUONG[k]?.ten ?? k).join(", ");

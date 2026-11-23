@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { dongTuSo, gioiTuDanhMuc, gomMaBan, loaiTuDanhMuc, maBanTheoVai, muaTuDanhMuc, namTuMa, type BienTheRow, type LaiRow, type MaBanRow } from "../src/lib/mau-ban";
+import { CHUAN_BI, danhDauChuanBi, doiNgay, viecChuanBi } from "../src/lib/mau";
 import { ANH_TOI_DA, docLenhMau, dungLoaiAnh, hoSoTheoVai, linkHopLe, loiChuyen, thieuDeCoMedia, tomTatSua, vaiCuaKhoa, type HoSoRow } from "../src/lib/mau";
 
 const hs = (x: Partial<HoSoRow> = {}): HoSoRow => ({
@@ -312,5 +313,42 @@ describe("mã bán tốt (danh sách tự quản)", () => {
     assert.deepEqual(docLenhMau(l, "lam"), { ok: true, viec: "anh_ma", nguoi: "Người B", ma: "MA26001", kieu: "image/jpeg", duLieu: jpg });
     assert.equal(loi(l, "xem")!.status, 403);
     assert.match(loi({ ...l, du_lieu: "https://example.com/a.jpg" })!.error, /JPG, PNG hoặc WEBP/);
+  });
+});
+
+describe("lịch test và việc chuẩn bị", () => {
+  it("hạn 4 việc tính lùi từ ngày test; dời ngày test thì hạn dời theo", () => {
+    assert.deepEqual(CHUAN_BI.map((m) => [m.k, m.truoc]), [["thong_tin", 5], ["hinh_anh", 3], ["ma_hang", 2], ["bai_ban", 1]]);
+    const v = viecChuanBi("2026-12-01", {}, "2026-11-27");
+    assert.deepEqual(v.map((x) => [x.k, x.han, x.xong, x.tre]), [
+      ["thong_tin", "2026-11-26", false, true],
+      ["hinh_anh", "2026-11-28", false, false],
+      ["ma_hang", "2026-11-29", false, false],
+      ["bai_ban", "2026-11-30", false, false],
+    ]);
+    assert.deepEqual(viecChuanBi("2026-12-08", null, "2026-11-27").map((x) => x.han), ["2026-12-03", "2026-12-05", "2026-12-06", "2026-12-07"]);
+    assert.deepEqual([doiNgay("2026-03-01", -1), doiNgay("2026-12-31", 1), doiNgay("2028-03-01", -1)], ["2026-02-28", "2027-01-01", "2028-02-29"]);
+  });
+
+  it("việc đã xong không tính trễ; đánh dấu và bỏ đánh dấu", () => {
+    const cb = danhDauChuanBi(null, "thong_tin", true, "Người A", "2026-11-27T01:00:00Z");
+    assert.deepEqual(cb, { thong_tin: { nguoi: "Người A", luc: "2026-11-27T01:00:00Z" } });
+    const v = viecChuanBi("2026-12-01", cb, "2026-12-05");
+    assert.deepEqual(v.map((x) => [x.k, x.xong, x.tre, x.nguoi]), [["thong_tin", true, false, "Người A"], ["hinh_anh", false, true, ""], ["ma_hang", false, true, ""], ["bai_ban", false, true, ""]]);
+    const cb2 = danhDauChuanBi(danhDauChuanBi(cb, "bai_ban", true, "Người B", "x"), "thong_tin", false, "Người B", "y");
+    assert.deepEqual(Object.keys(cb2), ["bai_ban"]);
+    assert.deepEqual(Object.keys(cb), ["thong_tin"]);
+  });
+
+  it("lệnh đặt, dời, bỏ ngày test và đánh dấu việc: quản lý và người làm; người xem không được", () => {
+    const loi = (b: unknown, vai: "quan_ly" | "lam" | "xem" = "lam") => { const x = docLenhMau(b, vai); return x.ok ? null : x; };
+    assert.deepEqual(docLenhMau({ action: "lich", id: 3, ngay_test: "2026-12-01", nguoi: "Người A" }, "lam"), { ok: true, viec: "lich", nguoi: "Người A", id: 3, ngay: "2026-12-01" });
+    for (const trong of [null, "", undefined]) assert.deepEqual(docLenhMau({ action: "lich", id: 3, ngay_test: trong, nguoi: "Người A" }, "quan_ly"), { ok: true, viec: "lich", nguoi: "Người A", id: 3, ngay: null });
+    for (const sai of ["01/12/2026", "2026-02-30", "1999-01-01", 20261201]) assert.match(loi({ action: "lich", id: 3, ngay_test: sai, nguoi: "Người A" })!.error, /YYYY-MM-DD/, String(sai));
+    assert.match(loi({ action: "lich", ngay_test: "2026-12-01", nguoi: "Người A" })!.error, /id/);
+    assert.equal(loi({ action: "lich", id: 3, ngay_test: "2026-12-01", nguoi: "Người A" }, "xem")!.status, 403);
+    assert.deepEqual(docLenhMau({ action: "chuan_bi", id: 3, muc: "hinh_anh", xong: true, nguoi: "Người A" }, "lam"), { ok: true, viec: "chuan_bi", nguoi: "Người A", id: 3, muc: "hinh_anh", xong: true });
+    assert.match(loi({ action: "chuan_bi", id: 3, muc: "dong_goi", xong: true, nguoi: "Người A" })!.error, /Việc chuẩn bị/);
+    assert.match(loi({ action: "chuan_bi", id: 3, muc: "hinh_anh", xong: "rồi", nguoi: "Người A" })!.error, /xong hay chưa/);
   });
 });

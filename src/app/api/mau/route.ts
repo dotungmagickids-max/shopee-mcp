@@ -1,4 +1,4 @@
-import { docLenhMau, hoSoTheoVai, loiChuyen, tomTatSua, vaiCuaKhoa, type HoSoRow, type Vai } from "@/lib/mau";
+import { CHUAN_BI, danhDauChuanBi, docLenhMau, hoSoTheoVai, loiChuyen, tomTatSua, vaiCuaKhoa, type HoSoRow, type Vai } from "@/lib/mau";
 import { dongTuSo, gomMaBan, maBanTheoVai, namTuMa, type BienTheRow, type LaiRow, type MaBanRow } from "@/lib/mau-ban";
 import { allRows, db } from "@/lib/supabase";
 
@@ -225,6 +225,21 @@ export async function POST(request: Request) {
       const { error } = await db().from("mau_ho_so").update({ ...lenh.cot, cap_nhat_luc: luc }).eq("id", lenh.id);
       if (error) throw error;
       await ghiNhatKy(lenh.id, lenh.nguoi, vai, "sua", "", "", doi);
+      return json({ ok: true });
+    }
+
+    if (lenh.viec === "lich" || lenh.viec === "chuan_bi") {
+      if (cu.ngay_test === undefined) return json({ error: "Máy chủ chưa bật phần Lịch test", chuaBat: true }, 501);
+      if (lenh.viec === "lich") {
+        if ((cu.ngay_test ?? null) === lenh.ngay) return json({ ok: true, khongDoi: true });
+        const { error } = await db().from("mau_ho_so").update({ ngay_test: lenh.ngay, cap_nhat_luc: luc }).eq("id", lenh.id);
+        if (error) throw error;
+        await ghiNhatKy(lenh.id, lenh.nguoi, vai, "lich", cu.ngay_test ?? "", lenh.ngay ?? "");
+        return json({ ok: true });
+      }
+      const { error } = await db().from("mau_ho_so").update({ chuan_bi: danhDauChuanBi(cu.chuan_bi, lenh.muc, lenh.xong, lenh.nguoi, luc), cap_nhat_luc: luc }).eq("id", lenh.id);
+      if (error) throw error;
+      await ghiNhatKy(lenh.id, lenh.nguoi, vai, "chuan_bi", "", lenh.xong ? "xong" : "chua", CHUAN_BI.find((m) => m.k === lenh.muc)?.ten ?? lenh.muc);
       return json({ ok: true });
     }
 
