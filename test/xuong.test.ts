@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SoSanXuat } from "../src/lib/san-xuat-data";
-import { CHUA_BAT_THONG_TIN, checkXuongKey, docLenhGhi, loiGhi, ngayHopLe, soChoXuong } from "../src/lib/xuong";
+import { CHUA_BAT_THONG_TIN, checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, ngayHopLe, soChoXuong } from "../src/lib/xuong";
 
 const so: SoSanXuat = {
   los: [
@@ -201,5 +201,17 @@ describe("/api/xuong", () => {
       assert.equal(r.status, 400);
       assert.match((await r.json()).error, /YYYY-MM-DD/);
     });
+  });
+});
+
+describe("ảnh đại diện sản phẩm", () => {
+  it("chỉ nhận mã hàng hợp lệ, bỏ trùng, tối đa 150 mã", () => {
+    assert.deepEqual(docMaAnh(" ma26001, MA26002 ,ma26001,,../x,<b>,A"), ["MA26001", "MA26002"]);
+    assert.deepEqual(docMaAnh(null), []);
+    assert.equal(docMaAnh(Array.from({ length: 200 }, (_, i) => `MA${10000 + i}`).join(",")).length, 150);
+  });
+  it("chỉ trả ảnh https của mã được hỏi, mỗi mã một ảnh", () => {
+    const images: Array<[string, string]> = [["MA26001", "https://x.test/a.jpg"], ["ma26001", "https://x.test/b.jpg"], ["MA26002", "http://x.test/c.jpg"], ["MA26009", "https://x.test/d.jpg"]];
+    assert.deepEqual(locAnh(images, ["MA26001", "MA26002", "MA26003"]), { MA26001: "https://x.test/a.jpg" });
   });
 });

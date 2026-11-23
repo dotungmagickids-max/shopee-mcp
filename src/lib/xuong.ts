@@ -294,3 +294,22 @@ export function loiGhi(fn: string, err: { code?: string | null; message?: string
   if (err.code === "P0001" && m) return { status: 400, error: m.replace(/\.?\s*Tạo lô bằng mk_sx_lot_save trước/, "") };
   return { status: 502, error: "Máy chủ chưa ghi được, thử lại sau ít phút" };
 }
+
+// ---------- Ảnh đại diện sản phẩm ----------
+
+/** Đọc `?anh=MA1,MA2` thành danh sách mã hàng hợp lệ (tối đa 150 mã); mã lạ bị bỏ. */
+export function docMaAnh(v: string | null): string[] {
+  const ds = (v ?? "").split(",").map((x) => x.trim().toUpperCase()).filter((x) => /^[A-Z0-9][A-Z0-9._-]{2,29}$/.test(x));
+  return [...new Set(ds)].slice(0, 150);
+}
+
+/** Chọn ảnh của các mã được hỏi từ danh sách [mã hàng, đường dẫn ảnh]. Chỉ trả đường dẫn https. */
+export function locAnh(images: Array<[string, string]>, ma: string[]): Record<string, string> {
+  const can = new Set(ma);
+  const out: Record<string, string> = {};
+  for (const [k, u] of images) {
+    const m = String(k).toUpperCase();
+    if (can.has(m) && !out[m] && typeof u === "string" && /^https:\/\//.test(u)) out[m] = u;
+  }
+  return out;
+}

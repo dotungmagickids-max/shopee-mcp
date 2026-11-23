@@ -47,6 +47,9 @@ main{max-width:760px;margin:0 auto;padding:12px}
 .late{color:var(--red);font-weight:700}
 .ok{color:var(--accent);font-weight:700}
 .amber{color:var(--amber);font-weight:700}
+.hd{display:flex;gap:10px;align-items:flex-start}
+.hd>div{flex:1;min-width:0}
+.thumb{width:56px;height:56px;flex:none;border-radius:8px;object-fit:cover;background:#eceff3;border:1px solid var(--line)}
 .owe{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .bar{height:8px;background:#e6e9ee;border-radius:999px;overflow:hidden;margin:8px 0}
 .bar i{display:block;height:100%;background:var(--accent)}
@@ -146,7 +149,7 @@ const store={
   get(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}},
   set(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}}
 };
-const S={key:store.get('mk_xuong_key'),ten:store.get('mk_xuong_ten'),tab:'tra',data:null,at:0,busy:false,err:'',
+const S={key:store.get('mk_xuong_key'),ten:store.get('mk_xuong_ten'),tab:'tra',data:null,at:0,busy:false,err:'',anh:{},anhAt:0,
   loc:{don:'mo',tra:'cho'},open:new Set(),saved:null,chuaBat:false};
 
 const num=n=>n==null?'—':Number(n).toLocaleString('vi-VN');
@@ -259,10 +262,42 @@ async function tai(){
     const r=await goi('GET');
     if(r.status===401){S.key='';store.set('mk_xuong_key','');S.busy=false;hoiMa('Mã truy cập không đúng. Nhập lại mã Magickids đã gửi cho xưởng.');return;}
     if(r.status!==200||!r.body||!Array.isArray(r.body.los)||!Array.isArray(r.body.don))throw new Error(r.body&&r.body.error||'máy chủ không trả sổ');
-    S.data=r.body;S.at=Date.now();
+    S.data=r.body;S.at=Date.now();taiAnh();
     if(r.body.ghiThongTin===false)S.chuaBat=true;
   }catch(e){S.err='Chưa đọc được sổ ('+(e.message&&e.name!=='AbortError'&&e.name!=='TypeError'?e.message:loiMang(e))+'). Bấm "Tải lại".';}
   S.busy=false;ve();
+}
+
+/* ---------- ảnh đại diện sản phẩm theo mã hàng: tải sau khi có sổ, nhớ trên máy 6 giờ ---------- */
+function anhThu(ma){
+  const mau=['#0f7b4b','#b26a00','#3558a8','#8a3a8f','#c2570c'][[...ma].reduce((a,c)=>a+c.charCodeAt(0),0)%5];
+  return 'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112"><rect width="112" height="112" fill="'+mau+'"/><text x="56" y="64" font-family="Arial" font-size="22" fill="#fff" text-anchor="middle">'+ma.slice(-4)+'</text></svg>');
+}
+async function taiAnh(){
+  const d=S.data;if(!d)return;
+  const ma=[...new Set(d.don.map(p=>p.ma).concat(d.los.map(x=>x.ma)))];
+  if(THU){for(const m of ma)if(m!=='MA26003')S.anh[m]=anhThu(m);return;}
+  if(!S.anhAt){try{const c=JSON.parse(store.get('mk_xuong_anh')||'null');if(c&&c.at&&c.anh){S.anh=c.anh;S.anhAt=c.at;}}catch(e){}}
+  const thieu=ma.filter(m=>!(m in S.anh));
+  if(!thieu.length&&Date.now()-S.anhAt<6*3600000)return;
+  try{
+    const r=await fetch(API+'?anh='+encodeURIComponent((Date.now()-S.anhAt<6*3600000?thieu:ma).join(',')),{cache:'no-store',headers:{'x-mk-key':S.key}});
+    if(!r.ok)return;
+    const j=await r.json();if(!j||!j.anh)return;
+    const cu=JSON.stringify(S.anh);
+    if(Date.now()-S.anhAt>=6*3600000)S.anh={};
+    /* mã chưa có ảnh ghi '' để không hỏi lại mỗi lần tải; máy chủ báo lỗi thì không ghi, lần sau hỏi lại */
+    for(const m of (Date.now()-S.anhAt<6*3600000?thieu:ma))if(j.anh[m]||!j.loi)S.anh[m]=j.anh[m]||'';
+    S.anhAt=Date.now();store.set('mk_xuong_anh',JSON.stringify({at:S.anhAt,anh:S.anh}));
+    if(JSON.stringify(S.anh)!==cu&&S.tab!=='phieu'&&S.tab!=='sua')ve();
+  }catch(e){}
+}
+/* đầu thẻ: ảnh sản phẩm bên trái (nếu có), các dòng chữ bên phải */
+function dauThe(ma,dong){
+  const w=mk('div','hd'),c=mk('div');c.append(...dong);
+  const u=S.anh[ma];
+  if(u){const i=document.createElement('img');i.className='thumb';i.loading='lazy';i.alt='';i.referrerPolicy='no-referrer';i.src=u;i.onerror=()=>i.remove();w.append(i);}
+  w.append(c);return w;
 }
 
 /* ---------- vẽ ---------- */
@@ -329,7 +364,7 @@ function veDon(d,body){
     const dong2=p.id==null?'Lô '+p.soPhieu+' · không có phiếu đặt':((p.ngayDat?'Đặt ngày '+day(p.ngayDat,true):'Chưa ghi ngày đặt')+(p.tongDat!=null?' · tổng đặt '+num(p.tongDat):''));
     const top2=mk('div','top');
     top2.append(mk('span','m',dong2),mk('span','owe'+(p.conNo>0?'':' m'),p.chuaDoiSoat&&!p.conNo?'?':num(p.conNo)));
-    const sum=[top,top2,o4([[num(p.tongDat),'đặt'],[num(p.daCat),'đã cắt'],[num(p.daGiao),'đã giao'],[num(p.khoDem),'kho đã đếm']])];
+    const sum=[dauThe(p.ma,[top,top2]),o4([[num(p.tongDat),'đặt'],[num(p.daCat),'đã cắt'],[num(p.daGiao),'đã giao'],[num(p.khoDem),'kho đã đếm']])];
     const det=[];
     det.push(mk('div','','Còn nợ (đã cắt, kho chưa đếm được): '+(p.chuaDoiSoat&&!p.conNo?'chưa đối soát':num(p.conNo)+' cái')+(p.choCat>0?' · Chờ cắt: '+num(p.choCat)+' cái':'')));
     if(p.choCat>0)det.push(mk('div',p.duKienCat?'m':'amber',p.duKienCat?'Dự kiến cắt '+day(p.duKienCat,true):'Chưa có ngày dự kiến cắt'));
@@ -350,7 +385,7 @@ function tomLo(x){
   const top2=mk('div','top');
   top2.append(mk('span','m',(x.henTra?'Hẹn trả '+day(x.henTra,true):'Chưa có ngày hẹn')),mk('span','owe'+(x.choVe&&x.ngayTre>0?' late':x.conNo>0?'':' m'),chua?'?':num(Math.max(0,x.conNo))));
   const bar=mk('div','bar'),i=document.createElement('i');i.style.width=(x.soCat>0?Math.min(100,Math.round(x.khoDem*100/x.soCat)):0)+'%';bar.append(i);
-  return [top,top2,bar,o4([[num(x.soCat),'cắt'],[num(x.daGiao),'đã giao'],[chua?'—':num(x.khoDem),'kho đã đếm'],[chua?'?':num(Math.max(0,x.conNo)),'còn nợ']])];
+  return [dauThe(x.ma,[top,top2]),bar,o4([[num(x.soCat),'cắt'],[num(x.daGiao),'đã giao'],[chua?'—':num(x.khoDem),'kho đã đếm'],[chua?'?':num(Math.max(0,x.conNo)),'còn nợ']])];
 }
 function dongSx(x){
   const sx=x.sx||{},tt=[sx.ngayChot?'Chốt sản xuất '+day(sx.ngayChot,true):'',sx.xuong?'Gia công: '+sx.xuong:'',sx.vaiVe?'Vải về '+day(sx.vaiVe,true):'',sx.thongTin?'Tiến độ: '+sx.thongTin:''].filter(Boolean);
@@ -401,7 +436,7 @@ function veSua(d,body){
     const sx=dongSx(x);
     det.push(mk('div','m','Đang ghi: '+(x.henTra?'hẹn trả '+day(x.henTra,true):'chưa có ngày hẹn')+(sx?' · '+sx:'')));
     det.push(formHen(x,khoa,iTen),formTin(x,khoa,iTen));
-    body.append(the(khoa,tomLo(x).slice(0,2),det));
+    body.append(the(khoa,tomLo(x).slice(0,1),det));
   }
   const cho=d.don.filter(p=>p.choCat>0);
   if(cho.length){
