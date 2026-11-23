@@ -1,8 +1,8 @@
 /**
  * FB Magic Tool — Nội dung: đọc bài đã đăng của mọi page Magickids trong một khoảng ngày. Chỉ đọc.
- * Mỗi page thử lần lượt: Meta (token hệ thống) → Composio (kết nối Facebook của quản trị page, có ảnh)
- * → Pancake (không chắc có ảnh). Nguồn nào chưa cấu hình thì bỏ qua. Không nguồn nào được thì báo riêng
- * page đó, các page khác vẫn hiện.
+ * Mỗi page thử lần lượt: Pancake (nguồn chính, anh chốt 23/11/2026; cần token trang của page) → Meta (token hệ thống)
+ * → Composio (kết nối Facebook của quản trị page). Nguồn nào chưa cấu hình thì bỏ qua. Không nguồn nào được thì
+ * báo riêng page đó, các page khác vẫn hiện.
  */
 import { composioConfig, composioPosts } from "./composio-posts";
 import { inRange, toContentPost, daysToFetch, type ContentPost } from "./content";
@@ -22,10 +22,11 @@ export async function loadContent(since: string, until: string, today: string): 
   const composio = composioConfig();
   const results = await Promise.all(
     Object.entries(PAGES).map(async ([id, name]) => {
-      const sources: [ContentSource, () => Promise<PagePost[]>][] = [["meta", () => pagePosts(id, days)]];
-      if (composio) sources.push(["composio", () => composioPosts(composio, id, since, until)]);
+      const sources: [ContentSource, () => Promise<PagePost[]>][] = [];
       const token = tokens.get(id);
       if (token) sources.push(["pancake", () => pancakePosts(id, token, since, until)]);
+      sources.push(["meta", () => pagePosts(id, days)]);
+      if (composio) sources.push(["composio", () => composioPosts(composio, id, since, until)]);
       const errors: string[] = [];
       for (const [source, read] of sources) {
         try {
@@ -35,7 +36,7 @@ export async function loadContent(since: string, until: string, today: string): 
           errors.push(`${source}: ${msg(e)}`);
         }
       }
-      if (sources.length === 1) errors.push("chưa cấu hình Composio hay Pancake cho page này");
+      if (!token) errors.push("chưa có token Pancake của page này");
       return { id, name, source: null, error: errors.join("; "), posts: [] as ContentPost[] };
     })
   );

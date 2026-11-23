@@ -68,7 +68,7 @@ export default function Board({ posts, pages, initialCode, initialPage }: { post
                   <span className="pc-num">{c.total}</span>
                   <span className="pc-sub">
                     {c.video} video · {c.photo} ảnh · {c.noCode} chưa gắn mã · mới nhất {fmtDay(c.lastDay)}
-                    {p.source === "pancake" ? " · lấy qua Pancake" : p.source === "composio" ? " · lấy qua Composio" : ""}
+                    {p.source === "meta" ? " · lấy qua Meta" : p.source === "composio" ? " · lấy qua Composio" : ""}
                   </span>
                 </>
               )}
