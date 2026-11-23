@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { fromPancakePost, pancakePageTokens, pickImage, vnRangeUnix } from "../src/lib/facebook/pancake-posts";
+import { composioConfig, dayWindows, fromGraphPost, postsOf } from "../src/lib/facebook/composio-posts";
 import { contentRange, countByCode, countByPage, daysToFetch, inRange, kindOf, matches, toContentPost } from "../src/lib/facebook/content";
 
 const raw = (id: string, message: string, created_time: string, kind = "added_photos", permalink: string | null = null) => ({
@@ -81,5 +82,31 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
     assert.equal(pancakePageTokens("không phải json").size, 0);
     assert.equal(pancakePageTokens(undefined).size, 0);
     assert.equal(pancakePageTokens("[1]").size, 0);
+  });
+
+  it("bài lấy qua Composio: cấu hình, chia khoảng ngày, gỡ lớp bọc câu trả lời, có ảnh đại diện", () => {
+    assert.equal(composioConfig({}), null);
+    assert.equal(composioConfig({ COMPOSIO_API_KEY: "k" }), null);
+    assert.deepEqual(composioConfig({ COMPOSIO_API_KEY: " k ", COMPOSIO_FB_ACCOUNT: "acc" }), { key: "k", account: "acc", userId: null });
+    assert.deepEqual(dayWindows("2026-11-20", "2026-11-23"), [{ since: "2026-11-20", until: "2026-11-23" }]);
+    assert.deepEqual(dayWindows("2026-09-01", "2026-11-23"), [
+      { since: "2026-10-25", until: "2026-11-23" },
+      { since: "2026-09-25", until: "2026-10-24" },
+      { since: "2026-09-01", until: "2026-09-24" },
+    ]);
+    assert.deepEqual(dayWindows("2026-11-22", "2026-11-23", 1), [
+      { since: "2026-11-23", until: "2026-11-23" },
+      { since: "2026-11-22", until: "2026-11-22" },
+    ]);
+    const row = { id: "111_5", message: "Mã: ADT25003", created_time: "2026-11-18T13:00:14+0000", full_picture: "https://example.test/p.jpg", permalink_url: "https://www.facebook.com/reel/1/", status_type: "added_video" };
+    assert.equal(postsOf({ successful: true, data: { data: [row] } }).length, 1);
+    assert.equal(postsOf({ data: { data: { data: [row] } } }).length, 1);
+    assert.equal(postsOf({ data: {} }).length, 0);
+    const c = toContentPost("111", fromGraphPost(row)!);
+    assert.equal(c.picture, "https://example.test/p.jpg");
+    assert.equal(c.kind, "reel");
+    assert.equal(c.day, "2026-11-18");
+    assert.deepEqual(c.codes, ["ADT25003"]);
+    assert.equal(fromGraphPost({}), null);
   });
 });
