@@ -391,6 +391,15 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
           <p>
             Tạo được {results.filter((r) => r.ad_id).length}/{results.length} quảng cáo, tất cả đang <b>tạm dừng</b>.
           </p>
+          {results.some((r) => r.ad_id) ? (
+            <div className="warnbox" style={{ marginBottom: 10 }}>
+              <b>Trước khi bật, làm 2 việc trong Trình quản lý quảng cáo cho từng quảng cáo</b> (Meta không cho web làm thay với bài có sẵn):
+              <br />
+              1. Mục Cuộc trò chuyện: chọn tab Mẫu đã lưu, lấy mẫu chào chuẩn của tài khoản đó (hỏi tuổi, cân nặng; 1 câu hỏi Tư vấn; tắt câu hỏi được cá nhân hóa).
+              <br />
+              2. Mục Nguồn quảng cáo: kiểm đang <b>tắt</b> sản phẩm từ danh mục (web đã gửi lệnh tắt lúc tạo; dòng nào báo chưa tắt được thì anh tắt tay).
+            </div>
+          ) : null}
           <div className="table-wrap">
             <table className="data">
               <thead>
@@ -407,7 +416,13 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
                     <td className="l">{accName(r.account_id)}</td>
                     <td className="l">
                       {r.ad_id ? (
-                        <span className="ok">Đã tạo · QC {r.ad_id}</span>
+                        <span className="ok">
+                          Đã tạo · QC {r.ad_id} ·{" "}
+                          <a href={`https://adsmanager.facebook.com/adsmanager/manage/ads/edit?act=${r.account_id}&selected_ad_ids=${r.ad_id}`} target="_blank" rel="noreferrer">
+                            mở trong Trình quản lý quảng cáo
+                          </a>
+                          {r.notes?.length ? <span className="low"> · {r.notes.join(" ")}</span> : null}
+                        </span>
                       ) : (
                         <span className="low">
                           Lỗi: {r.error}

@@ -233,14 +233,25 @@ export function adsetParams(cfg: LaunchConfig, campaignId: string, a: PlannedCam
   return p;
 }
 
-export const creativeParams = (postId: string, name: string): Record<string, string> => ({ name, object_story_id: postId });
+/**
+ * Tắt "thêm sản phẩm từ danh mục" (Nguồn quảng cáo: Sản phẩm). Từ Graph v27 Meta có thể tự bật mục này cho creative
+ * không ghi gì, và không sửa được trên creative đã tạo, nên phải ghi ngay lúc tạo. Anh dặn 23/11: không chọn danh mục.
+ */
+export const NO_CATALOG = JSON.stringify({ creative_features_spec: { product_extensions: { enroll_status: "OPT_OUT", action_metadata: { type: "MANUAL" } } } });
+
+/** Creative dùng bài có sẵn của page. `noCatalog` = kèm lệnh tắt danh mục sản phẩm (mặc định có). */
+export const creativeParams = (postId: string, name: string, noCatalog = true): Record<string, string> => ({
+  name,
+  object_story_id: postId,
+  ...(noCatalog ? { degrees_of_freedom_spec: NO_CATALOG } : {}),
+});
 
 /**
  * Bài chưa có nút "Gửi tin nhắn" thì Meta từ chối gắn vào chiến dịch tin nhắn
  * ("creative is incompatible with the objective"). Bản này gắn thêm nút nhắn tin Messenger vào creative.
  */
-export const creativeParamsWithCta = (postId: string, name: string): Record<string, string> => ({
-  ...creativeParams(postId, name),
+export const creativeParamsWithCta = (postId: string, name: string, noCatalog = true): Record<string, string> => ({
+  ...creativeParams(postId, name, noCatalog),
   call_to_action: JSON.stringify({ type: "MESSAGE_PAGE", value: { app_destination: "MESSENGER" } }),
 });
 

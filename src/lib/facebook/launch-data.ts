@@ -130,6 +130,8 @@ export type LaunchResult = {
   adset_id: string | null;
   ad_id: string | null;
   error: string | null;
+  /** Việc chưa làm được trọn (không phải lỗi tạo), ví dụ chưa tắt được danh mục sản phẩm. */
+  notes?: string[];
 };
 
 async function logWrite(row: { action: string; account_id: string; target_id: string | null; target_name: string; after: unknown; ok: boolean; error: string | null }) {
@@ -181,14 +183,23 @@ export async function runLaunch(cfg: LaunchConfig, items: LaunchItem[]): Promise
       results.push(r);
       if (!campaignId || !adsetId) continue;
       try {
-        const creativeId = await create(c.account_id, "adcreatives", creativeParams(a.post_id, a.ad_name));
+        // Tạo creative kèm lệnh tắt danh mục sản phẩm. Meta từ chối tham số đó thì tạo lại không kèm (tham số khác,
+        // không phải gửi lại lệnh cũ) và ghi chú để anh tắt tay trong Trình quản lý quảng cáo.
+        let noCatalog = true;
+        const creativeId = await create(c.account_id, "adcreatives", creativeParams(a.post_id, a.ad_name)).catch(async (e) => {
+          const first = e instanceof Error ? e.message : String(e);
+          if (!/degrees_of_freedom|product_extensions|creative_features/i.test(first)) throw e;
+          noCatalog = false;
+          r.notes = [`Chưa tắt được danh mục sản phẩm qua API (${first.slice(0, 120)}): anh tắt ở mục Nguồn quảng cáo.`];
+          return create(c.account_id, "adcreatives", creativeParams(a.post_id, a.ad_name, false));
+        });
         try {
           r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, adsetId, creativeId));
         } catch (e) {
           const first = e instanceof Error ? e.message : String(e);
           if (!isCreativeIncompatible(first)) throw e;
           // Bài thiếu nút nhắn tin: thử đúng một lần nữa với creative có nút Messenger (tham số khác, không phải gửi lại lệnh cũ).
-          const withCta = await create(c.account_id, "adcreatives", creativeParamsWithCta(a.post_id, a.ad_name)).catch((e2) => {
+          const withCta = await create(c.account_id, "adcreatives", creativeParamsWithCta(a.post_id, a.ad_name, noCatalog)).catch((e2) => {
             throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
           });
           r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, adsetId, withCta)).catch((e2) => {
