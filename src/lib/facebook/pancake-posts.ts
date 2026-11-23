@@ -1,29 +1,27 @@
 /**
  * Bài đã đăng của page lấy qua Pancake (API trang, chỉ đọc), dùng khi token Meta không đọc được bài của page đó.
- * Cần biến PANCAKE_PAGE_TOKENS trên máy chủ: JSON {"<page_id>": "<page access token của page trong Pancake>"}.
+ * Dùng chung biến PANCAKE_PAGE_TOKENS trên máy chủ với trang CSKH (src/lib/cskh/pancake-chat.ts).
  * Tài liệu công khai của Pancake không ghi trường ảnh, nhưng bài của Pancake có `attachments.data[].url`
  * (ảnh lưu trên máy chủ Pancake, kể cả ảnh bìa video) và `attachments.target.url` (link bài trên Facebook).
  * Câu trả lời thiếu các trường này thì bài hiện không ảnh.
  */
+import { pageTokens } from "../cskh/pancake-chat";
 import type { PagePost } from "./meta";
 
 const BASE = "https://pages.fm/api/public_api/v1";
 const PAGE_SIZE = 30; // mức tối đa Pancake cho phép
 const MAX_PAGES = 40;
 
-/** Token từng page; biến thiếu hoặc sai định dạng thì coi như chưa có. Không bao giờ in giá trị ra ngoài. */
+/**
+ * Token từng page, dùng chung biến PANCAKE_PAGE_TOKENS với trang CSKH (cùng cách đọc: giá trị là chuỗi token
+ * hoặc {"ten": ..., "khoa": ...}). Biến thiếu hoặc sai định dạng thì coi như chưa có. Không bao giờ in giá trị ra ngoài.
+ */
 export function pancakePageTokens(env: string | undefined = process.env.PANCAKE_PAGE_TOKENS): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!env?.trim()) return out;
   try {
-    const o = JSON.parse(env);
-    if (o && typeof o === "object" && !Array.isArray(o)) {
-      for (const [k, v] of Object.entries(o)) if (typeof v === "string" && v.trim()) out.set(String(k).trim(), v.trim());
-    }
+    return new Map(pageTokens(env).map((p) => [p.id.trim(), p.khoa]));
   } catch {
-    /* sai định dạng: coi như chưa đặt */
+    return new Map(); // sai định dạng: coi như chưa đặt
   }
-  return out;
 }
 
 const IMG_KEYS = ["full_picture", "picture", "thumbnail", "thumbnail_url", "preview_url", "image_url", "src", "url"];

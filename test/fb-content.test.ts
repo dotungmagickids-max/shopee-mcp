@@ -98,7 +98,7 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
   });
 
   it("token Pancake từng page: đọc JSON, sai định dạng thì coi như chưa có", () => {
-    assert.deepEqual([...pancakePageTokens('{"111":"abc"," 222 ":" def ","333":""}')], [["111", "abc"], ["222", "def"]]);
+    assert.deepEqual([...pancakePageTokens('{"111":"abc","222":" def ","333":"","444":{"ten":"Page A","khoa":"ghi"}}')], [["111", "abc"], ["222", "def"], ["444", "ghi"]]);
     assert.equal(pancakePageTokens("không phải json").size, 0);
     assert.equal(pancakePageTokens(undefined).size, 0);
     assert.equal(pancakePageTokens("[1]").size, 0);
