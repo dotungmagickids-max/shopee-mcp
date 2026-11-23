@@ -1,6 +1,7 @@
 /** FB Magic Tool, màn Mục tiêu: dự chi hôm nay, còn thiếu bao nhiêu quảng cáo, so mục tiêu tháng và tỉ lệ. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { withPancake } from "../src/lib/facebook/targets-data";
 import { buildPlan, daysInMonth, DEFAULT_TARGETS, parseMoney, parseRatio, sumActiveBudgets, type DayRow } from "../src/lib/facebook/targets";
 
 const day = (ngay: string, spendReal: number, revenue: number, orders = 1): DayRow => ({ ngay, spendReal, revenue, orders });
@@ -77,6 +78,40 @@ describe("FB Magic Tool: mục tiêu quảng cáo", () => {
       { metaDaily: 465_000, adsets: 5, skipped: 1 }
     );
     assert.deepEqual(sumActiveBudgets([]), { metaDaily: 0, adsets: 0, skipped: 0 });
+  });
+
+  it("doanh thu lấy từ Pancake cả kênh Facebook; ngày Pancake chưa về không đưa vào tỉ lệ", () => {
+    const ad = [day("2026-11-19", 1_000_000, 2_000_000), day("2026-11-20", 1_000_000, 3_000_000), day("2026-11-21", 400_000, 500_000)];
+    const merged = withPancake(ad, new Map([["2026-11-19", { orders: 30, revenue: 10_000_000 }], ["2026-11-20", { orders: 20, revenue: 5_000_000 }], ["2026-11-18", { orders: 5, revenue: 1_000_000 }]]));
+    assert.deepEqual(merged.map((d) => [d.ngay, d.revenue, d.adRevenue, d.hasRevenue]), [
+      ["2026-11-18", 1_000_000, 0, true], // có đơn Pancake dù không chạy quảng cáo
+      ["2026-11-19", 10_000_000, 2_000_000, true],
+      ["2026-11-20", 5_000_000, 3_000_000, true],
+      ["2026-11-21", 0, 500_000, false], // hôm nay: Pancake chưa đồng bộ
+    ]);
+    const p = buildPlan("2026-11-21", merged, 0, DEFAULT_TARGETS);
+    assert.equal(p.month.spent, 2_400_000);
+    assert.equal(p.month.revenue, 16_000_000);
+    assert.equal(p.month.spentWithRevenue, 2_000_000); // không tính 400k của hôm nay
+    assert.equal(p.month.ratio, 2_000_000 / 16_000_000);
+    assert.equal(p.month.revenueThrough, "2026-11-20");
+    assert.equal(p.month.adRevenue, 5_500_000);
+    assert.equal(p.month.orders, 55);
+    const late = buildPlan("2026-11-22", merged, 0, DEFAULT_TARGETS);
+    assert.deepEqual(late.yesterday, { ngay: "2026-11-21", spent: 400_000, revenue: null, ratio: null });
+  });
+
+  it("dự chi = đang thực chạy + kế hoạch (nháp chưa lên)", () => {
+    const p = buildPlan("2026-11-21", days, 900_000, { ...DEFAULT_TARGETS, month_budget: 40_000_000 }, 500_000);
+    assert.equal(p.today.running, 999_900);
+    assert.equal(p.today.drafts, 555_500);
+    assert.equal(p.today.planned, 1_555_400);
+    assert.equal(p.today.plannedMeta, 1_400_000);
+    assert.equal(p.today.gap, 2_000_000 - 1_555_400);
+    assert.equal(p.today.adsNeeded, 7); // 444.600 / 72.215 = 6,16
+    const unknown = buildPlan("2026-11-21", days, null, DEFAULT_TARGETS, 500_000);
+    assert.equal(unknown.today.planned, null); // chưa đọc được phần đang chạy thì không báo tổng
+    assert.equal(unknown.today.drafts, 555_500);
   });
 
   it("đọc ô nhập tiền và phần trăm", () => {

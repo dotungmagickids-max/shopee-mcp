@@ -23,10 +23,12 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
       <div className="card">
         <h1>Mục tiêu quảng cáo Facebook</h1>
         <p className="sub">
-          Tháng {today.slice(5, 7)}/{today.slice(0, 4)} · hôm nay {dm(today)} · Chi thật = chi Meta × 1,111 · Doanh thu: đơn Pancake gắn quảng cáo (theo ad_id), bỏ đơn
-          hủy · Đã bỏ BOSS TUYỀN 3/4/5/6 · Trang này chỉ đọc số, không bật tắt hay đổi ngân sách.
+          Tháng {today.slice(5, 7)}/{today.slice(0, 4)} · hôm nay {dm(today)} · Chi thật = chi Meta × 1,111 · Doanh thu: đơn chốt kênh Facebook trên Pancake
+          {p.month.revenueThrough ? ` (đã có tới ${dm(p.month.revenueThrough)}; đồng bộ mỗi sáng)` : " (chưa có ngày nào)"} · Đã bỏ BOSS TUYỀN 3/4/5/6 · Trang này chỉ đọc số, không
+          bật tắt hay đổi ngân sách.
         </p>
         {msg ? <p className="warnbox">{msg}</p> : null}
+        {v.pancakeOk ? null : <p className="error">Chưa đọc được doanh thu Pancake: đang tạm dùng doanh thu của đơn gắn mã quảng cáo, tỉ lệ sẽ cao hơn thật.</p>}
         {v.missingTable ? <p className="error">Chưa có bảng fb_targets (cần áp migration 0037): đang dùng mặc định, chưa lưu được mục tiêu.</p> : null}
         {v.errors.length ? <p className="error">Thiếu số, tổng có thể thấp hơn thật: {v.errors.join("; ").slice(0, 500)}</p> : null}
       </div>
@@ -38,7 +40,7 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
           <span className="gc-sub">
             {p.today.planned == null
               ? "Chưa đọc được ngân sách đang bật từ Meta"
-              : `Tổng ngân sách ngày của quảng cáo đang bật: ${vnd(p.today.plannedMeta)}đ trên Meta. Đã chi tới giờ: ${vnd(p.today.spentSoFar)}đ.`}
+              : `Đang thực chạy ${vnd(p.today.running)}đ + kế hoạch (nháp) ${vnd(p.today.drafts)}đ. Trên Meta: ${vnd(p.today.plannedMeta)}đ. Đã chi tới giờ: ${vnd(p.today.spentSoFar)}đ.`}
           </span>
         </div>
         <div className="goalcard">
@@ -94,16 +96,23 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
             ) : null}
           </div>
           <div>
-            <div className="sub">Doanh thu gắn quảng cáo</div>
+            <div className="sub">Doanh thu Facebook (Pancake)</div>
             <div className="big">{tr(p.month.revenue)}</div>
-            <div className="sub">{p.month.orders.toLocaleString("vi-VN")} đơn</div>
+            <div className="sub">
+              {p.month.orders.toLocaleString("vi-VN")} đơn chốt{p.month.revenueThrough ? `, tính tới ${dm(p.month.revenueThrough)}` : ""}. Trong đó đơn có gắn mã quảng cáo: {tr(p.month.adRevenue)}.
+            </div>
           </div>
           <div>
             <div className="sub">Quảng cáo / doanh thu (mục tiêu {pct(t.ratio)})</div>
             <div className={`big ${ratioCls(p.month.ratio)}`}>{pct(p.month.ratio)}</div>
             <div className="sub">
-              {p.ratioOk == null ? "Chưa có doanh thu để tính." : p.ratioOk ? "Đang đạt mục tiêu." : "Đang vượt mục tiêu."}
-              {p.yesterday ? ` Hôm qua (${dm(p.yesterday.ngay)}): ${pct(p.yesterday.ratio)}, chi ${vnd(p.yesterday.spent)}đ, doanh thu ${vnd(p.yesterday.revenue)}đ.` : " Hôm qua chưa có số."}
+              {p.ratioOk == null ? "Chưa có doanh thu để tính." : p.ratioOk ? "Đang đạt mục tiêu." : "Đang vượt mục tiêu."} Tính trên {tr(p.month.spentWithRevenue)} chi thật của những ngày đã có
+              doanh thu Pancake.
+              {p.yesterday
+                ? p.yesterday.revenue == null
+                  ? ` Hôm qua (${dm(p.yesterday.ngay)}): chi ${vnd(p.yesterday.spent)}đ, doanh thu Pancake chưa về.`
+                  : ` Hôm qua (${dm(p.yesterday.ngay)}): ${pct(p.yesterday.ratio)}, chi ${vnd(p.yesterday.spent)}đ, doanh thu ${vnd(p.yesterday.revenue)}đ.`
+                : " Hôm qua chưa có số."}
             </div>
           </div>
         </div>
@@ -169,6 +178,48 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
       )}
 
       <div className="card">
+        <h2>Kế hoạch chưa lên (nháp ở màn Lên camp)</h2>
+        {v.drafts.length ? (
+          <>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th className="l">Nháp</th>
+                    <th className="l">Page</th>
+                    <th>Số bài</th>
+                    <th>Ngân sách/ngày (Meta)</th>
+                    <th>Chi thật/ngày</th>
+                    <th>Hẹn chạy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.drafts.map((d) => (
+                    <tr key={d.id}>
+                      <td className="l">{d.name}</td>
+                      <td className="l">{d.page}</td>
+                      <td>{d.items}</td>
+                      <td>{d.metaDaily ? vnd(d.metaDaily) : "chưa nhập ngân sách"}</td>
+                      <td>{d.metaDaily ? vnd(d.metaDaily * 1.111) : "–"}</td>
+                      <td>{d.start_time ? d.start_time.replace("T", " ") : "khi bật"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="sub" style={{ marginTop: 6 }}>
+              Các nháp này được cộng vào dự chi hôm nay. Nháp nào đã lên quảng cáo thật thì xóa ở <a href="/fb/len-camp">màn Lên camp</a>, không thì bị tính hai lần (một lần ở nháp, một
+              lần ở phần đang chạy).
+            </p>
+          </>
+        ) : (
+          <p className="sub">
+            Chưa có nháp nào. Ở <a href="/fb/len-camp">màn Lên camp</a>, chọn bài, bấm Xem trước rồi Lưu nháp: ngân sách của nháp sẽ được cộng vào dự chi ở trang này.
+          </p>
+        )}
+      </div>
+
+      <div className="card">
         <h2>Từng ngày trong tháng</h2>
         <div className="table-wrap">
           <table className="data">
@@ -177,29 +228,32 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
                 <th className="l">Ngày</th>
                 <th>Chi thật</th>
                 <th>So mục tiêu ngày</th>
-                <th>Đơn</th>
-                <th>Doanh thu</th>
+                <th>Đơn chốt (Pancake)</th>
+                <th>Doanh thu (Pancake)</th>
                 <th>QC / doanh thu</th>
+                <th>Trong đó đơn gắn mã QC</th>
               </tr>
             </thead>
             <tbody>
               {[...v.days].reverse().map((d) => {
-                const r = d.revenue > 0 ? d.spendReal / d.revenue : null;
+                const has = d.hasRevenue !== false;
+                const r = has && d.revenue > 0 ? d.spendReal / d.revenue : null;
                 const diff = p.today.target == null ? null : d.spendReal - p.today.target;
                 return (
                   <tr key={d.ngay}>
                     <td className="l">{dm(d.ngay)}{d.ngay === today ? " (đang chạy)" : ""}</td>
                     <td>{vnd(d.spendReal)}</td>
                     <td>{diff == null ? "–" : `${diff >= 0 ? "+" : "−"}${vnd(Math.abs(diff))}`}</td>
-                    <td>{d.orders}</td>
-                    <td>{vnd(d.revenue)}</td>
+                    <td>{has ? d.orders : "chưa về"}</td>
+                    <td>{has ? vnd(d.revenue) : "chưa về"}</td>
                     <td className={ratioCls(r)}>{pct(r)}</td>
+                    <td>{vnd(d.adRevenue ?? 0)}</td>
                   </tr>
                 );
               })}
               {v.days.length === 0 ? (
                 <tr>
-                  <td className="l" colSpan={6}>Tháng này chưa có số quảng cáo nào.</td>
+                  <td className="l" colSpan={7}>Tháng này chưa có số quảng cáo nào.</td>
                 </tr>
               ) : null}
             </tbody>
