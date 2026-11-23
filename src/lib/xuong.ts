@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { soChoKho, type KhoLo } from "./kho-san-xuat";
-import { conChoVe, soNgay, tinhLo, type LoCat, type MaTran, type PhieuDat, type TienDoLo, type TomTat } from "./san-xuat";
+import { conChoVe, soNgay, tinhLo, type HangVe, type LoCat, type MaTran, type PhieuDat, type TienDoLo, type TomTat } from "./san-xuat";
 import type { SoSanXuat } from "./san-xuat-data";
 
 /**
@@ -25,7 +25,24 @@ export function checkXuongKey(request: Request): "ok" | "unset" | "trung" | "bad
 
 // ---------- Bản đọc cho xưởng ----------
 
+/** Đầu chuỗi nguồn của mọi số do xưởng tự nhập ở trang /xuong. */
+export const NGUON_XUONG = "Trang xưởng (/xuong)";
+
+/**
+ * Xưởng chỉ sửa được phiếu đóng gói do chính xưởng nhập ở trang này, khi kho CHƯA đếm dòng nào và chưa có số phiếu Pancake.
+ * Kho đã đếm thì số thuộc về Magickids, sửa phải qua Magickids.
+ */
+export function suaDuoc(h: Pick<HangVe, "nguon" | "so_phieu_pancake" | "dong">): boolean {
+  return (h.nguon ?? "").startsWith(NGUON_XUONG) && !h.so_phieu_pancake && h.dong.length > 0 && h.dong.every((d) => d.kho_dem == null);
+}
+
 export interface XuongLanVe {
+  id: number;
+  /** Xưởng còn sửa được phiếu này (xem `suaDuoc`). */
+  sua: boolean;
+  /** Chỉ có khi `sua`: số phiếu của xưởng và các dòng màu × size để mở lại sửa. */
+  soPhieu?: string;
+  dong?: { mau: string; size: string; so: number }[];
   ngay: string;
   /** Số xưởng giao (dòng nào thiếu số xưởng thì lấy số kho đếm). */
   giao: number;
@@ -162,12 +179,21 @@ export function soChoXuong(so: SoSanXuat, homNay: string, now: number = Date.now
       ...x,
       phieuId: t.lo.phieu_dat_id != null && coPhieu.has(t.lo.phieu_dat_id) ? t.lo.phieu_dat_id : null,
       daGiao: daGiaoCua(t),
-      lanVe: t.lanVe.map((h) => ({
-        ngay: h.ngay,
-        giao: h.dong.reduce((a, d) => a + (d.xuong_giao ?? d.kho_dem ?? 0), 0),
-        khoDem: h.dong.reduce((a, d) => a + (d.kho_dem ?? 0), 0),
-        choDem: h.dong.some((d) => d.kho_dem == null),
-      })),
+      lanVe: t.lanVe
+        .map((h) => {
+          const sua = suaDuoc(h);
+          return {
+            id: h.id,
+            sua,
+            ...(sua ? { soPhieu: h.so_phieu_xuong ?? "", dong: h.dong.map((d) => ({ mau: d.mau, size: d.size, so: d.xuong_giao ?? 0 })) } : {}),
+            ngay: h.ngay,
+            giao: h.dong.reduce((a, d) => a + (d.xuong_giao ?? d.kho_dem ?? 0), 0),
+            khoDem: h.dong.reduce((a, d) => a + (d.kho_dem ?? 0), 0),
+            choDem: h.dong.some((d) => d.kho_dem == null),
+          };
+        })
+        // Phiếu xưởng đã hủy (sửa về 0, kho chưa đếm) không hiện nữa.
+        .filter((v) => !(v.sua && v.giao === 0)),
     };
   });
   const cuaPhieu = (id: number) => [...tienDo.values()].filter((t) => t.lo.phieu_dat_id === id);

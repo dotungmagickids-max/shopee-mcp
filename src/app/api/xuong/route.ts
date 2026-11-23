@@ -3,7 +3,7 @@ import { docSoSanXuat } from "@/lib/san-xuat-data";
 import { db } from "@/lib/supabase";
 import { pancakeStock } from "@/lib/kho";
 import { cached } from "@/lib/kho-store";
-import { checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, soChoXuong } from "@/lib/xuong";
+import { checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, soChoXuong, suaDuoc } from "@/lib/xuong";
 import { docAnhPhieu, docAnhVao } from "@/lib/xuong-doc-anh";
 import { docLenhNhap, loiNhap } from "@/lib/xuong-nhap";
 import { CHUA_BAT_PHIEU, chuaCoBang, docPhieu, soTiep, trungSo, type PhieuDaLuu, type PhieuGui } from "@/lib/xuong-phieu";
@@ -50,6 +50,7 @@ export async function GET(request: Request) {
  *   { action: "thongtin", ma_hang, lo, ngay_chot?, xuong?, ngay_vai_ve?, thong_tin_sx?, nguoi } → ghi thông tin sản xuất (cần migration 0026)
  *   { action: "cat", ma_hang, lo, ngay_cat, hen_tra?, dot_dat?, ghi_de?, dong: [{ mau, size, so }], nguoi }     → phiếu cắt: số cắt vào sổ ngay
  *   { action: "giao", ma_hang, lo, ngay, so_phieu?, dong: [{ mau, size, so }], nguoi }                        → phiếu đóng gói: số xưởng giao, chờ kho đếm
+ *   { action: "giao_sua", id, ngay, so_phieu?, huy?, dong: [{ mau, size, so }], nguoi }                        → sửa hoặc hủy phiếu đóng gói do xưởng nhập, khi kho chưa đếm
  *   { action: "doc_anh", loai: "cat" | "giao" | "vai", anh: "data:image/…;base64,…" }                         → AI đọc ảnh phiếu ra bảng để soát, KHÔNG ghi gì
  *   { action: "phieu_luu", id?, nguoi?, phieu }                                                → lưu phiếu gửi đối tác, trả { ok, id, so }
  *   { action: "phieu_xoa", id, nguoi? }                                                        → xóa mềm phiếu
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
   const action = (body as { action?: unknown } | null)?.action;
   if (action === "phieu_luu") return luuPhieu(body);
   if (action === "phieu_xoa") return xoaPhieu(body);
-  if (action === "cat" || action === "giao") return nhapPhieu(body);
+  if (action === "cat" || action === "giao" || action === "giao_sua") return nhapPhieu(body);
   if (action === "doc_anh") return docAnh1(body);
   const lenh = docLenhGhi(body, homNayVN());
   if (!lenh.ok) return json({ error: lenh.error }, 400);
@@ -196,6 +197,19 @@ async function nhapPhieu(body: unknown): Promise<Response> {
       }
       if (co.data && !lenh.ghiDe) return json({ error: `Lô ${lenh.ma} ${lenh.lo} đã có số cắt`, daCo: true }, 409);
       if (!co.data && lenh.ghiDe) return json({ error: `Chưa có lô ${lenh.ma} ${lenh.lo} để ghi đè` }, 400);
+    }
+    if (lenh.loai === "giao_sua") {
+      // Kiểm lại ngay trước khi ghi: chỉ phiếu do xưởng nhập ở trang này và kho chưa đếm mới được sửa.
+      const co = await db().from("sx_hang_ve").select("id, nguon, so_phieu_pancake, dong:sx_hang_ve_dong(kho_dem)").eq("id", lenh.id).maybeSingle();
+      if (co.error) {
+        console.error("[xuong] kiểm phiếu đóng gói lỗi:", co.error.message);
+        return json({ error: loiNhap({}).error }, 502);
+      }
+      if (!co.data) return json({ error: "Không còn phiếu đóng gói này trong sổ" }, 404);
+      const h = co.data as unknown as { nguon: string | null; so_phieu_pancake: string | null; dong: { kho_dem: number | null }[] };
+      if (!suaDuoc({ nguon: h.nguon, so_phieu_pancake: h.so_phieu_pancake, dong: h.dong.map((d) => ({ mau: "", size: "", xuong_giao: null, kho_dem: d.kho_dem })) })) {
+        return json({ error: "Phiếu này kho Magickids đã đếm, hoặc không phải do xưởng nhập ở đây: không sửa được. Báo Magickids để sửa" }, 409);
+      }
     }
     const { error } = await db().rpc(lenh.fn, lenh.args);
     if (error) {

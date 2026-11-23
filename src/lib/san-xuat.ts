@@ -44,6 +44,8 @@ export interface HangVe {
   so_phieu_pancake?: string | null;
   khong_nhap_pancake?: boolean;
   ghi_chu?: string | null;
+  /** Nguồn của số (ai ghi, từ đâu). */
+  nguon?: string | null;
   dong: { mau: string; size: string; xuong_giao: number | null; kho_dem: number | null }[];
 }
 

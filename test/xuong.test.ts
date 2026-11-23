@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SoSanXuat } from "../src/lib/san-xuat-data";
-import { CHUA_BAT_THONG_TIN, checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, ngayHopLe, soChoXuong } from "../src/lib/xuong";
+import { CHUA_BAT_THONG_TIN, checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, ngayHopLe, soChoXuong, suaDuoc } from "../src/lib/xuong";
 
 const so: SoSanXuat = {
   los: [
@@ -63,8 +63,8 @@ describe("soChoXuong", () => {
     const a = r.los.find((l) => l.id === 1)!;
     assert.deepEqual([a.ma, a.lo, a.phieuId, a.soCat, a.daGiao, a.khoDem, a.conNo, a.ngayTre, a.henTra], ["MA26001", "L1", 10, 40, 8, 5, 35, 3, "2026-11-19"]);
     assert.deepEqual(a.lanVe, [
-      { ngay: "2026-11-21", giao: 5, khoDem: 5, choDem: false },
-      { ngay: "2026-11-22", giao: 3, khoDem: 0, choDem: true },
+      { id: 1, sua: false, ngay: "2026-11-21", giao: 5, khoDem: 5, choDem: false },
+      { id: 2, sua: false, ngay: "2026-11-22", giao: 3, khoDem: 0, choDem: true },
     ]);
     assert.deepEqual(a.maTran?.hang.map((h) => [h.mau, h.o]), [["Đỏ", [11, 16]], ["Trắng", [8, null]]]);
     assert.deepEqual(a.doiHen, [{ cu: "2026-11-18", moi: "2026-11-19", lyDo: "Người A báo máy in hỏng" }]);
@@ -213,5 +213,35 @@ describe("ảnh đại diện sản phẩm", () => {
   it("chỉ trả ảnh https của mã được hỏi, mỗi mã một ảnh", () => {
     const images: Array<[string, string]> = [["MA26001", "https://x.test/a.jpg"], ["ma26001", "https://x.test/b.jpg"], ["MA26002", "http://x.test/c.jpg"], ["MA26009", "https://x.test/d.jpg"]];
     assert.deepEqual(locAnh(images, ["MA26001", "MA26002", "MA26003"]), { MA26001: "https://x.test/a.jpg" });
+  });
+});
+
+describe("xưởng sửa phiếu đóng gói", () => {
+  const nguon = "Trang xưởng (/xuong), phiếu đóng gói: Người B · nhập lúc 10:04:05";
+  const d = (xuong_giao: number | null, kho_dem: number | null) => ({ mau: "Đỏ", size: "130", xuong_giao, kho_dem });
+  it("chỉ sửa được phiếu xưởng tự nhập, kho chưa đếm dòng nào, chưa có số Pancake", () => {
+    assert.equal(suaDuoc({ nguon, so_phieu_pancake: null, dong: [d(5, null)] }), true);
+    assert.equal(suaDuoc({ nguon, so_phieu_pancake: null, dong: [d(5, null), d(3, 3)] }), false);
+    assert.equal(suaDuoc({ nguon, so_phieu_pancake: "1003", dong: [d(5, null)] }), false);
+    assert.equal(suaDuoc({ nguon: "zalo msg 1", so_phieu_pancake: null, dong: [d(5, null)] }), false);
+    assert.equal(suaDuoc({ nguon: null, so_phieu_pancake: null, dong: [d(5, null)] }), false);
+    assert.equal(suaDuoc({ nguon, so_phieu_pancake: null, dong: [] }), false);
+  });
+  it("bản đọc cho xưởng: phiếu sửa được kèm các dòng để mở lại; phiếu đã hủy (về 0) không hiện", () => {
+    const so2: SoSanXuat = {
+      los: [{ id: 1, ma_hang: "MA26001", lo: "L1", hen_tra: null, trang_thai: "dang_ve", dong: [{ mau: "Đỏ", size: "130", so_cat: 40 }] }],
+      hangVe: [
+        { id: 7, lo_id: 1, ngay: "2026-11-22", so_phieu_xuong: "0457", nguon, dong: [d(5, null)] },
+        { id: 8, lo_id: 1, ngay: "2026-11-22", nguon, ghi_chu: "Xưởng hủy phiếu nhập nhầm", dong: [d(0, null)] },
+        { id: 9, lo_id: 1, ngay: "2026-11-21", nguon, dong: [d(4, 4)] },
+      ],
+      phieu: [],
+    };
+    const lan = soChoXuong(so2, "2026-11-23", 1).los[0].lanVe;
+    assert.deepEqual(lan, [
+      { id: 9, sua: false, ngay: "2026-11-21", giao: 4, khoDem: 4, choDem: false },
+      { id: 7, sua: true, soPhieu: "0457", dong: [{ mau: "Đỏ", size: "130", so: 5 }], ngay: "2026-11-22", giao: 5, khoDem: 0, choDem: true },
+    ]);
+    assert.ok(!JSON.stringify(lan).includes("nguon"));
   });
 });
