@@ -101,6 +101,14 @@ describe("cskh: tính số một ngày", () => {
     assert.deepEqual(tomTat(k), { ngay: NGAY, tamTinh: true, cuoc: 5, khachMoi: 3, tinKhach: 4, chotMoi: 1, sot: 1, trungViGiay: (60 + 3 * 3600) / 2 });
     assert.ok(k.cuoc.every((c) => c.duoi.length === 5));
   });
+  it("khách cũ bấm quảng cáo: dòng hệ thống đến cùng lúc với tin khách không làm thành shop nhắn trước", () => {
+    const bamQc = ht("q-30001", luc(9, 0, -20), [tin(luc(10) - 3_000, "tu_dong", { loai: "khac", kyTu: 0 }), tin(luc(10) - 2_000, "tu_dong"), tin(luc(10), "khach"), tin(luc(10, 1), "nhan_vien")]);
+    const baoDon = ht("q-30002", luc(9, 0, -20), [tin(luc(8), "tu_dong"), tin(luc(10), "khach"), tin(luc(10, 1), "nhan_vien")]);
+    const r = tinhNgay([bamQc, baoDon], [], NGAY, MAC_DINH, luc(23));
+    assert.deepEqual(Object.fromEntries(r.cuoc.map((c) => [c.duoi, c.nhom])), { "30001": "khach_cu", "30002": "khach_cu_phan_hoi" });
+    assert.equal(r.tong.tinNhanLai, 1);
+    assert.equal(r.tong.tinTuDong, 2);
+  });
   it("chỉ dán mẫu rồi dừng: mọi tin có chữ của nhân viên đều trùng với nhiều cuộc khác", () => {
     const cuoc = Array.from({ length: 5 }, (_, i) => ht(`m-2000${i}`, luc(9), [tin(luc(9, i), "khach"), tin(luc(9, i + 1), "nhan_vien", { bam: "mau1" })]));
     cuoc[0].tin.push(tin(luc(9, 30), "khach"), tin(luc(9, 31), "nhan_vien", { bam: "rieng" }));
