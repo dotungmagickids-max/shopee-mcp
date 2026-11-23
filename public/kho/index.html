@@ -96,6 +96,11 @@ body.rec #recinfo{color:var(--red)}
 .gi .ma{font-weight:700;font-size:16px}.gi .ly{margin:4px 0}.gi .sp{color:var(--mut);font-size:14px;word-break:break-word}
 .gi select,.gi input{width:100%;margin-bottom:6px}
 .gi .luu{font-size:12px;color:var(--mut)}
+.gi .kq{font-weight:700}.gi .kq.giao{color:var(--dh)}.gi .kq.hoan{color:var(--red)}
+.gtong{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 12px}
+.gtong h3{margin:0 0 6px;font-size:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.gtong .big{font-size:17px;margin:4px 0 8px}.gtong .big b{color:var(--dh)}
+.gtong table{margin-top:6px}.gtong .wrap{overflow-x:auto}
 @media (max-width:700px){.gi{grid-template-columns:1fr}}
 .right{display:flex;flex-direction:column;gap:8px}
 .filters{display:flex;gap:6px;flex-wrap:wrap}
@@ -330,11 +335,12 @@ table.t td.z{color:#b6bcc6}
   <h2>Viettel Post: giao có vấn đề</h2>
   <div class="filters">
     <button id="btnGiaoLoad" class="primary">Tải lại</button>
-    <select id="gLoc"><option value="mo">Đang có vấn đề</option><option value="chua">Chưa ghi kết quả</option><option value="roi">Đã rời danh sách (14 ngày)</option><option value="">Tất cả</option></select>
+    <select id="gLoc"><option value="mo">Đang có vấn đề</option><option value="chua">Chưa ghi kết quả</option><option value="roi">Đã rời danh sách (30 ngày)</option><option value="">Tất cả</option></select>
     <input type="search" id="gQ" placeholder="Tìm mã đơn, mã phân loại, lý do">
   </div>
   <div class="hint" id="giaoInfo" style="margin:8px 0;white-space:normal"></div>
   <div class="cards" id="giaoCards"></div>
+  <div id="giaoTong" class="gtong"></div>
   <div id="giaoBody"></div>
 </section>
 <section id="vNhap" class="card view" hidden>
@@ -1418,7 +1424,10 @@ function mockGiao(){
     mk(3,'Chờ phát lại','Không liên lạc được khách hàng nhận',2,[{sku:'BD26011XANHTHAN180',quantity:2}],true),
     mk(4,'Chờ xử lý','Sai thông tin đơn hàng',5,[{sku:'QD26001BE170',quantity:1}],true),
     mk(5,'Phát tiếp','Không có nhu cầu nhận hàng',9,[],true),
-    mk(6,'Chờ phát lại','Người nhận hẹn phát lại',6,[{sku:'QD26002DEN170',quantity:1}],false)]};
+    Object.assign(mk(6,'Chờ phát lại','Người nhận hẹn phát lại (10:46 20/11)',6,[{sku:'QD26002DEN170',quantity:1}],false),{kq:'giao'}),
+    Object.assign(mk(7,'Chờ xử lý','Khách từ chối nhận – Không có nhu cầu nhận hàng, "ko nhan"',7,[{sku:'QD26001DEN170',quantity:1}],false),{kq:'hoan'}),
+    Object.assign(mk(8,'Chờ phát lại','Không liên lạc được khách hàng nhận',5,[{sku:'ADT26001DO140',quantity:1}],false),{kq:'giao'}),
+    Object.assign(mk(9,'Chờ phát lại','Người nhận hẹn phát lại (09:20 19/11)',8,[{sku:'QD26033GHI180',quantity:1}],false),{kq:'giao'})]};
 }
 async function apiPost(body,timeout){
   if(TEST){
@@ -2565,6 +2574,32 @@ async function hoanLoad(){
    Không có tên, SĐT, địa chỉ khách, không có tiền thu hộ, không có tên sản phẩm (anh Tùng chốt 22 và 23/11/2026). ---------- */
 const GIAO={rows:[],marks:{},ngay:null,at:0,err:'',busy:false};
 const GIAO_KQ=[['','Chưa ghi kết quả'],['phat-lai','Khách nhận, phát lại'],['cho-hoan','Khách không nhận, cho hoàn'],['sua-thong-tin','Đã sửa thông tin giao'],['chua-lien-lac','Gọi chưa được khách']];
+/* gộp lý do: bỏ giờ hẹn, lời bưu tá ghi thêm, tiền tố "Khách từ chối nhận" để cùng một lý do về một dòng */
+const giaoNhom=t=>{t=String(t||'').replace(/\([^)]*\)/g,'').replace(/,?\s*["“][^"”]*["”]/g,'').replace(/^(Khách từ chối nhận|Phát thất bại nhiều lần)\s*[–:-]\s*/i,'').replace(/:.*$/,'').trim();return t?t[0].toUpperCase()+t.slice(1).toLowerCase():'Không ghi lý do';};
+const giaoPct=(a,b)=>b?Math.round(a*100/b)+'%':'';
+/* Tổng kết đơn cứu được: đơn đã rời danh sách có vấn đề mà không sang hoàn là đơn giao được (cứu được) */
+function giaoTong(){
+  const box=$('giaoTong');box.textContent='';
+  if(GIAO.err||GIAO.busy||!GIAO.at||!GIAO.ngay)return;
+  const mk=(tag,cls,txt)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(txt!=null)x.textContent=txt;return x;};
+  const ky=+(GIAO.ky||7),end=Date.parse(GIAO.ngay+'T00:00:00Z');
+  const roi=GIAO.rows.filter(r=>!r.con&&(end-Date.parse(r.ngay+'T00:00:00Z'))/86400000<ky),cuu=roi.filter(r=>r.kq==='giao'),mo=GIAO.rows.filter(r=>r.con);
+  const h=mk('h3','','Tổng kết đơn cứu được'),sel=document.createElement('select');
+  for(const n of [7,14,30]){const o=document.createElement('option');o.value=n;o.textContent=n+' ngày gần nhất';sel.append(o);}
+  sel.value=ky;sel.onchange=()=>{GIAO.ky=+sel.value;giaoTong();};h.append(sel);box.append(h);
+  if(!roi.length){box.append(mk('p','hint','Chưa có đơn nào rời danh sách trong '+ky+' ngày. Số tổng kết có từ báo cáo ngày kế tiếp: đơn rời danh sách mà không sang hoàn được tính là cứu được.'));return;}
+  const big=mk('p','big');big.append(mk('b','',cuu.length+' / '+roi.length+' đơn cứu được ('+giaoPct(cuu.length,roi.length)+')'),document.createTextNode('  ·  '+(roi.length-cuu.length)+' đơn hoàn  ·  còn '+mo.length+' đơn đang có vấn đề'));box.append(big);
+  const bang=(ten,key)=>{
+    const m=new Map();for(const r of roi){const k=key(r);const v=m.get(k)||[0,0];v[0]++;if(r.kq==='giao')v[1]++;m.set(k,v);}
+    const w=mk('div','wrap'),t=mk('table','t'),hd=mk('tr');for(const c of [ten,'Đã rời','Cứu được','Hoàn','Tỉ lệ cứu']){const th=mk('th',c===ten?'':'num',c);hd.append(th);}
+    const th=mk('thead');th.append(hd);const tb=mk('tbody');
+    for(const [k,v] of [...m.entries()].sort((a,b)=>b[1][0]-a[1][0])){const tr=mk('tr');tr.append(mk('td','',k),mk('td','num',v[0]),mk('td','num',v[1]),mk('td','num',v[0]-v[1]),mk('td','num',giaoPct(v[1],v[0])));tb.append(tr);}
+    t.append(th,tb);w.append(t);box.append(w);
+  };
+  bang('Theo lý do',r=>giaoNhom(r.reason));
+  bang('Theo kết quả đã ghi',r=>(GIAO_KQ.find(k=>k[0]===((GIAO.marks[r.ma]||{}).state||''))||GIAO_KQ[0])[1]);
+  box.append(mk('p','hint','Cứu được = đơn từng có vấn đề, nay đã rời danh sách và không nằm trong danh sách hoàn của Viettel Post. Hoàn = đã chuyển sang danh sách hoàn.'));
+}
 const giaoDays=r=>r.since?Math.max(0,Math.floor((Date.now()-r.since)/86400000)):0;
 async function giaoOpen(force){
   if(GIAO.busy)return;
@@ -2591,7 +2626,9 @@ function giaoKpi(){
   kpi('Đơn đang có vấn đề',mo.length);
   kpi('Chưa ghi kết quả',chua.length,chua.length?'amber':'');
   kpi('Nằm trong danh sách từ 3 ngày',lau.length,lau.length?'bad':'');
-  kpi('Đã rời danh sách (14 ngày)',GIAO.rows.length-mo.length);
+  const roi=GIAO.rows.filter(r=>!r.con),cuu=roi.filter(r=>r.kq==='giao').length;
+  kpi('Cứu được / đã rời (30 ngày)',cuu+' / '+roi.length+(roi.length?' ('+giaoPct(cuu,roi.length)+')':''));
+  giaoTong();
 }
 function renderGiao(){
   const body=$('giaoBody');if(!body)return;
@@ -2612,7 +2649,7 @@ function renderGiao(){
   });
   if(!list.length){body.append(mk('p','hint',GIAO.rows.length?'Không có đơn nào khớp bộ lọc.':'Không có đơn giao nào có vấn đề.'));return;}
   /* gom theo lý do để nhìn ra lý do nào nhiều */
-  const by=new Map();for(const r of list){const k=r.reason||'Không ghi lý do';by.set(k,(by.get(k)||0)+1);}
+  const by=new Map();for(const r of list){const k=giaoNhom(r.reason);by.set(k,(by.get(k)||0)+1);}
   body.append(mk('p','hint',[...by.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]+': '+x[1]).join(' · ')));
   for(const r of list){
     const m=GIAO.marks[r.ma]||{},d=giaoDays(r);
@@ -2621,7 +2658,8 @@ function renderGiao(){
     const top=mk('div');top.append(mk('span','ma',r.ma),document.createTextNode(r.id?'  ·  đơn '+r.id:''),document.createTextNode('  ·  '+r.channel));a.append(top);
     a.append(mk('div','ly',(r.status?r.status+': ':'')+(r.reason||'không ghi lý do')));
     a.append(mk('div','sp',r.items.length?r.items.map(i=>i.sku+(i.quantity>1?' ×'+i.quantity:'')).join(', '):'Chưa tra được sản phẩm trên Pancake'));
-    a.append(mk('div','sp',r.con?(d?'Trong danh sách '+d+' ngày':'Mới vào danh sách'):'Đã rời danh sách (giao xong hoặc chuyển hoàn), báo cáo cuối '+r.ngay.slice(8,10)+'/'+r.ngay.slice(5,7)));
+    if(r.con)a.append(mk('div','sp',d?'Trong danh sách '+d+' ngày':'Mới vào danh sách'));
+    else{const k=mk('div','sp');k.append(mk('span','kq '+(r.kq==='hoan'?'hoan':'giao'),r.kq==='hoan'?'Không cứu được: đã chuyển hoàn':'Cứu được: đã giao'),document.createTextNode('  ·  báo cáo cuối '+r.ngay.slice(8,10)+'/'+r.ngay.slice(5,7)));a.append(k);}
     const b=mk('div'),sel=document.createElement('select'),note=document.createElement('input'),luu=mk('div','luu',m.at?'Ghi lúc '+vnTime(m.at).slice(0,16):'');
     for(const k of GIAO_KQ){const o=document.createElement('option');o.value=k[0];o.textContent=k[1];sel.append(o);}
     sel.value=m.state||'';note.value=m.note||'';note.maxLength=300;note.placeholder='Ghi chú (không ghi tên, SĐT khách)';
