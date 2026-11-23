@@ -221,7 +221,7 @@ describe("cskh: chỉ đọc", () => {
 });
 
 describe("cskh: AI chấm điểm", () => {
-  const tra = { loai: "hoi_gia_size", ket_qua: "khach_im", diem: { size: 5, mua_kem: 0, chot: 15, thai_do: null }, san_pham: ["Quần Kaki", "quần kaki", ""], tiem_nang: "am", ly_do_tiem_nang: "Khách hỏi size cho bé rồi dừng", phan_hoi_xau: false, mo_ta_xau: "không có", do_dong_hang: true, viec: "Nhắn lại hỏi chị chọn màu, gọi 0900000000", muc_gap: 1, nhan_xet: "Dán mẫu rồi dừng" };
+  const tra = { loai: "hoi_gia_size", ket_qua: "khach_im", diem: { size: 5, mua_kem: 0, chot: 15, thai_do: null }, san_pham: ["Quần Kaki", "quần kaki", ""], tiem_nang: "am", ly_do_tiem_nang: "Khách hỏi size cho bé rồi dừng", diem_tiem_nang: 6, tin_goi_y: "Dạ chị ơi, bé nhà mình cao bao nhiêu để em giữ size ạ? Gọi em 0900000000", phan_hoi_xau: false, mo_ta_xau: "không có", do_dong_hang: true, viec: "Nhắn lại hỏi chị chọn màu, gọi 0900000000", muc_gap: 1, nhan_xet: "Dán mẫu rồi dừng" };
   it("che SĐT, email, đường dẫn, dãy số dài trước khi gửi AI", () => {
     assert.equal(cheThongTin("sđt 0900 000 000 hoặc +84900000000, mail a.b@x.vn, xem https://x.vn/a?b=1 stk 123456789012"), "sđt [SĐT] hoặc [SĐT], mail [email], xem [link] stk [số]");
     assert.equal(cheThongTin("bé 35kg cao 1m40, lấy 2 cái 169k"), "bé 35kg cao 1m40, lấy 2 cái 169k");
@@ -233,10 +233,11 @@ describe("cskh: AI chấm điểm", () => {
   });
   it("đọc câu trả lời của AI: chỉ nhận giá trị hợp lệ, kẹp điểm 0–10, che SĐT AI lỡ chép", () => {
     const k = docKetQua("Đây là kết quả:\n```json\n" + JSON.stringify(tra) + "\n```")!;
-    assert.deepEqual(k, { loai: "hoi_gia_size", ketQua: "khach_im", diemSize: 5, diemMuaKem: 0, diemChot: 10, diemThaiDo: null, sanPham: ["quần kaki"], tiemNang: "am", lyDoTiemNang: "Khách hỏi size cho bé rồi dừng", phanHoiXau: false, moTaXau: "", doDongHang: false, viec: "Nhắn lại hỏi chị chọn màu, gọi [SĐT]", mucGap: 1, nhanXet: "Dán mẫu rồi dừng" });
+    assert.deepEqual(k, { loai: "hoi_gia_size", ketQua: "khach_im", diemSize: 5, diemMuaKem: 0, diemChot: 10, diemThaiDo: null, sanPham: ["quần kaki"], tiemNang: "am", lyDoTiemNang: "Khách hỏi size cho bé rồi dừng", diemTiemNang: 6, tinGoiY: "Dạ chị ơi, bé nhà mình cao bao nhiêu để em giữ size ạ? Gọi em [SĐT]", phanHoiXau: false, moTaXau: "", doDongHang: false, viec: "Nhắn lại hỏi chị chọn màu, gọi [SĐT]", mucGap: 1, nhanXet: "Dán mẫu rồi dừng" });
     assert.equal(docKetQua('{"loai":"la","ket_qua":"x","muc_gap":9}')!.loai, "khac");
     assert.equal(docKetQua('{"loai":"la","ket_qua":"x","muc_gap":9}')!.mucGap, 2);
     assert.equal(docKetQua('{"tiem_nang":"rat nong"}')!.tiemNang, "khong");
+    assert.deepEqual([docKetQua('{"tiem_nang":"khong","diem_tiem_nang":9,"tin_goi_y":"x"}')!.diemTiemNang, docKetQua('{"tiem_nang":"khong","diem_tiem_nang":9,"tin_goi_y":"x"}')!.tinGoiY], [null, ""]);
     assert.equal(docKetQua("không phải json"), null);
     assert.equal(docKetQua("{hỏng"), null);
   });
@@ -328,15 +329,20 @@ describe("cskh: AI chấm điểm", () => {
     const co = docKetQua(JSON.stringify(tra))!;
     const rows: DongCham[] = [
       { ...co, page: PAGE, id: "g-40001", mucGap: 2 },
-      { ...co, page: PAGE, id: "g-40002", diemSize: 9, diemThaiDo: 8, mucGap: 1, tiemNang: "nong", phanHoiXau: true, moTaXau: "Khách chê vải", loai: "khieu_nai" },
+      { ...co, page: PAGE, id: "g-40002", diemSize: 9, diemThaiDo: 8, mucGap: 1, tiemNang: "nong", diemTiemNang: 9, phanHoiXau: true, moTaXau: "Khách chê vải", loai: "khieu_nai" },
       { ...co, page: PAGE, id: "g-40003", ketQua: "da_chot", viec: "Cảm ơn khách", tiemNang: "lanh" },
       { ...co, page: PAGE, id: "khong-co-trong-ngay" },
     ];
     const g = gopCham(k, rows, "model-a");
     assert.deepEqual([g.canCham, g.daCham], [3, 3]);
     assert.deepEqual(g.diem[0], { ten: "Tất cả", cuoc: 3, size: 6.33, muaKem: 0, chot: 10, thaiDo: 8 });
-    assert.deepEqual(g.tiemNang, [{ capDo: "nong", cuoc: 1 }, { capDo: "am", cuoc: 1 }, { capDo: "lanh", cuoc: 1 }, { capDo: "khong", cuoc: 0 }]);
     assert.deepEqual(g.khach.map((v) => [v.duoi, v.capDo, v.aiCham]), [["40002", "nong", false], ["40001", "am", false]]);
+    // Cả ba cuộc đều là sale trả lời sau cùng; cuộc đã có đơn bị loại và bị ép về "không cần chăm".
+    assert.deepEqual(g.chamLai.map((v) => [v.duoi, v.capDo, v.diemTiemNang, v.choKhach]), [["40002", "nong", 9, true], ["40001", "am", 6, true]]);
+    assert.deepEqual(g.tiemNang, [{ capDo: "nong", cuoc: 1 }, { capDo: "am", cuoc: 1 }, { capDo: "lanh", cuoc: 0 }, { capDo: "khong", cuoc: 1 }]);
+    const khachNhanLai = tinhNgay([ht("g-40009", luc(9), [tin(luc(9), "khach"), tin(luc(9, 1), "nhan_vien"), tin(luc(9, 5), "khach")])], [], NGAY, MAC_DINH, luc(23));
+    assert.equal(khachNhanLai.cuoc[0].choKhach, false);
+    assert.equal(gopCham(khachNhanLai, [{ ...co, page: PAGE, id: "g-40009" }], "model-a").chamLai.length, 0);
     assert.deepEqual(g.diem.slice(1).map((d) => [d.ten, d.cuoc]), [["Nhân viên A", 2], ["Nhân viên B", 1]]);
     assert.deepEqual(g.viec.map((v) => [v.duoi, v.mucGap]), [["40002", 1], ["40001", 2]]);
     assert.deepEqual(g.xau.map((v) => [v.duoi, v.moTaXau]), [["40002", "Khách chê vải"]]);

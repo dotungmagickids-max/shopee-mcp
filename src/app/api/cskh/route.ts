@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     if (n > 0) return json({ den: ngay, ngay: await layXuHuong(congNgay(ngay, -(Math.min(90, Math.floor(n)) - 1)), ngay) });
     let k = (sp.get("moi") ? null : await layNgay(ngay)) ?? (await tinhLaiNgay(ngay));
     // Bản chụp cũ chưa có mã hội thoại nên không khớp được điểm chấm: tính lại một lần.
-    if (k.cuoc.length && !k.cuoc[0].id) k = await tinhLaiNgay(ngay);
+    if (k.cuoc.length && (!k.cuoc[0].id || k.cuoc[0].choKhach === undefined)) k = await tinhLaiNgay(ngay);
     let ton: ReturnType<typeof tonTheoMa> = {};
     let tonLoi = "";
     try {
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
     const link = (page: string, id: string) => `https://pancake.vn/${encodeURIComponent(page)}?c_id=${encodeURIComponent(id)}`;
     const g = await layCham(k);
     const boId = <T extends { page: string; id: string }>(xs: T[]) => xs.map(({ id, ...r }) => ({ ...r, link: link(r.page, id) }));
-    const cham = g ? { ...g, viec: boId(g.viec), xau: boId(g.xau), khach: boId(g.khach) } : null;
+    const cham = g ? { ...g, viec: boId(g.viec), xau: boId(g.xau), khach: boId(g.khach), chamLai: boId(g.chamLai) } : null;
     return json({ ...k, cuoc: k.cuoc.map(({ id: _id, ...r }) => r), tenPage: tenPage(), ton, tonLoi, cham });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 502);

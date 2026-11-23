@@ -165,6 +165,11 @@ export interface DongSot {
 export interface DongCuoc {
   /** Mã hội thoại đầy đủ: chỉ dùng phía máy chủ (khớp điểm chấm, tạo đường dẫn mở Pancake), không in ra trang. */
   id: string;
+  /** Giờ tin cuối của khách và của nhân viên (tính cả các ngày sau, tới lúc tính). */
+  khachCuoiLuc: number | null;
+  nvCuoiLuc: number | null;
+  /** Nhân viên đã trả lời và khách chưa nhắn lại: cuộc này đang chờ khách. */
+  choKhach: boolean;
   duoi: string;
   page: string;
   nhom: Nhom;
@@ -323,7 +328,10 @@ export function tinhNgay(ds: HoiThoai[], dons: DonKhop[], ngay: string, ch: CauH
     }
     if (cho) xet(cho, null);
 
-    cuoc.push({ id: h.id, duoi: duoi(h.id), page: h.page, nhom, nguoi: ten, giay, trongGio, chot, sot: soSot, tinKhach: khach.length, tinNhanVien: nvNgay.length });
+    const khachCuoiLuc = tin.filter((t) => t.ben === "khach").pop()?.luc ?? null;
+    const nvCuoiLuc = tin.filter((t) => t.ben === "nhan_vien").pop()?.luc ?? null;
+    const choKhach = khachCuoiLuc != null && nvCuoiLuc != null && nvCuoiLuc > khachCuoiLuc;
+    cuoc.push({ id: h.id, khachCuoiLuc, nvCuoiLuc, choKhach, duoi: duoi(h.id), page: h.page, nhom, nguoi: ten, giay, trongGio, chot, sot: soSot, tinKhach: khach.length, tinNhanVien: nvNgay.length });
   }
 
   const nguoiTruc = [...nguoi.values()]
