@@ -1,7 +1,9 @@
 import { homNayVN } from "@/lib/san-xuat";
 import { docSoSanXuat } from "@/lib/san-xuat-data";
 import { db } from "@/lib/supabase";
-import { checkXuongKey, docLenhGhi, loiGhi, soChoXuong } from "@/lib/xuong";
+import { pancakeStock } from "@/lib/kho";
+import { cached } from "@/lib/kho-store";
+import { checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, soChoXuong } from "@/lib/xuong";
 import { CHUA_BAT_PHIEU, chuaCoBang, docPhieu, soTiep, trungSo, type PhieuDaLuu, type PhieuGui } from "@/lib/xuong-phieu";
 
 export const runtime = "nodejs";
@@ -23,12 +25,15 @@ function chan(request: Request): Response | null {
 /**
  * Sổ hàng xưởng cho trang /xuong. Header bắt buộc: x-mk-key: <XUONG_API_KEY>
  *   GET /api/xuong → { at, homNay, tomTat, ghiThongTin, don[], los[] } đã bỏ giá, ghi chú nội bộ và số phiếu Pancake
+ *   GET /api/xuong?anh=MA1,MA2 → { anh: { MA1: "https://…" } } ảnh đại diện theo mã hàng (đọc Pancake, lưu tạm 6 giờ); mã chưa có ảnh thì không có trong kết quả
  *   GET /api/xuong?phieu=1 → { phieu: [{ id, so, nguoi, suaLuc, phieu }] } phiếu gửi đối tác đã lưu (có đơn giá vải nếu xưởng đã ghi); { chuaBat: true } khi chưa có bảng
  */
 export async function GET(request: Request) {
   const tuChoi = chan(request);
   if (tuChoi) return tuChoi;
-  if (new URL(request.url).searchParams.get("phieu")) return docDanhSachPhieu();
+  const sp = new URL(request.url).searchParams;
+  if (sp.get("phieu")) return docDanhSachPhieu();
+  if (sp.get("anh")) return docAnh(docMaAnh(sp.get("anh")));
   try {
     return json(soChoXuong(await docSoSanXuat(), homNayVN()));
   } catch (err) {
@@ -152,5 +157,19 @@ async function xoaPhieu(body: unknown): Promise<Response> {
   } catch (err) {
     console.error("[xuong] xóa phiếu lỗi:", err);
     return json({ error: "Máy chủ chưa xóa được phiếu, thử lại sau ít phút" }, 502);
+  }
+}
+
+// ---------- Ảnh đại diện sản phẩm (chỉ đọc Pancake) ----------
+
+async function docAnh(ma: string[]): Promise<Response> {
+  if (!ma.length) return json({ anh: {} });
+  try {
+    // Một lượt đọc danh mục Pancake cho mọi mã, lưu tạm 6 giờ; chỉ trả ảnh của các mã được hỏi.
+    const tatCa = await cached("xuong-anh", 6 * 3600_000, async () => (await pancakeStock()).images, (v) => v.length > 0);
+    return json({ anh: locAnh(tatCa, ma) });
+  } catch (err) {
+    console.error("[xuong] đọc ảnh lỗi:", err instanceof Error ? err.message : err);
+    return json({ anh: {}, loi: true });
   }
 }
