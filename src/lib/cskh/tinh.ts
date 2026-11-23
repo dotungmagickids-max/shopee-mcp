@@ -62,7 +62,7 @@ export interface CauHinh {
   nguongMau: number;
 }
 
-/** Giờ ca là số đặt tạm, chờ anh xác nhận. */
+/** Giờ ca anh Tùng chốt 23/11/2026. Số phút tối thiểu cuối ca là đề xuất, chưa chốt. */
 export const MAC_DINH: CauHinh = {
   ca: [
     { ten: "sáng", tu: 8, den: 12 },
