@@ -46,10 +46,12 @@ export function pickImage(v: unknown, depth = 0): string | null {
   return null;
 }
 
-/** Bài Pancake → cùng dạng với bài đọc từ Meta. Giờ của Pancake là UTC, không kèm múi giờ. Bài đã gỡ thì bỏ (null). */
+/** Bài Pancake → cùng dạng với bài đọc từ Meta. Giờ của Pancake là UTC, không kèm múi giờ. Bài đã gỡ và ảnh con của album thì bỏ (null). */
 export function fromPancakePost(r: any): PagePost | null {
   const id = String(r?.id ?? "");
   if (!id || r?.removed === true) return null;
+  // Pancake đếm cả từng ảnh con của album thành một bài (ảnh, không có chữ): bỏ, để số bài khớp với Facebook.
+  if (String(r?.type ?? "") === "photo" && !String(r?.message ?? "").trim()) return null;
   const at = String(r?.inserted_at ?? r?.created_time ?? "");
   const created = at && !/(Z|[+-]\d{2}:?\d{2})$/.test(at) ? `${at}Z` : at;
   return {

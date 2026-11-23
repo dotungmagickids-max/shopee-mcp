@@ -70,7 +70,8 @@ describe("FB Magic Tool: nội dung đã đăng", () => {
     assert.deepEqual(c.codes, ["ADT25002"]);
     assert.equal(c.picture, "https://example.test/v.jpg");
     assert.equal(c.permalink, "https://www.facebook.com/111_9");
-    assert.equal(fromPancakePost({ id: "111_8", type: "photo", inserted_at: "2026-11-21T03:00:00" })!.picture, null);
+    assert.equal(fromPancakePost({ id: "111_8", type: "photo", message: "BD25056 về hàng", inserted_at: "2026-11-21T03:00:00" })!.picture, null);
+    assert.equal(fromPancakePost({ id: "111_5", type: "photo", message: null, inserted_at: "2026-11-21T03:00:00" }), null); // ảnh con của album
     assert.equal(fromPancakePost({ id: "111_7", removed: true }), null);
     assert.equal(toContentPost("111", fromPancakePost({ id: "111_6", type: "livestream", inserted_at: "2026-11-21T03:00:00" })!).kind, "video");
     assert.equal(pickImage({ attachments: { data: [{ url: "https://example.test/clip.mp4" }] } }), null);
