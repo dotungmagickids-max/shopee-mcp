@@ -87,7 +87,7 @@ export interface HoSoRow {
   nguoi_tao: string;
   tao_luc: string;
   cap_nhat_luc: string;
-  /** Ngày bắt đầu chạy test quảng cáo; thiếu (undefined) khi database chưa có cột (migration 0035). */
+  /** Ngày bắt đầu chạy test quảng cáo; thiếu (undefined) khi database chưa có cột (migration 0036). */
   ngay_test?: string | null;
   /** Việc chuẩn bị đã xong: { <mục>: { nguoi, luc } }. */
   chuan_bi?: Record<string, { nguoi: string; luc: string }> | null;
