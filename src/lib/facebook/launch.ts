@@ -4,6 +4,13 @@
  */
 
 export type Structure = "abo" | "cbo";
+/**
+ * Hình dạng camp (chiến dịch – nhóm – quảng cáo):
+ * - "n-1-1": mỗi bài một chiến dịch riêng, một nhóm, một quảng cáo;
+ * - "1-n-1": một chiến dịch, mỗi bài một nhóm (thường để scale);
+ * - "1-1-n": một chiến dịch, một nhóm, mỗi bài một quảng cáo (thường để test).
+ */
+export type Shape = "n-1-1" | "1-n-1" | "1-1-n";
 export type Gender = "all" | "female" | "male";
 
 export type LaunchConfig = {
@@ -18,9 +25,15 @@ export type LaunchConfig = {
   gender: Gender;
   /** auto = vị trí tự động; facebook = chỉ Facebook. */
   placement: "auto" | "facebook";
-  /** Tên chiến dịch CBO (ABO thì mỗi bài một chiến dịch, tên theo quảng cáo). */
+  /** Tên chiến dịch khi gộp nhiều bài vào một chiến dịch ("n-1-1" thì tên chiến dịch theo quảng cáo). */
   cbo_name?: string;
+  /** Không ghi thì: CBO → "1-n-1", ABO → "n-1-1" (cách cũ). */
+  shape?: Shape;
+  /** Tên nhóm quảng cáo; "1-n-1" thì thêm số thứ tự -01, -02… Không ghi thì lấy tên quảng cáo. */
+  adset_name?: string;
 };
+
+export const shapeOf = (cfg: Pick<LaunchConfig, "shape" | "structure">): Shape => cfg.shape ?? (cfg.structure === "cbo" ? "1-n-1" : "n-1-1");
 
 export type LaunchItem = { post_id: string; name: string };
 
@@ -56,6 +69,7 @@ export function validate(cfg: LaunchConfig, items: LaunchItem[]): string | null 
   if (!Number.isFinite(cfg.budget) || cfg.budget < MIN_BUDGET || cfg.budget > MAX_BUDGET) {
     return `Ngân sách/ngày phải từ ${MIN_BUDGET.toLocaleString("vi-VN")} đến ${MAX_BUDGET.toLocaleString("vi-VN")}đ.`;
   }
+  if ((cfg.cbo_name ?? "").length > 200 || (cfg.adset_name ?? "").length > 180) return "Tên chiến dịch hoặc tên nhóm quá dài.";
   if (!(cfg.age_min >= 18 && cfg.age_min <= cfg.age_max && cfg.age_max <= 65)) return "Tuổi phải trong khoảng 18–65.";
   for (const it of items) {
     if (!/^\d+_\d+$/.test(it.post_id)) return `Mã bài không hợp lệ: ${it.post_id}`;
@@ -66,39 +80,80 @@ export function validate(cfg: LaunchConfig, items: LaunchItem[]): string | null 
   return null;
 }
 
-/** Một chiến dịch sẽ tạo, kèm các nhóm (mỗi nhóm một bài, một quảng cáo). */
+export type PlannedAd = { post_id: string; ad_name: string };
+/** Một chiến dịch sẽ tạo, kèm các nhóm; mỗi nhóm có một hoặc nhiều quảng cáo (mỗi quảng cáo một bài). */
 export type PlannedCampaign = {
   account_id: string;
   name: string;
   /** Ngân sách chiến dịch (CBO); null nếu ngân sách nằm ở nhóm. */
   daily_budget: number | null;
-  adsets: { name: string; daily_budget: number | null; post_id: string; ad_name: string }[];
+  adsets: { name: string; daily_budget: number | null; ads: PlannedAd[] }[];
 };
 
 /**
- * ABO: mỗi bài một chiến dịch – một nhóm – một quảng cáo, ngân sách ở nhóm.
- * CBO: mỗi tài khoản một chiến dịch gộp, mỗi bài một nhóm, ngân sách ở chiến dịch.
+ * Dựng kế hoạch theo hình dạng camp (`shapeOf`). ABO: ngân sách ở từng nhóm; CBO: ngân sách ở chiến dịch.
+ * "1-n-1" và "1-1-n" gộp các bài vào một chiến dịch cho mỗi tài khoản.
  * Nhiều tài khoản: chia bài lần lượt (bài 1 → TK 1, bài 2 → TK 2, …).
  */
 export function buildPlan(cfg: LaunchConfig, items: LaunchItem[]): PlannedCampaign[] {
   const out: PlannedCampaign[] = [];
-  const cbo = new Map<string, PlannedCampaign>();
+  const shape = shapeOf(cfg);
+  const cbo = cfg.structure === "cbo";
+  const groupName = (cfg.adset_name ?? "").trim();
+  const one = new Map<string, PlannedCampaign>();
   items.forEach((it, i) => {
     const account_id = cfg.accounts[i % cfg.accounts.length];
     const name = it.name.trim();
-    if (cfg.structure === "abo") {
-      out.push({ account_id, name, daily_budget: null, adsets: [{ name, daily_budget: cfg.budget, post_id: it.post_id, ad_name: name }] });
+    const ad: PlannedAd = { post_id: it.post_id, ad_name: name };
+    if (shape === "n-1-1") {
+      // Mỗi bài một chiến dịch: ngân sách luôn ở nhóm.
+      out.push({ account_id, name, daily_budget: null, adsets: [{ name: groupName || name, daily_budget: cfg.budget, ads: [ad] }] });
       return;
     }
-    let c = cbo.get(account_id);
+    let c = one.get(account_id);
     if (!c) {
-      c = { account_id, name: (cfg.cbo_name ?? "").trim() || `CBO-${name}`, daily_budget: cfg.budget, adsets: [] };
-      cbo.set(account_id, c);
+      c = { account_id, name: (cfg.cbo_name ?? "").trim() || `${cbo ? "CBO-" : ""}${name}`, daily_budget: cbo ? cfg.budget : null, adsets: [] };
+      one.set(account_id, c);
       out.push(c);
     }
-    c.adsets.push({ name, daily_budget: null, post_id: it.post_id, ad_name: name });
+    if (shape === "1-n-1") {
+      const stt = String(c.adsets.length + 1).padStart(2, "0");
+      c.adsets.push({ name: groupName ? `${groupName}-${stt}` : name, daily_budget: cbo ? null : cfg.budget, ads: [ad] });
+    } else if (c.adsets.length) c.adsets[0].ads.push(ad);
+    else c.adsets.push({ name: groupName || name, daily_budget: cbo ? null : cfg.budget, ads: [ad] });
   });
   return out;
+}
+
+/** Mã page dùng trong tên chiến dịch (sổ tay Kiều Trang mục 4: `[Mục tiêu]-[Page]-[Mã SP/GOM]-[STT]`). */
+export const pageShort = (pageName: string): string => {
+  const n = pageName.toLowerCase().replace(/\s+/g, "");
+  if (n.includes("official")) return "MGO";
+  if (n.includes("store")) return "MGS";
+  if (n.includes("annie")) return "AB";
+  return "MG";
+};
+
+/**
+ * Gợi ý tên chiến dịch `TT-<page>-<mã>-<STT>`: nhiều mã nối bằng dấu chấm, quá 2 mã hoặc không có mã thì ghi GOM;
+ * STT = số lớn nhất đã dùng với cùng phần đầu + 1 (2 chữ số). `used` = tên các chiến dịch đã có.
+ */
+export function suggestCampaignName(page: string, codes: string[], used: Iterable<string>): string {
+  const uniq = [...new Set(codes)];
+  const head = `TT-${page}-${uniq.length && uniq.length <= 2 ? uniq.join(".") : "GOM"}`;
+  const re = new RegExp(`^${head.replace(/\./g, "\\.")}-(\\d+)$`, "i");
+  let max = 0;
+  for (const n of used) {
+    const m = re.exec(String(n ?? "").trim());
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${head}-${String(max + 1).padStart(2, "0")}`;
+}
+
+/** Gợi ý tên nhóm `TN-<tệp>-<kiểu nhắm>`: TN = tối đa tin nhắn; tệp NU/NAM/ALL + tuổi; AUTO = vị trí tự động, FB = chỉ Facebook. */
+export function suggestAdsetName(cfg: Pick<LaunchConfig, "gender" | "age_min" | "age_max" | "placement">): string {
+  const who = cfg.gender === "female" ? "NU" : cfg.gender === "male" ? "NAM" : "ALL";
+  return `TN-${who}${cfg.age_min}${cfg.age_max}-${cfg.placement === "facebook" ? "FB" : "AUTO"}`;
 }
 
 /** Tổng ngân sách/ngày của cả kế hoạch (số Meta). */

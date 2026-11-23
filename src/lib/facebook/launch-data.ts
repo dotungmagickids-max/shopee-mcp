@@ -26,9 +26,9 @@ export type PostRow = {
   ran: { ads: number; spendReal: number; orders: number; revenue: number } | null;
 };
 
-export type LaunchData = { posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; errors: string[] };
+export type LaunchData = { posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns: string[]; errors: string[] };
 
-type AdSum = { ad_name: string | null; spend: number; orders: number; revenue: number };
+type AdSum = { ad_name: string | null; campaign_name: string | null; spend: number; orders: number; revenue: number };
 
 /** Cộng fb_ad_daily 90 ngày theo ad_id. */
 async function adHistory(): Promise<Map<string, AdSum>> {
@@ -37,14 +37,14 @@ async function adHistory(): Promise<Map<string, AdSum>> {
   for (let page = 0; page < 30; page++) {
     const { data, error } = await db()
       .from("fb_ad_daily")
-      .select("ad_id, ad_name, spend, orders, revenue")
+      .select("ad_id, ad_name, campaign_name, spend, orders, revenue")
       .gte("ngay", from)
       .order("ngay")
       .order("ad_id")
       .range(page * 1000, page * 1000 + 999);
     if (error) throw new Error(`fb_ad_daily: ${error.message}`);
     for (const r of data ?? []) {
-      const s = out.get(r.ad_id) ?? { ad_name: r.ad_name, spend: 0, orders: 0, revenue: 0 };
+      const s = out.get(r.ad_id) ?? { ad_name: r.ad_name, campaign_name: r.campaign_name ?? null, spend: 0, orders: 0, revenue: 0 };
       s.spend += Number(r.spend ?? 0);
       s.orders += Number(r.orders ?? 0);
       s.revenue += Number(r.revenue ?? 0);
@@ -103,7 +103,8 @@ export async function loadLaunch(pageId: string): Promise<LaunchData> {
     };
   });
   const usedNames = history ? [...history.values()].map((h) => h.ad_name ?? "").filter(Boolean) : [];
-  return { posts: rows, accounts: (accounts ?? []).map((a) => ({ id: a.id, name: a.name })), usedNames, errors };
+  const usedCampaigns = history ? [...new Set([...history.values()].map((h) => h.campaign_name ?? "").filter(Boolean))] : [];
+  return { posts: rows, accounts: (accounts ?? []).map((a) => ({ id: a.id, name: a.name })), usedNames, usedCampaigns, errors };
 }
 
 export type LaunchResult = {
@@ -149,15 +150,25 @@ export async function runLaunch(cfg: LaunchConfig, items: LaunchItem[]): Promise
     } catch (e) {
       campaignError = e instanceof Error ? e.message : String(e);
     }
-    for (const a of c.adsets) {
-      const r: LaunchResult = { post_id: a.post_id, ad_name: a.ad_name, account_id: c.account_id, campaign_id: campaignId, adset_id: null, ad_id: null, error: campaignError };
+    for (const set of c.adsets) {
+      // Một nhóm có thể chứa nhiều quảng cáo ("1-1-n"): tạo nhóm một lần, nhóm lỗi thì mọi quảng cáo trong đó báo lỗi.
+      let adsetId: string | null = null;
+      let adsetError: string | null = campaignError;
+      if (campaignId) {
+        try {
+          adsetId = await create(c.account_id, "adsets", adsetParams(cfg, campaignId, set));
+        } catch (e) {
+          adsetError = e instanceof Error ? e.message : String(e);
+        }
+      }
+      for (const a of set.ads) {
+      const r: LaunchResult = { post_id: a.post_id, ad_name: a.ad_name, account_id: c.account_id, campaign_id: campaignId, adset_id: adsetId, ad_id: null, error: adsetError };
       results.push(r);
-      if (!campaignId) continue;
+      if (!campaignId || !adsetId) continue;
       try {
-        r.adset_id = await create(c.account_id, "adsets", adsetParams(cfg, campaignId, a));
         const creativeId = await create(c.account_id, "adcreatives", creativeParams(a.post_id, a.ad_name));
         try {
-          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, r.adset_id, creativeId));
+          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, adsetId, creativeId));
         } catch (e) {
           const first = e instanceof Error ? e.message : String(e);
           if (!isCreativeIncompatible(first)) throw e;
@@ -165,12 +176,13 @@ export async function runLaunch(cfg: LaunchConfig, items: LaunchItem[]): Promise
           const withCta = await create(c.account_id, "adcreatives", creativeParamsWithCta(a.post_id, a.ad_name)).catch((e2) => {
             throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
           });
-          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, r.adset_id, withCta)).catch((e2) => {
+          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, adsetId, withCta)).catch((e2) => {
             throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
           });
         }
       } catch (e) {
         r.error = e instanceof Error ? e.message : String(e);
+      }
       }
     }
   }

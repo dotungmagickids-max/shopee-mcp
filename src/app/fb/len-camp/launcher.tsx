@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { buildPlan, MAX_ITEMS, nextName, planBudget, validate, type LaunchConfig, type LaunchItem } from "@/lib/facebook/launch";
+import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
 import type { LaunchResult, PostRow } from "@/lib/facebook/launch-data";
 
 const vnd = (n: number | null | undefined) => (n == null ? "–" : Math.round(n).toLocaleString("vi-VN"));
@@ -10,9 +10,15 @@ const day = (iso: string) => (iso ? new Date(iso).toLocaleDateString("vi-VN", { 
 const HOT = 5;
 const STEADY = 1;
 
-type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; preselect?: string[] };
+type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns?: string[]; preselect?: string[] };
 
-export default function Launcher({ pageId, pageName, posts, accounts, usedNames, preselect = [] }: Props) {
+const SHAPES: [Shape, string][] = [
+  ["1-1-n", "1-1-N: 1 chiến dịch, 1 nhóm, mỗi bài 1 quảng cáo (test)"],
+  ["1-n-1", "1-N-1: 1 chiến dịch, mỗi bài 1 nhóm (scale)"],
+  ["n-1-1", "N-1-1: mỗi bài 1 chiến dịch riêng"],
+];
+
+export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], preselect = [] }: Props) {
   // Bài chọn sẵn từ màn Bài đã đăng; bài nào không còn trong 30 ngày gần nhất thì bỏ qua và báo số lượng.
   const preFound = useMemo(() => preselect.filter((id) => posts.some((p) => p.id === id)).slice(0, MAX_ITEMS), [preselect, posts]);
   const [picked, setPicked] = useState<string[]>(preFound);
@@ -23,11 +29,14 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
   const [accs, setAccs] = useState<string[]>([]);
   const [budget, setBudget] = useState("");
   const [structure, setStructure] = useState<"abo" | "cbo">("abo");
+  const [shape, setShape] = useState<Shape>("1-1-n");
+  /** Tên anh tự gõ; null = dùng tên máy gợi ý (tự đổi theo bài đã chọn và cấu hình). */
+  const [adsetTyped, setAdsetTyped] = useState<string | null>(null);
+  const [campTyped, setCampTyped] = useState<string | null>(null);
   const [ageMin, setAgeMin] = useState("25");
-  const [ageMax, setAgeMax] = useState("65");
-  const [gender, setGender] = useState<"all" | "female" | "male">("all");
+  const [ageMax, setAgeMax] = useState("45");
+  const [gender, setGender] = useState<"all" | "female" | "male">("female");
   const [placement, setPlacement] = useState<"auto" | "facebook">("auto");
-  const [cboName, setCboName] = useState("");
   const [items, setItems] = useState<LaunchItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<LaunchResult[] | null>(null);
@@ -45,17 +54,26 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
     );
   }, [posts, onlyNew, onlyStock, speed, q]);
 
+  const grouped = shape !== "n-1-1";
+  const pickedCodes = useMemo(() => [...new Set(picked.flatMap((id) => posts.find((p) => p.id === id)?.codes ?? []))], [picked, posts]);
+  const campSuggest = useMemo(() => suggestCampaignName(pageShort(pageName), pickedCodes, usedCampaigns), [pageName, pickedCodes, usedCampaigns]);
+  const adsetSuggest = suggestAdsetName({ gender, age_min: Number(ageMin), age_max: Number(ageMax), placement });
+  const campName = campTyped ?? campSuggest;
+  const adsetName = adsetTyped ?? adsetSuggest;
   const cfg: LaunchConfig = {
     page_id: pageId,
     accounts: accs,
     budget: Number(budget.replace(/[^\d]/g, "")),
-    structure,
+    structure: grouped ? structure : "abo",
+    shape,
     age_min: Number(ageMin),
     age_max: Number(ageMax),
     gender,
     placement,
-    cbo_name: cboName,
+    cbo_name: grouped ? campName : undefined,
+    adset_name: adsetName,
   };
+  const budgetHint = !grouped ? "Ngân sách/ngày mỗi bài (đ)" : structure === "cbo" ? "Ngân sách/ngày cả chiến dịch (đ)" : shape === "1-1-n" ? "Ngân sách/ngày của nhóm (đ)" : "Ngân sách/ngày mỗi nhóm (đ)";
   const accName = (id: string) => accounts.find((a) => a.id === id)?.name ?? id;
   const toggle = (id: string) => setPicked((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
 
@@ -186,12 +204,18 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
         </div>
         <p className="sub">Chọn nhiều tài khoản thì bài được chia đều lần lượt.</p>
         <div className="filters" style={{ marginTop: 8 }}>
-          <select value={structure} onChange={(e) => setStructure(e.target.value as "abo" | "cbo")}>
-            <option value="abo">ABO: 1 bài = 1 chiến dịch, 1 nhóm</option>
-            <option value="cbo">CBO: gộp 1 chiến dịch mỗi tài khoản</option>
+          <select value={shape} onChange={(e) => setShape(e.target.value as Shape)} aria-label="Cấu trúc camp">
+            {SHAPES.map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
           </select>
-          <input placeholder={structure === "abo" ? "Ngân sách/ngày mỗi bài (đ)" : "Ngân sách/ngày cả chiến dịch (đ)"} value={budget} onChange={(e) => setBudget(e.target.value)} inputMode="numeric" size={26} />
-          {structure === "cbo" ? <input placeholder="Tên chiến dịch CBO" value={cboName} onChange={(e) => setCboName(e.target.value)} size={24} /> : null}
+          {grouped ? (
+            <select value={structure} onChange={(e) => setStructure(e.target.value as "abo" | "cbo")} aria-label="Kiểu ngân sách">
+              <option value="abo">ABO: ngân sách ở nhóm</option>
+              <option value="cbo">CBO: ngân sách ở chiến dịch</option>
+            </select>
+          ) : null}
+          <input placeholder={budgetHint} title={budgetHint} value={budget} onChange={(e) => setBudget(e.target.value)} inputMode="numeric" size={26} />
           <span>Tuổi</span>
           <input value={ageMin} onChange={(e) => setAgeMin(e.target.value)} size={3} inputMode="numeric" />
           <span>–</span>
@@ -205,8 +229,28 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
             <option value="auto">Vị trí tự động</option>
             <option value="facebook">Chỉ Facebook</option>
           </select>
+        </div>
+        <div className="filters" style={{ marginTop: 8 }}>
+          {grouped ? (
+            <label className="named">
+              <span className="sub">Tên chiến dịch {campTyped == null ? "(máy gợi ý)" : "(anh sửa)"}</span>
+              <input value={campName} onChange={(e) => setCampTyped(e.target.value)} size={34} />
+            </label>
+          ) : (
+            <span className="sub">Tên chiến dịch: lấy theo tên quảng cáo của từng bài.</span>
+          )}
+          <label className="named">
+            <span className="sub">Tên nhóm {adsetTyped == null ? "(máy gợi ý)" : "(anh sửa)"}{shape === "1-n-1" ? ", tự thêm -01, -02…" : ""}</span>
+            <input value={adsetName} onChange={(e) => setAdsetTyped(e.target.value)} size={26} />
+          </label>
+          {campTyped != null || adsetTyped != null ? (
+            <button type="button" className="secondary" onClick={() => { setCampTyped(null); setAdsetTyped(null); }}>Dùng lại tên gợi ý</button>
+          ) : null}
           <button type="button" onClick={preview}>Xem trước</button>
         </div>
+        <p className="sub" style={{ marginTop: 6 }}>
+          Tên gợi ý theo quy ước: chiến dịch TT-page-mã-số thứ tự (số kế tiếp sau chiến dịch đã chạy 90 ngày), nhóm TN-tệp-kiểu nhắm, quảng cáo MÃ-Pxx-Vxx. Sửa được hết ở đây và ở bước xem trước.
+        </p>
         {error ? <p className="error">{error}</p> : null}
       </div>
 
@@ -220,13 +264,15 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
                   <th className="l">Tên quảng cáo (sửa được)</th>
                   <th className="l">Tài khoản</th>
                   <th className="l">Chiến dịch</th>
+                  <th className="l">Nhóm</th>
                   <th>Ngân sách/ngày</th>
                   <th>Trạng thái</th>
                 </tr>
               </thead>
               <tbody>
                 {plan.flatMap((c) =>
-                  c.adsets.map((a, i) => (
+                  c.adsets.flatMap((set, i) =>
+                    set.ads.map((a, j) => (
                     <tr key={a.post_id}>
                       <td className="l">
                         <input
@@ -237,16 +283,18 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
                       </td>
                       <td className="l">{accName(c.account_id)}</td>
                       <td className="l">{c.name}</td>
-                      <td>{a.daily_budget ? vnd(a.daily_budget) : i === 0 ? `${vnd(c.daily_budget)} (CBO)` : "↑ chung"}</td>
+                      <td className="l">{set.name}</td>
+                      <td>{set.daily_budget ? (j === 0 ? vnd(set.daily_budget) : "↑ chung nhóm") : i === 0 && j === 0 ? `${vnd(c.daily_budget)} (CBO)` : "↑ chung"}</td>
                       <td>Tạm dừng</td>
                     </tr>
-                  ))
+                    ))
+                  )
                 )}
               </tbody>
             </table>
           </div>
           <p style={{ marginTop: 10 }}>
-            {items.length} quảng cáo · {plan.length} chiến dịch · tổng ngân sách <b>{vnd(total)}đ/ngày</b> (chi thật ~{vnd(total * 1.111)}đ) khi bật hết.
+            {items.length} quảng cáo · {plan.reduce((s, c) => s + c.adsets.length, 0)} nhóm · {plan.length} chiến dịch · tổng ngân sách <b>{vnd(total)}đ/ngày</b> (chi thật ~{vnd(total * 1.111)}đ) khi bật hết.
           </p>
           <button type="button" onClick={() => dlg.current?.showModal()}>Tạo {items.length} quảng cáo (tạm dừng)</button>
         </div>

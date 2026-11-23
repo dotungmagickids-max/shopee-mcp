@@ -31,6 +31,8 @@ export async function POST(request: Request) {
     gender: c.gender === "female" || c.gender === "male" ? c.gender : "all",
     placement: c.placement === "facebook" ? "facebook" : "auto",
     cbo_name: typeof c.cbo_name === "string" ? c.cbo_name.slice(0, 200) : undefined,
+    shape: c.shape === "1-n-1" || c.shape === "1-1-n" || c.shape === "n-1-1" ? c.shape : undefined,
+    adset_name: typeof c.adset_name === "string" ? c.adset_name.slice(0, 180) : undefined,
   };
   const items: LaunchItem[] = Array.isArray(body?.items)
     ? body.items.map((i: any) => ({ post_id: String(i?.post_id ?? ""), name: String(i?.name ?? "") }))
