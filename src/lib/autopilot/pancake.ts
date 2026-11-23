@@ -93,6 +93,7 @@ export async function syncPancakeVariations(): Promise<{ variations: number; pag
         cost: last && last > 0 ? last : avg && avg > 0 ? avg : null,
         last_cost: last,
         retail_price: num(v.retail_price),
+        image_url: anhDau(v),
         stock: Math.round(stock),
         selling_avg: sellingAvg,
         updated_at: now,
@@ -101,11 +102,26 @@ export async function syncPancakeVariations(): Promise<{ variations: number; pag
     const total = Number(body?.total_pages ?? 0);
     if (!body?.data?.length || (total && page >= total)) break;
   }
+  // Cột image_url có từ migration 0032; database chưa có cột thì ghi không kèm ảnh, không để hỏng việc đồng bộ giá vốn và tồn.
+  let coAnh = true;
   for (const batch of chunk([...bySku.values()], 500)) {
-    const { error } = await db().from("pancake_variations").upsert(batch);
+    let { error } = await db().from("pancake_variations").upsert(coAnh ? batch : batch.map(boAnh));
+    if (error && coAnh && /image_url/.test(error.message)) {
+      coAnh = false;
+      ({ error } = await db().from("pancake_variations").upsert(batch.map(boAnh)));
+    }
     if (error) throw new Error(`pancake_variations: ${error.message}`);
   }
   return { variations: bySku.size, pages };
+}
+
+const boAnh = ({ image_url: _anh, ...con }: Record<string, unknown>) => con;
+
+/** Đường dẫn ảnh đầu tiên của biến thể (hoặc của sản phẩm); chỉ nhận https, bỏ đường dẫn quá dài. */
+export function anhDau(v: any): string | null {
+  const ung = [...(Array.isArray(v?.images) ? v.images : []), v?.product?.image];
+  for (const u of ung) if (typeof u === "string" && /^https:\/\/[^\s<>"'`]{4,500}$/.test(u)) return u;
+  return null;
 }
 
 /**

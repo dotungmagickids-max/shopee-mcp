@@ -1,6 +1,8 @@
 /** Trang Mẫu và media (/mau): vai theo mã truy cập, bản đọc theo vai, kiểm tra lệnh ghi, luật chuyển trạng thái. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { anhDau } from "../src/lib/autopilot/pancake";
+import { gioiTuDanhMuc, gomMaBan, loaiTuDanhMuc, muaTuDanhMuc, namXem, type BienTheRow, type LaiRow } from "../src/lib/mau-ban";
 import { ANH_TOI_DA, docLenhMau, dungLoaiAnh, hoSoTheoVai, linkHopLe, loiChuyen, thieuDeCoMedia, tomTatSua, vaiCuaKhoa, type HoSoRow } from "../src/lib/mau";
 
 const hs = (x: Partial<HoSoRow> = {}): HoSoRow => ({
@@ -218,5 +220,67 @@ describe("/api/mau", () => {
       assert.equal((await GET(goi("ma-xem", "?nhatky=1"))).status, 403);
       assert.equal((await GET(goi("ma-lam", "?anh=abc"))).status, 400);
     });
+  });
+});
+
+describe("mã đang bán (gomMaBan)", () => {
+  const bt = (x: Partial<BienTheRow>): BienTheRow => ({ product_code: "MA26001", product_name: "MA26001", categories: ["Bé trai", "Thu đông", "Quần dài bé trai"], stock: 10, selling_avg: 1.25, retail_price: 100, ...x });
+  const rows: BienTheRow[] = [
+    bt({ image_url: "https://example.com/a.jpg", updated_at: "2026-11-22T18:00:00Z" }),
+    bt({ stock: -3, selling_avg: 2, product_name: "Quần  dài thử MA26001", image_url: "javascript:alert(1)" }),
+    bt({ product_code: "mb25002", product_name: "Bộ thử", categories: ["Bé gái", "Bộ đồ bé gái", "Xuân hè"], stock: 0, selling_avg: 0, retail_price: 300 }),
+    bt({ product_code: "MV26003", product_name: null, categories: ["Váy"], stock: 5, selling_avg: 0, retail_price: null }),
+    bt({ product_code: "AO24001", product_name: "Áo thử", categories: null, stock: 7 }),
+    bt({ product_code: "MX26009", stock: 0, selling_avg: 0 }),
+    bt({ product_code: "COMBO-1" }),
+    bt({ product_code: null }),
+  ];
+  const lai: LaiRow[] = [
+    { ma: "MA26001", sl_ban: 50, doanh_so: 5000.4, lai_truoc_qc: 2000.6 },
+    { ma: "MB25002", sl_ban: 80, doanh_so: 24000, lai_truoc_qc: null },
+    { ma: "MX26009", sl_ban: 0, doanh_so: 0, lai_truoc_qc: 0 },
+  ];
+
+  it("gom theo mã, xếp theo số bán trong năm, bỏ mã lạ và mã hết tồn không bán", () => {
+    const r = gomMaBan(rows, lai, "quan_ly");
+    assert.deepEqual(r.map((x) => [x.ma, x.slBan, x.ton, x.banNgay, x.duBan]), [
+      ["MB25002", 80, 0, 0, null],
+      ["MA26001", 50, 10, 3.3, 3],
+      ["AO24001", 0, 7, 1.3, 5],
+      ["MV26003", 0, 5, 0, null],
+    ]);
+    const a = r[1];
+    assert.deepEqual([a.ten, a.gioi, a.loai, a.mua, a.nam, a.giaBan, a.anh], ["Quần dài thử MA26001", "trai", "Quần", "Thu đông", 2026, 100, "https://example.com/a.jpg"]);
+    assert.deepEqual([r[0].gioi, r[0].loai, r[0].mua, r[0].nam], ["gai", "Bộ", "Xuân hè", 2025]);
+    assert.deepEqual([r[3].gioi, r[3].loai, r[3].ten, r[3].giaBan, r[3].anh], ["gai", "Váy", "", null, null]);
+    assert.deepEqual([r[2].gioi, r[2].loai, r[2].mua], ["", "Áo", ""]);
+  });
+
+  it("doanh số và lãi chỉ vai quản lý có", () => {
+    const ql = gomMaBan(rows, lai, "quan_ly");
+    assert.deepEqual([ql[1].doanhSo, ql[1].lai, ql[0].lai, ql[2].doanhSo], [5000, 2001, null, null]);
+    for (const vai of ["lam", "xem"] as const) {
+      const txt = JSON.stringify(gomMaBan(rows, lai, vai));
+      assert.ok(!/doanhSo|lai"|5000|24000/.test(txt), vai);
+    }
+  });
+
+  it("đọc trai/gái, loại, mùa từ danh mục; năm xem trong khoảng cho phép", () => {
+    assert.equal(gioiTuDanhMuc(["Bé trai", "Bé gái"]), "unisex");
+    assert.equal(gioiTuDanhMuc(["Chân váy"]), "gai");
+    assert.equal(gioiTuDanhMuc(["Sale sốc"]), "");
+    assert.equal(loaiTuDanhMuc(["Áo phông bé trai"], "XX26001"), "Áo");
+    assert.equal(loaiTuDanhMuc(["Bé trai"], "BD26001"), "Bộ");
+    assert.equal(loaiTuDanhMuc(["Bé trai"], "ADT26001"), "Áo");
+    assert.equal(loaiTuDanhMuc([], "ZZ26001"), "Khác");
+    assert.equal(muaTuDanhMuc(["Thu Đông"]), "Thu đông");
+    assert.deepEqual(["2025", "2019", "2030", "abc", null].map((v) => namXem(v, "2026-11-23")), [2025, 2026, 2026, 2026, 2026]);
+  });
+
+  it("bộ đồng bộ chỉ nhận đường dẫn ảnh https", () => {
+    assert.equal(anhDau({ images: ["http://example.com/a.jpg", "https://example.com/b.jpg"] }), "https://example.com/b.jpg");
+    assert.equal(anhDau({ images: [], product: { image: "https://example.com/c.jpg" } }), "https://example.com/c.jpg");
+    assert.equal(anhDau({ images: ["javascript:alert(1)", 5, null] }), null);
+    assert.equal(anhDau({}), null);
   });
 });
