@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#6d3fc4">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mẫu MK">
+<link rel="manifest" href="/mau/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/mau/icon-192.png">
 <title>Magickids – Mẫu và media</title>
 <style>
 :root{--bg:#f3f4f6;--card:#fff;--ink:#14171c;--mut:#5b6472;--line:#d9dde3;--accent:#6d3fc4;--red:#c62828;--amber:#b26a00;--green:#0f7b4b}
@@ -71,7 +77,20 @@ details.nhom>div{padding:0 12px 12px}
 #gate{max-width:420px;margin:40px auto;padding:16px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 #gate h2{margin:0 0 6px;font-size:20px}
 #gate button{width:100%;margin-top:12px}
-@media(max-width:600px){.dau{grid-template-columns:1fr}.dau .hinh{max-width:240px}.row3{grid-template-columns:1fr 1fr}.grid{grid-template-columns:repeat(2,1fr)}}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{flex:1;min-width:64px;padding:12px 6px}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.lkrow{display:inline-flex;align-items:stretch}
+.lkrow a.lk{border-radius:8px 0 0 8px}
+.lkrow button{border-radius:0 8px 8px 0;border-left:0;padding:9px 11px;font-size:14px;color:var(--mut)}
+.day{position:sticky;bottom:0;background:var(--bg);padding:10px 0;z-index:3}
+.day button{width:100%;padding:14px;font-size:17px}
+.xem{display:flex;gap:10px;align-items:center;margin-top:8px}
+.xem img{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.nhanlk{font-size:14px;margin-top:6px;overflow-wrap:anywhere}
+.nhanlk.co{color:var(--green);font-weight:600}
+.nhanlk.chua{color:var(--amber)}
+@media(max-width:600px){.bar .them{position:fixed;left:12px;right:12px;bottom:12px;z-index:5;padding:14px;font-size:17px;box-shadow:0 4px 14px rgba(0,0,0,.25)}main{padding-bottom:84px}.dau{grid-template-columns:1fr}.dau .hinh{max-width:240px}.row3{grid-template-columns:1fr 1fr}.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -111,7 +130,7 @@ const store={
   set(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}}
 };
 const S={key:store.get('mk_mau_key'),ten:store.get('mk_mau_ten'),vai:'',ds:[],at:0,busy:false,err:'',
-  loc:'tat',gioi:'',loai:'',tim:'',mo:null,them:false,nk:null,anh:new Map()};
+  loc:'tat',gioi:'',loai:'',tim:'',mo:null,them:false,nk:null,anh:new Map(),chiaSe:''};
 
 const TT={dang_xem:'Đang xem',chon_lam:'Chọn làm',co_media:'Đã có media',bo:'Bỏ'};
 const CHUYEN={dang_xem:['chon_lam','bo'],chon_lam:['co_media','dang_xem','bo'],co_media:['chon_lam','bo'],bo:['dang_xem']};
@@ -123,6 +142,30 @@ const LOAI={'':'Chưa chọn','Áo':'Áo','Quần':'Quần','Bộ':'Bộ','Váy'
 const hhmm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
 const ngayGio=iso=>{const d=new Date(iso);return isNaN(d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+hhmm(d);};
 const laLink=v=>typeof v==='string'&&/^https:\/\/[^\s<>"'`]+$/.test(v);
+/* Lấy đường dẫn đầu tiên trong đoạn dán (đoạn chia sẻ từ app mua hàng thường kèm chữ và mã). */
+function tachLink(doan){
+  const m=/https?:\/\/[^\s<>"'`，。、！】」）]+/i.exec(String(doan||''));
+  if(!m)return '';
+  return gonLink(m[0].replace(/^http:/i,'https:').replace(/[.,;:!?)\]]+$/,''));
+}
+/* Link trang sản phẩm Taobao / Tmall hay kèm rất nhiều tham số theo dõi: chỉ giữ id và skuId. */
+function gonLink(link){
+  try{
+    const u=new URL(link);
+    if(/(^|\.)(taobao|tmall)\.com$/.test(u.hostname)&&/^\d+$/.test(u.searchParams.get('id')||'')){
+      const sku=u.searchParams.get('skuId');
+      return u.origin+u.pathname+'?id='+u.searchParams.get('id')+(/^\d+$/.test(sku||'')?'&skuId='+sku:'');
+    }
+    u.hash='';return u.href;
+  }catch(e){return '';}
+}
+/* Gợi ý mã tạm kế tiếp theo mã SP lớn nhất đang có (SP27004 → SP27005). */
+function maGoiY(){
+  let lon=0,dai=0;
+  for(const h of S.ds){const m=/^SP(\d{3,8})$/.exec(h.ma||'');if(m&&Number(m[1])>lon){lon=Number(m[1]);dai=m[1].length;}}
+  return lon?'SP'+String(lon+1).padStart(dai,'0'):'';
+}
+async function chep(v,nut){try{await navigator.clipboard.writeText(v);nut.textContent='Đã chép';}catch(e){nut.textContent='Không chép được';}setTimeout(()=>{nut.textContent='Chép';},1500);}
 
 /* ---------- dữ liệu giả cho bản chạy thử ---------- */
 let MOCK=null;
@@ -250,7 +293,7 @@ function ve(){
   info.textContent=S.err||(S.busy&&!S.at?'Đang đọc danh sách mẫu…':S.at?('Lấy lúc '+hhmm(S.at)+(S.busy?' · đang tải lại…':'')+(tenVai?' · vai: '+tenVai:'')+'. Ảnh, video nằm ở kho lưu trữ; trang này chỉ giữ đường dẫn.'):'');
   info.classList.toggle('err',!!S.err);
   if(!S.at)return;
-  if(S.them){body.append(veForm(null));return;}
+  if(S.them){body.append(S.them==='day'?veForm(null):veThemNhanh());return;}
   const h=S.mo!=null?S.ds.find(x=>x.id===S.mo):null;
   if(h){body.append(veHoSo(h));return;}
   /* đang tải lại thì giữ S.mo: hồ sơ vừa thêm chưa có trong danh sách cũ */
@@ -267,7 +310,7 @@ function veDanhSach(body){
   const loai=mk('select');for(const v in LOAI){const o=mk('option',null,v?LOAI[v]:'Mọi loại');o.value=v;loai.append(o);}
   loai.value=S.loai;loai.addEventListener('change',()=>{S.loai=loai.value;veLuoi(luoi);});
   bar.append(tim,gioi,loai);
-  if(duocGhi()){const b=mk('button','primary','+ Thêm mẫu');b.type='button';b.addEventListener('click',()=>{S.them=true;ve();});bar.append(b);}
+  if(duocGhi()){const b=mk('button','primary them','+ Thêm mẫu');b.type='button';b.addEventListener('click',()=>{S.them=true;ve();});bar.append(b);}
   body.append(bar);
   if(S.vai!=='xem'){
     const loc=mk('div','loc');
@@ -299,7 +342,11 @@ function veLuoi(luoi){
 }
 
 function nutLink(ten,url,chinh){
-  if(laLink(url)){const a=mk('a','lk'+(chinh?' chinh':''),ten);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
+  if(laLink(url)){
+    const a=mk('a','lk'+(chinh?' chinh':''),ten);a.href=url;a.target='_blank';a.rel='noopener noreferrer';
+    const c=mk('button',null,'Chép');c.type='button';c.title='Chép đường dẫn '+ten;c.addEventListener('click',()=>chep(url,c));
+    const w=mk('span','lkrow');w.append(a,c);return w;
+  }
   return mk('span','lk0',ten+': chưa có');
 }
 function dong(nhan,gt){const d=mk('div');d.append(mk('div','m',nhan),mk('div','van',gt||'—'));d.style.margin='6px 0';return d;}
@@ -400,6 +447,78 @@ const NHOM=[
   ['Media',true,[['link_goc','Thư mục ảnh gốc (https)','link'],['link_anh','Thư mục ảnh đã chỉnh (https)','link'],['link_video','Thư mục video (https)','link'],['link_shopee','Thư mục ảnh Shopee (https)','link'],['so_anh','Số ảnh đã chỉnh','num'],['so_video','Số video','num'],['sua_tt','Việc chỉnh ảnh','chon',SUA],['sua_nguoi','Người chỉnh','text',40],['sua_yeu_cau','Yêu cầu chỉnh','area',1000],['sua_xong','Ngày chỉnh xong','date']]],
   ['Mô tả cơ bản',true,[['mo_ta','Mô tả cơ bản (tên bán, 3–5 ý chính)','area',4000],['luu_y','Lưu ý (điều chưa xác minh, không được cam kết)','area',1000]]]
 ];
+/* Thêm nhanh, làm cho điện thoại: dán link (hoặc đoạn chia sẻ), chọn trai/gái và loại, kèm một ảnh, lưu. */
+function veThemNhanh(){
+  const w=mk('div'),chon={gioi:'',loai:''};let tep=null;
+  const top=mk('div','bar');const ve0=mk('button',null,'← Danh sách');ve0.type='button';ve0.addEventListener('click',()=>{S.them=false;S.chiaSe='';ve();});
+  const day=mk('button',null,'Nhập đầy đủ');day.type='button';day.addEventListener('click',()=>{S.them='day';ve();});
+  top.append(ve0,day);w.append(top);
+  const hop=mk('div','hop');hop.append(mk('h3',null,'Thêm mẫu nhanh'));
+
+  hop.append(mk('label',null,'Dán link sản phẩm, hoặc cả đoạn chia sẻ từ app'));
+  const dan=mk('textarea');dan.value=S.chiaSe;dan.placeholder='https://…';dan.style.minHeight='84px';
+  const nhan=mk('div','nhanlk');
+  const soi=()=>{S.chiaSe=dan.value;const l=tachLink(dan.value);nhan.className='nhanlk '+(l?'co':'chua');nhan.textContent=l?'Link nhận được: '+l:(dan.value.trim()?'Chưa thấy link https trong đoạn dán.':'');return l;};
+  dan.addEventListener('input',soi);
+  const nutDan=mk('button',null,'Dán từ bộ nhớ tạm');nutDan.type='button';nutDan.style.marginTop='6px';
+  nutDan.hidden=!(navigator.clipboard&&navigator.clipboard.readText);
+  nutDan.addEventListener('click',async()=>{try{const t=await navigator.clipboard.readText();if(t){dan.value=t;soi();}}catch(e){nhan.className='nhanlk chua';nhan.textContent='Máy không cho đọc bộ nhớ tạm; nhấn giữ vào ô trên rồi chọn Dán.';}});
+  hop.append(dan,nutDan,nhan);
+
+  hop.append(mk('label',null,'Mã mẫu (mã tạm)'));
+  const ma=mk('input');ma.maxLength=30;ma.autocapitalize='characters';ma.spellcheck=false;ma.placeholder='SP27001';ma.value=maGoiY();hop.append(ma);
+
+  const seg=(nhanO,khoa,ds)=>{
+    hop.append(mk('label',null,nhanO));const g=mk('div','seg');
+    for(const [v,t] of ds){const b=mk('button',null,t);b.type='button';b.addEventListener('click',()=>{chon[khoa]=chon[khoa]===v?'':v;for(const x of g.children)x.classList.toggle('on',x===b&&chon[khoa]===v);});g.append(b);}
+    hop.append(g);
+  };
+  seg('Bé trai / bé gái','gioi',[['trai','Bé trai'],['gai','Bé gái'],['unisex','Unisex']]);
+  seg('Loại','loai',[['Áo','Áo'],['Quần','Quần'],['Bộ','Bộ'],['Váy','Váy'],['Khác','Khác']]);
+
+  hop.append(mk('label',null,'Ảnh đại diện (ảnh chụp màn hình cũng được)'));
+  const f=mk('input');f.type='file';f.accept='image/jpeg,image/png,image/webp';f.hidden=true;
+  const nutAnh=mk('button',null,'Chọn ảnh');nutAnh.type='button';nutAnh.addEventListener('click',()=>f.click());
+  const xem=mk('div','xem');xem.append(nutAnh);
+  f.addEventListener('change',async()=>{
+    if(!f.files||!f.files[0])return;
+    try{tep=await thuNho(f.files[0]);xem.textContent='';const img=mk('img');img.src=tep;img.alt='Ảnh đã chọn';nutAnh.textContent='Đổi ảnh';xem.append(img,nutAnh);}
+    catch(e){tep=null;m.className='msg err';m.textContent=e.message;}
+  });
+  hop.append(f,xem);
+
+  hop.append(mk('label',null,'Tên gợi ý (để trống cũng được)'));
+  const ten=mk('input');ten.maxLength=150;hop.append(ten);
+  hop.append(mk('label',null,'Lý do chọn'));
+  const lyDo=mk('textarea');lyDo.maxLength=500;lyDo.style.minHeight='56px';hop.append(lyDo);
+  hop.append(oTen());
+  const m=mk('div','msg');hop.append(m);w.append(hop);
+
+  const duoi=mk('div','day'),luu=mk('button','primary','Lưu mẫu');luu.type='button';duoi.append(luu);w.append(duoi);
+  luu.addEventListener('click',async()=>{
+    const nguoi=layTen(m);if(!nguoi)return;
+    const link=soi(),maMoi=ma.value.trim().toUpperCase();
+    if(!link){m.className='msg err';m.textContent='Dán link sản phẩm trước. Mẫu không có link thì bấm "Nhập đầy đủ".';return;}
+    if(!maMoi){m.className='msg err';m.textContent='Nhập mã mẫu (ví dụ SP27001).';return;}
+    const body={action:'tao',ma:maMoi,nguoi,nguon_loai:'taobao',nguon_link:link};
+    if(chon.gioi)body.gioi=chon.gioi;if(chon.loai)body.loai=chon.loai;
+    if(ten.value.trim())body.ten=ten.value.trim();if(lyDo.value.trim())body.ly_do=lyDo.value.trim();
+    const con=dan.value.replace(/https?:\/\/\S+/gi,' ').replace(/\s+/g,' ').trim();
+    if(con.length>=4)body.thong_tin_nguon='Đoạn chia sẻ gốc: '+con.slice(0,1500);
+    luu.disabled=true;m.className='msg';m.textContent='Đang lưu…';
+    try{
+      const r=await goi('POST',body);
+      if(r.status!==200)throw new Error(r.body.error||'máy chủ chưa lưu được');
+      let loiAnh='';
+      if(tep){m.textContent='Đang gửi ảnh…';try{const a=await goi('POST',{action:'anh',id:r.body.id,du_lieu:tep,nguoi});if(a.status!==200)loiAnh=a.body.error||'máy chủ chưa lưu được ảnh';}catch(e){loiAnh=loiMang(e);}}
+      S.them=false;S.chiaSe='';S.mo=r.body.id;S.loc='tat';S.nk=null;await tai();
+      if(loiAnh&&!S.err){S.err='Đã lưu mẫu '+maMoi+' nhưng chưa lưu được ảnh ('+loiAnh+'). Bấm "Thêm ảnh đại diện" để gửi lại.';ve();}
+    }catch(e){m.className='msg err';m.textContent=e.name==='AbortError'||e.name==='TypeError'?loiMang(e):e.message;luu.disabled=false;}
+  });
+  soi();
+  return w;
+}
+
 function veForm(h){
   const moi=!h,w=mk('div'),o={};
   if(moi){
@@ -483,6 +602,13 @@ $('btnKey').addEventListener('click',()=>{if(THU)return;S.key='';store.set('mk_m
 $('keyOk').addEventListener('click',()=>{const v=$('keyIn').value.trim();if(!v){$('gateMsg').textContent='Nhập mã truy cập.';return;}S.key=v;store.set('mk_mau_key',v);tai();});
 $('keyIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('keyOk').click();});
 if(THU)$('btnKey').hidden=true;
+/* Mở từ nút Chia sẻ của điện thoại (trang đã cài lên màn hình chính): nhận đoạn chia sẻ, vào thẳng màn Thêm nhanh. */
+(()=>{
+  const cs=[Q.get('title'),Q.get('text'),Q.get('url')].filter(Boolean).join(' ').trim();
+  if(!cs)return;
+  S.chiaSe=cs.slice(0,3000);S.them=true;
+  try{history.replaceState(null,'',location.pathname+(THU?'?thu=1':''));}catch(e){}
+})();
 tai();
 </script>
 </body>
