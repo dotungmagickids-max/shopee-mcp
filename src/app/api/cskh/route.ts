@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { pancakeStock } from "@/lib/kho";
 import { cached, validDay } from "@/lib/kho-store";
 import { congNgay, layNgay, layXuHuong, ngayVN, tenPage, tinhLaiNgay } from "@/lib/cskh/data";
+import { layCham } from "@/lib/cskh/cham-data";
 import { tonTheoMa } from "@/lib/cskh/ton";
 
 export const runtime = "nodejs";
@@ -24,6 +25,7 @@ function checkKey(request: Request): "ok" | "unset" | "bad" {
  *   GET /api/cskh?ngay=…&moi=1           → tính lại từ dữ liệu đã đồng bộ thay vì dùng bản chụp
  *   GET /api/cskh?xuhuong=30&ngay=…      → dòng gọn của N ngày tính đến `ngay` (tối đa 90)
  * Không trả tên, SĐT, nội dung tin của khách; hội thoại chỉ hiện 5 ký tự cuối của mã.
+ * Riêng danh sách "việc với từng khách" và "phản hồi xấu" có đường dẫn mở cuộc chat trong Pancake (chỉ người có quyền vào page mới mở được).
  */
 export async function GET(request: Request) {
   const auth = checkKey(request);
@@ -35,7 +37,9 @@ export async function GET(request: Request) {
   try {
     const n = Number(sp.get("xuhuong"));
     if (n > 0) return json({ den: ngay, ngay: await layXuHuong(congNgay(ngay, -(Math.min(90, Math.floor(n)) - 1)), ngay) });
-    const k = (sp.get("moi") ? null : await layNgay(ngay)) ?? (await tinhLaiNgay(ngay));
+    let k = (sp.get("moi") ? null : await layNgay(ngay)) ?? (await tinhLaiNgay(ngay));
+    // Bản chụp cũ chưa có mã hội thoại nên không khớp được điểm chấm: tính lại một lần.
+    if (k.cuoc.length && !k.cuoc[0].id) k = await tinhLaiNgay(ngay);
     let ton: ReturnType<typeof tonTheoMa> = {};
     let tonLoi = "";
     try {
@@ -44,7 +48,12 @@ export async function GET(request: Request) {
     } catch (err) {
       tonLoi = err instanceof Error ? err.message : String(err);
     }
-    return json({ ...k, tenPage: tenPage(), ton, tonLoi });
+    // Mã hội thoại đầy đủ không in ra trang; chỉ đổi thành đường dẫn mở Pancake ở hai danh sách cần sale xử lý.
+    const link = (page: string, id: string) => `https://pancake.vn/${encodeURIComponent(page)}?c_id=${encodeURIComponent(id)}`;
+    const g = await layCham(k);
+    const boId = <T extends { page: string; id: string }>(xs: T[]) => xs.map(({ id, ...r }) => ({ ...r, link: link(r.page, id) }));
+    const cham = g ? { ...g, viec: boId(g.viec), xau: boId(g.xau) } : null;
+    return json({ ...k, cuoc: k.cuoc.map(({ id: _id, ...r }) => r), tenPage: tenPage(), ton, tonLoi, cham });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 502);
   }

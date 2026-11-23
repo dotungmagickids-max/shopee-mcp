@@ -49,6 +49,9 @@ tr.tot td{font-weight:700;background:#f4f6f8}
 .tag.late{background:#fdeaea;color:var(--red)}
 .tag.warn{background:#fff4d6;color:var(--amber)}
 .tag.ok{background:#d9f2e3;color:#0b5c37}
+td.wrap{white-space:normal;min-width:240px}
+td.d0{color:var(--red);font-weight:700}
+td.d2{color:var(--accent);font-weight:700}
 td.bar{width:38%;min-width:160px}
 .bar i{display:block;height:9px;border-radius:3px;background:var(--blue);margin:2px 0}
 .bar i.s{background:var(--accent)}
@@ -89,7 +92,7 @@ td.bar{width:38%;min-width:160px}
 
 <div class="tabs" id="tabs">
   <button data-tab="tq">Tổng quan</button><button data-tab="gio">Theo giờ</button><button data-tab="ma">Mã được hỏi</button>
-  <button data-tab="nv">Người trực</button><button data-tab="sot">Tin sót</button><button data-tab="the">Phân loại (theo thẻ)</button><button data-tab="xh">30 ngày</button>
+  <button data-tab="nv">Người trực</button><button data-tab="sot">Tin sót</button><button data-tab="vk">Việc với từng khách</button><button data-tab="dc">Điểm chat</button><button data-tab="px">Phản hồi xấu</button><button data-tab="the">Phân loại</button><button data-tab="xh">30 ngày</button>
 </div>
 
 <section class="card" id="sec-tq" hidden>
@@ -108,6 +111,8 @@ td.bar{width:38%;min-width:160px}
   <h2>Mã được hỏi nhiều và tồn kho</h2>
   <div class="hint">Đếm số cuộc chat có nhắc tới mã (khách gõ hoặc nhân viên gửi) và tên gọi nhóm hàng (dấu #). Khách hay nói tên gọi thay vì mã nên danh sách này chưa đủ. Tồn là tồn thực hiện tại trên Pancake.</div>
   <div class="tw"><table><thead><tr><th>Mã / nhóm</th><th class="num">Số cuộc</th><th class="num">Tồn thực</th><th class="num">Phân loại hết</th><th class="num">Đơn chờ hàng</th><th></th></tr></thead><tbody id="tbMa"></tbody></table></div>
+  <h3>Sản phẩm khách hỏi (AI đọc từng cuộc, theo tên gọi)</h3>
+  <div class="tw"><table><thead><tr><th>Tên gọi</th><th class="num">Số cuộc</th><th></th></tr></thead><tbody id="tbSp"></tbody></table></div>
 </section>
 
 <section class="card" id="sec-nv" hidden>
@@ -122,9 +127,34 @@ td.bar{width:38%;min-width:160px}
   <div class="tw"><table><thead><tr><th>Hội thoại</th><th>Page</th><th>Khách nhắn lúc</th><th>Ca</th><th>Hạn trả lời</th><th>Trả lời lúc</th><th>Người trả lời</th><th></th></tr></thead><tbody id="tbSot"></tbody></table></div>
 </section>
 
+<section class="card" id="sec-vk" hidden>
+  <h2>Việc nên làm với từng khách</h2>
+  <div class="hint" id="vkNote"></div>
+  <div class="filters"><select id="vkLoc"><option value="">Mọi mức</option><option value="1">Chỉ việc gấp</option><option value="2">Trong ngày</option><option value="3">Khi rảnh</option></select><select id="vkNguoi"></select></div>
+  <div class="tw"><table><thead><tr><th>Mức</th><th>Hội thoại</th><th>Page</th><th>Người trực</th><th>Loại</th><th>Tình trạng</th><th>Việc nên làm</th><th></th></tr></thead><tbody id="tbVk"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-dc" hidden>
+  <h2>Điểm chat do AI chấm</h2>
+  <div class="hint" id="dcNote"></div>
+  <div class="tw"><table><thead><tr><th>Người trực</th><th class="num">Cuộc đã chấm</th><th class="num">Tư vấn size</th><th class="num">Gợi ý mua kèm</th><th class="num">Chốt đơn</th><th class="num">Thái độ</th></tr></thead><tbody id="tbDc"></tbody></table></div>
+  <h3>Từng cuộc còn việc phải làm</h3>
+  <div class="tw"><table><thead><tr><th>Hội thoại</th><th>Người trực</th><th>Loại</th><th>Tình trạng</th><th class="num">Size</th><th class="num">Mua kèm</th><th class="num">Chốt</th><th class="num">Thái độ</th><th>Nhận xét</th></tr></thead><tbody id="tbDcCuoc"></tbody></table></div>
+</section>
+
+<section class="card" id="sec-px" hidden>
+  <h2>Phản hồi xấu</h2>
+  <div class="hint">AI gắn cờ các cuộc khách phàn nàn, chê, báo nhận sai hoặc thiếu hàng. Máy chưa ghi được trạng thái xử lý; việc xử lý giao qua bảng việc chung.</div>
+  <div class="tw"><table><thead><tr><th>Hội thoại</th><th>Page</th><th>Người trực</th><th>Khách phàn nàn gì</th><th>Do đóng hàng?</th><th>Việc nên làm</th><th></th></tr></thead><tbody id="tbPx"></tbody></table></div>
+</section>
+
 <section class="card" id="sec-the" hidden>
-  <h2>Phân loại theo thẻ sale gắn</h2>
-  <div class="hint">Chưa chắc: sale gắn thẻ không đều. Phân loại bằng AI đọc từng cuộc là việc của đợt 2.</div>
+  <h2>Phân loại tin</h2>
+  <div class="hint" id="plNote"></div>
+  <div class="tw"><table><thead><tr><th>Loại (AI đọc từng cuộc)</th><th class="num">Số cuộc</th><th></th></tr></thead><tbody id="tbLoai"></tbody></table></div>
+  <h3>Tình trạng cuối cuộc chat</h3>
+  <div class="tw"><table><thead><tr><th>Tình trạng</th><th class="num">Số cuộc</th><th></th></tr></thead><tbody id="tbKq"></tbody></table></div>
+  <h3>Theo thẻ sale gắn (chưa chắc: gắn thẻ không đều)</h3>
   <div class="tw"><table><thead><tr><th>Thẻ</th><th class="num">Số cuộc</th><th></th></tr></thead><tbody id="tbThe"></tbody></table></div>
 </section>
 
@@ -182,7 +212,17 @@ function mockNgay(ngay){
   const caDen={'sáng':12,'chiều':18,'tối':22},sot=[];
   for(let i=0;i<tong.sot;i++){const h=[9,10,14,16,19,21][n(0,5)],luc=d0+h*3600e3+n(0,59)*6e4,ca=h<12?'sáng':h<18?'chiều':'tối',han=d0+caDen[ca]*3600e3,treo=i<tong.sotConTreo;sot.push({duoi:String(n(10000,99999)),page:i%3?'p1':'p2',luc,han,traLoi:treo?null:han+n(5,180)*6e4,ca,nguoi:treo?null:ten[i%2]});}
   sot.sort((a,b)=>a.luc-b.luc);
-  return {ngay,tinhLuc:Date.now(),tamTinh:Date.now()<d0+3*864e5,cauHinh:{ca:[{ten:'sáng',tu:8,den:12},{ten:'chiều',tu:12,den:18},{ten:'tối',tu:18,den:22}],chotGio:48,toiThieuPhut:15,nguongMau:5},tong,pages,theoGio,nguoiTruc,ma,the,sot,cuoc:[],tenPage:{p1:'Page thử 1',p2:'Page thử 2'},ton,tonLoi:''};
+  return {ngay,tinhLuc:Date.now(),tamTinh:Date.now()<d0+3*864e5,cauHinh:{ca:[{ten:'sáng',tu:8,den:12},{ten:'chiều',tu:12,den:18},{ten:'tối',tu:18,den:22}],chotGio:48,toiThieuPhut:15,nguongMau:5},tong,pages,theoGio,nguoiTruc,ma,the,sot,cuoc:[],tenPage:{p1:'Page thử 1',p2:'Page thử 2'},ton,tonLoi:'',cham:mockCham(r,n,tong,ten)};
+}
+function mockCham(r,n,tong,ten){
+  const loai=['hoi_gia_size','chot_don','hoi_ship','hoi_don_da_dat','doi_tra','khieu_nai','spam'],kq=['khach_im','dang_trao_doi','da_chot','xin_duoc_sdt','het_hang','ngoai_size'];
+  const viecMau=['Nhắn lại hỏi chị chọn màu nào để giữ size, nhắc mức miễn ship','Khách đã cho chiều cao cân nặng: chốt size và báo giá mẫu khách hỏi','Khách xin ảnh thật: gửi ảnh và hỏi chốt','Khách hỏi bao giờ nhận hàng: tra đơn rồi báo ngày giao','Hết size khách cần: mời mẫu tương tự còn hàng'];
+  const nxMau=['Trả lời nhanh nhưng dán mẫu, chưa trả lời đúng câu khách hỏi','Tư vấn size rõ, chưa mời mua kèm','Hỏi lại chiều cao cân nặng khi khách đã nói','Chốt tốt, có nhắc miễn ship'];
+  const da=Math.round(tong.cuoc*0.9),viec=[],xau=[];
+  for(let i=0;i<24;i++){const g=i<5?1:i<16?2:3;viec.push({duoi:String(n(10000,99999)),page:i%4?'p1':'p2',nhom:i%3?'khach_moi':'khach_cu',nguoi:ten[i%2],loai:loai[n(0,3)],ketQua:kq[n(0,1)],diem:[n(0,2),n(0,2),n(0,2),n(1,2)],viec:viecMau[n(0,4)],mucGap:g,nhanXet:nxMau[n(0,3)],chot:false,xau:false,moTaXau:'',doDongHang:false,link:'#'});}
+  for(let i=0;i<3;i++)xau.push({duoi:String(n(10000,99999)),page:'p1',nhom:'khach_cu',nguoi:ten[i%2],loai:i?'khieu_nai':'doi_tra',ketQua:'dang_trao_doi',diem:[null,null,null,n(1,2)],viec:['Xin mã đơn và ảnh hàng nhận được, báo kho kiểm video đóng hàng','Hỏi khách muốn đổi size nào, hướng dẫn gửi lại','Xin lỗi khách, báo anh quyết hoàn tiền hay gửi lại'][i],mucGap:1,nhanXet:'',chot:false,xau:true,moTaXau:['Khách báo nhận thiếu một món so với đơn','Khách nói áo chật so với bảng size','Khách chê vải phai màu sau lần giặt đầu'][i],doDongHang:i===0,link:'#'});
+  const dd=t=>({ten:t,cuoc:t==='Tất cả'?da:Math.round(da*(t===ten[0]?0.68:0.32)),size:n(40,150)/100,muaKem:n(30,110)/100,chot:n(30,100)/100,thaiDo:n(100,190)/100});
+  return {model:'model-thu',canCham:tong.cuoc,daCham:da,loai:loai.map((l,i)=>({loai:l,cuoc:Math.max(1,Math.round(da*[0.6,0.12,0.08,0.1,0.04,0.03,0.03][i]))})),ketQua:kq.map((k,i)=>({ketQua:k,cuoc:Math.max(1,Math.round(da*[0.55,0.2,0.1,0.06,0.05,0.04][i]))})),diem:[dd('Tất cả'),dd(ten[0]),dd(ten[1])],sanPham:['áo thun','quần kaki','quần túi hộp','set nỉ','quần jean'].map((s,i)=>({ten:s,cuoc:n(30,40)-i*6})),viec:viec.concat(xau),xau};
 }
 function mockXh(den){const out=[];for(let i=29;i>=0;i--){const g=congNgay(den,-i),d=mockNgay(g);out.push({ngay:g,tamTinh:d.tamTinh,cuoc:d.tong.cuoc,khachMoi:d.tong.khachMoi,tinKhach:d.tong.tinKhach,chotMoi:d.tong.chotMoi,sot:d.tong.sot,trungViGiay:d.nguoiTruc[0].trungViGiay});}return out;}
 
@@ -242,8 +282,40 @@ function render(){
   $('sotNote').textContent='Tin sót = tin khách đến hết ca vẫn chưa có người trả lời (tin đến sát cuối ca có thêm '+d.cauHinh.toiThieuPhut+' phút; tin ngoài giờ tính vào ca '+d.cauHinh.ca[0].ten+' kế tiếp). Gồm cả tin kết thúc như "ok", "cảm ơn": máy chưa phân biệt được.';
   $('tbSot').innerHTML=d.sot.map(s=>'<tr class="'+(s.traLoi?'':'bad')+'"><td class="code">…'+esc(s.duoi)+'</td><td>'+tenPage(s.page)+'</td><td>'+gio(s.luc,d.ngay)+'</td><td>'+esc(s.ca)+'</td><td>'+gio(s.han,d.ngay)+'</td><td>'+(s.traLoi?gio(s.traLoi,d.ngay):'—')+'</td><td>'+esc(s.nguoi||'')+'</td><td>'+(s.traLoi?'<span class="tag warn">trả lời trễ</span>':'<span class="tag late">chưa ai trả lời</span>')+'</td></tr>').join('')||'<tr><td colspan="8">Không có tin sót.</td></tr>';
 
+  renderCham();
   const mt=Math.max(1,...d.the.map(x=>x.cuoc));
   $('tbThe').innerHTML=d.the.map(x=>'<tr><td>'+esc(x.the)+'</td><td class="num">'+so(x.cuoc)+'</td><td class="bar">'+bar(x.cuoc,mt)+'</td></tr>').join('')||'<tr><td colspan="3">Không có cuộc nào được gắn thẻ.</td></tr>';
+}
+const TEN_LOAI={hoi_gia_size:'Hỏi giá, size, tư vấn',chot_don:'Chốt đơn',hoi_ship:'Hỏi ship',doi_tra:'Đổi trả',khieu_nai:'Khiếu nại',hoi_don_da_dat:'Hỏi về đơn đã đặt',spam:'Spam',khac:'Khác'};
+const TEN_KQ={da_chot:'Đã chốt',xin_duoc_sdt:'Có SĐT, chưa chốt',khach_im:'Khách im',ngoai_size:'Ngoài size',het_hang:'Hết hàng',dang_trao_doi:'Đang trao đổi',da_giai_quyet:'Đã giải quyết',khac:'Khác'};
+const TEN_GAP={1:'<span class="tag late">Gấp</span>',2:'<span class="tag warn">Trong ngày</span>',3:'<span class="tag">Khi rảnh</span>'};
+const diem1=v=>v==null?'—':v.toLocaleString('vi-VN',{maximumFractionDigits:2});
+const oDiem=v=>'<td class="num'+(v===0?' d0':v===2?' d2':'')+'">'+(v==null?'—':v)+'</td>';
+const mo=x=>x.link&&x.link!=='#'?'<a href="'+esc(x.link)+'" target="_blank" rel="noopener noreferrer">Mở Pancake</a>':'';
+function renderVk(){
+  const c=S.d.cham;if(!c)return;
+  const g=$('vkLoc').value,ng=$('vkNguoi').value;
+  const ds=c.viec.filter(x=>(!g||String(x.mucGap)===g)&&(!ng||(x.nguoi||'')===ng));
+  $('tbVk').innerHTML=ds.map(x=>'<tr class="'+(x.xau?'bad':'')+'"><td>'+TEN_GAP[x.mucGap]+'</td><td class="code">…'+esc(x.duoi)+'</td><td>'+tenPage(x.page)+'</td><td>'+esc(x.nguoi||'')+'</td><td>'+esc(TEN_LOAI[x.loai]||x.loai)+'</td><td>'+esc(TEN_KQ[x.ketQua]||x.ketQua)+'</td><td class="wrap">'+esc(x.viec)+'</td><td>'+mo(x)+'</td></tr>').join('')||'<tr><td colspan="8">Không có việc nào.</td></tr>';
+}
+function renderCham(){
+  const c=S.d.cham,chua='AI chưa chấm ngày này (chưa bật AI, hoặc job chấm chưa chạy).';
+  for(const id of ['tbVk','tbDc','tbDcCuoc','tbPx','tbLoai','tbKq','tbSp'])$(id).innerHTML='';
+  if(!c||!c.daCham){for(const id of ['vkNote','dcNote','plNote'])$(id).textContent=chua;$('tbPx').innerHTML='<tr><td colspan="7">'+chua+'</td></tr>';return;}
+  const tinh='AI ('+c.model+') đã chấm '+so(c.daCham)+' trên '+so(c.canCham)+' cuộc có khách nhắn.';
+  $('vkNote').textContent=tinh+' Mỗi dòng là một khách: AI đề xuất, sale xem lại trước khi làm. Cuộc đã chốt xong không hiện.';
+  $('dcNote').textContent=tinh+' Thang 0–2 mỗi tiêu chí; dấu — là tiêu chí không áp dụng cho cuộc đó.';
+  $('plNote').textContent=tinh;
+  const nguoi=[...new Set(c.viec.map(x=>x.nguoi||''))].filter(Boolean),cu=$('vkNguoi').value;
+  $('vkNguoi').innerHTML='<option value="">Mọi người trực</option>'+nguoi.map(x=>'<option'+(x===cu?' selected':'')+'>'+esc(x)+'</option>').join('');
+  renderVk();
+  $('tbDc').innerHTML=c.diem.map((r,i)=>'<tr class="'+(i?'':'tot')+'"><td>'+esc(r.ten)+'</td><td class="num">'+so(r.cuoc)+'</td><td class="num">'+diem1(r.size)+'</td><td class="num">'+diem1(r.muaKem)+'</td><td class="num">'+diem1(r.chot)+'</td><td class="num">'+diem1(r.thaiDo)+'</td></tr>').join('');
+  $('tbDcCuoc').innerHTML=c.viec.concat(c.xau.filter(x=>!x.viec)).slice(0,300).map(x=>'<tr><td class="code">…'+esc(x.duoi)+'</td><td>'+esc(x.nguoi||'')+'</td><td>'+esc(TEN_LOAI[x.loai]||x.loai)+'</td><td>'+esc(TEN_KQ[x.ketQua]||x.ketQua)+'</td>'+x.diem.map(oDiem).join('')+'<td class="wrap">'+esc(x.nhanXet)+'</td></tr>').join('')||'<tr><td colspan="9">Không có cuộc nào cần xem.</td></tr>';
+  $('tbPx').innerHTML=c.xau.map(x=>'<tr><td class="code">…'+esc(x.duoi)+'</td><td>'+tenPage(x.page)+'</td><td>'+esc(x.nguoi||'')+'</td><td class="wrap">'+esc(x.moTaXau)+'</td><td>'+(x.doDongHang?'<span class="tag late">có</span>':'không')+'</td><td class="wrap">'+esc(x.viec)+'</td><td>'+mo(x)+'</td></tr>').join('')||'<tr><td colspan="7">Không có phản hồi xấu nào.</td></tr>';
+  const ml=Math.max(1,...c.loai.map(x=>x.cuoc)),mk=Math.max(1,...c.ketQua.map(x=>x.cuoc)),ms=Math.max(1,...c.sanPham.map(x=>x.cuoc));
+  $('tbLoai').innerHTML=c.loai.map(x=>'<tr><td>'+esc(TEN_LOAI[x.loai]||x.loai)+'</td><td class="num">'+so(x.cuoc)+'</td><td class="bar">'+bar(x.cuoc,ml)+'</td></tr>').join('');
+  $('tbKq').innerHTML=c.ketQua.map(x=>'<tr><td>'+esc(TEN_KQ[x.ketQua]||x.ketQua)+'</td><td class="num">'+so(x.cuoc)+'</td><td class="bar">'+bar(x.cuoc,mk)+'</td></tr>').join('');
+  $('tbSp').innerHTML=c.sanPham.map(x=>'<tr><td>'+esc(x.ten)+'</td><td class="num">'+so(x.cuoc)+'</td><td class="bar">'+bar(x.cuoc,ms)+'</td></tr>').join('');
 }
 function renderXh(){
   const ds=S.xh||[],mx=Math.max(1,...ds.map(x=>x.khachMoi||0));
@@ -252,7 +324,7 @@ function renderXh(){
 function showTab(t){
   S.tab=t;
   for(const b of $('tabs').children)b.classList.toggle('on',b.dataset.tab===t);
-  for(const k of ['tq','gio','ma','nv','sot','the','xh'])$('sec-'+k).hidden=k!==t;
+  for(const k of ['tq','gio','ma','nv','sot','vk','dc','px','the','xh'])$('sec-'+k).hidden=k!==t;
   if(t==='xh'&&!S.xh)loadXh();
 }
 async function loadXh(){
@@ -283,6 +355,7 @@ $('btnTruoc').onclick=()=>{S.ngay=congNgay(S.ngay,-1);$('fNgay').value=S.ngay;lo
 $('btnSau').onclick=()=>{S.ngay=congNgay(S.ngay,1);$('fNgay').value=S.ngay;load();};
 $('btnTai').onclick=()=>load(true);
 $('btnThoat').onclick=()=>{keyLS.set('');S.key='';gate('');};
+$('vkLoc').onchange=renderVk;$('vkNguoi').onchange=renderVk;
 $('tabs').onclick=e=>{const t=e.target.dataset&&e.target.dataset.tab;if(t)showTab(t);};
 if(TEST)start();else{S.key=keyLS.get();if(S.key)start();else gate('');}
 </script>

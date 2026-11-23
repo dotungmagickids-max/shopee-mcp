@@ -151,6 +151,11 @@ export function maTrongChu(chu: string): string[] {
 
 /** Rút gọn một tin của Pancake. Không giữ chữ, tên khách, SĐT. */
 export function rutTin(m: any, page: string): Tin | null {
+  return rutTinCoChu(m, page)?.tin ?? null;
+}
+
+/** Như rutTin nhưng trả kèm phần chữ, CHỈ để gửi AI chấm rồi bỏ; không được lưu phần chữ này. */
+export function rutTinCoChu(m: any, page: string): { tin: Tin; chu: string } | null {
   const id = String(m?.id ?? "");
   const luc = gioPancake(m?.inserted_at);
   if (!id || !luc || m?.is_removed) return null;
@@ -167,12 +172,17 @@ export function rutTin(m: any, page: string): Tin | null {
   if (ma.length) t.ma = ma;
   // Dấu băm chỉ đặt cho tin của shop đủ dài: dùng để nhận ra tin mẫu, không dùng cho tin của khách.
   if (ben !== "khach" && chu.length >= 20) t.bam = createHash("sha256").update(chu.toLowerCase()).digest("hex").slice(0, 12);
-  return t;
+  return { tin: t, chu };
 }
 
 /** Tin của một hội thoại, lùi dần về trước cho tới khi gặp tin cũ hơn `tu` (mili giây). */
 export async function docTin(p: PageKhoa, hoiThoai: string, tu: number, toiDaLuot = 10): Promise<Tin[]> {
-  const out = new Map<string, Tin>();
+  return (await docTinCoChu(p, hoiThoai, tu, toiDaLuot)).map(({ chu: _chu, ...t }) => t);
+}
+
+/** Tin kèm phần chữ, chỉ giữ trong bộ nhớ để soạn cho AI chấm. */
+export async function docTinCoChu(p: PageKhoa, hoiThoai: string, tu: number, toiDaLuot = 10): Promise<Array<Tin & { chu: string }>> {
+  const out = new Map<string, Tin & { chu: string }>();
   let daDoc = 0;
   for (let luot = 0; luot < toiDaLuot; luot++) {
     const q: Record<string, string> = { page_access_token: p.khoa };
@@ -182,10 +192,10 @@ export async function docTin(p: PageKhoa, hoiThoai: string, tu: number, toiDaLuo
     daDoc += ds.length;
     let cuNhat = Infinity;
     for (const m of ds) {
-      const t = rutTin(m, p.id);
-      if (!t) continue;
-      cuNhat = Math.min(cuNhat, t.luc);
-      if (t.luc >= tu) out.set(t.id, t);
+      const r = rutTinCoChu(m, p.id);
+      if (!r) continue;
+      cuNhat = Math.min(cuNhat, r.tin.luc);
+      if (r.tin.luc >= tu) out.set(r.tin.id, { ...r.tin, chu: r.chu });
     }
     if (ds.length < TIN_MOI_LUOT || cuNhat < tu) break;
   }

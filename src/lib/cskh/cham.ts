@@ -1,0 +1,229 @@
+/**
+ * Quản lý chất lượng CSKH, đợt 2: AI đọc từng cuộc chat, phân loại, chấm điểm và đề xuất việc nên làm với từng khách.
+ *
+ * Nhà cung cấp AI đổi được bằng cấu hình, không sửa code: mọi bên có cổng kiểu OpenAI (`/chat/completions`) đều dùng được.
+ *   CSKH_AI_BASE_URL   ví dụ https://api.deepseek.com/v1
+ *   CSKH_AI_API_KEY    khóa của bên đó
+ *   CSKH_AI_MODEL      tên model
+ *   CSKH_AI_HUONG_DAN  (tùy chọn) hướng dẫn riêng của shop: bảng size, chính sách, điều sale phải làm
+ *
+ * Nội dung chat chỉ đi qua bộ nhớ: đọc từ Pancake, che SĐT, email, đường dẫn, gửi cho AI, rồi bỏ. Không lưu chữ của khách.
+ * Tên khách không được gửi đi (chỉ ghi "Khách").
+ */
+import type { DongCuoc, KetQuaNgay, Tin } from "./tinh";
+
+export interface TinCoChu extends Tin {
+  chu: string;
+}
+
+const GIO = 3_600_000;
+const gioPhut = (ms: number) => new Date(ms + 7 * GIO).toISOString().slice(11, 16);
+
+/** Che SĐT, email, đường dẫn và dãy số dài (số tài khoản, mã vận đơn) trước khi gửi cho AI. */
+export function cheThongTin(chu: string): string {
+  return chu
+    .replace(/https?:\/\/\S+|www\.\S+/gi, "[link]")
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]")
+    .replace(/(?:\+?84|0)(?:[\s.-]?\d){9,10}(?!\d)/g, "[SĐT]")
+    .replace(/\d{9,}/g, "[số]");
+}
+
+const NHAN_LOAI: Record<string, string> = { anh: "[ảnh]", sticker: "[sticker]", khac: "[đính kèm]", rong: "[tin tự động không có chữ]" };
+
+/** Soạn một cuộc chat thành chữ cho AI đọc: tin trong ngày, kèm tối đa `truoc` tin ngay trước đó làm ngữ cảnh. */
+export function soanHoiThoai(tin: TinCoChu[], d0: number, d1: number, truoc = 30, toiDa = 150): string {
+  const xep = [...tin].sort((a, b) => a.luc - b.luc);
+  const cu = xep.filter((t) => t.luc < d0).slice(-truoc);
+  const ngay = xep.filter((t) => t.luc >= d0 && t.luc < d1).slice(0, toiDa);
+  const sau = xep.filter((t) => t.luc >= d1).slice(0, 10);
+  const dong = (t: TinCoChu) => {
+    const ai = t.ben === "khach" ? "Khách" : t.ben === "nhan_vien" ? `NV ${t.nv ?? ""}`.trim() : "Tự động";
+    const chu = t.chu ? cheThongTin(t.chu).slice(0, 500) : (NHAN_LOAI[t.loai] ?? "[đính kèm]");
+    return `${gioPhut(t.luc)} ${ai}: ${chu}`;
+  };
+  const phan: string[] = [];
+  if (cu.length) phan.push("--- Trước ngày chấm (chỉ để hiểu bối cảnh, không chấm) ---", ...cu.map(dong));
+  phan.push("--- Trong ngày chấm ---", ...ngay.map(dong));
+  if (sau.length) phan.push("--- Sau ngày chấm (chỉ để biết kết quả) ---", ...sau.map(dong));
+  return phan.join("\n");
+}
+
+export const LOAI = ["hoi_gia_size", "chot_don", "hoi_ship", "doi_tra", "khieu_nai", "hoi_don_da_dat", "spam", "khac"] as const;
+export const KET_QUA = ["da_chot", "xin_duoc_sdt", "khach_im", "ngoai_size", "het_hang", "dang_trao_doi", "da_giai_quyet", "khac"] as const;
+export type Loai = (typeof LOAI)[number];
+export type KetQua = (typeof KET_QUA)[number];
+
+export interface KetQuaCham {
+  loai: Loai;
+  ketQua: KetQua;
+  /** 0–2 mỗi tiêu chí; null khi tiêu chí không áp dụng cho cuộc này. */
+  diemSize: number | null;
+  diemMuaKem: number | null;
+  diemChot: number | null;
+  diemThaiDo: number | null;
+  /** Tên gọi hoặc mã sản phẩm khách hỏi. */
+  sanPham: string[];
+  phanHoiXau: boolean;
+  moTaXau: string;
+  doDongHang: boolean;
+  /** Việc sale nên làm tiếp với khách này. Rỗng nếu không cần làm gì. */
+  viec: string;
+  mucGap: 1 | 2 | 3;
+  nhanXet: string;
+}
+
+export const HUONG_DAN = `Bạn là người kiểm tra chất lượng chăm sóc khách hàng của một shop quần áo trẻ em bán qua tin nhắn Facebook.
+Bạn nhận một cuộc chat giữa Khách, nhân viên (NV) và tin Tự động. Hãy đọc hết rồi trả về MỘT đối tượng JSON, không kèm chữ nào khác.
+
+Các trường:
+- "loai": một trong ${LOAI.join(", ")}. Khách hỏi giá, mẫu, size, chất vải, xin tư vấn → hoi_gia_size. Khách nói lấy, đặt, gửi địa chỉ → chot_don. Hỏi phí ship, thời gian giao → hoi_ship. Hỏi về đơn đã đặt (bao giờ tới, đổi địa chỉ) → hoi_don_da_dat. Chê hàng, bực bội, đòi hoàn tiền, nhận sai/thiếu hàng → khieu_nai. Muốn đổi size, đổi mẫu, trả hàng → doi_tra. Tin rác, bán hàng, nhắn nhầm → spam.
+- "ket_qua": một trong ${KET_QUA.join(", ")}. da_chot = khách đã đồng ý mua và cho đủ thông tin nhận hàng. xin_duoc_sdt = có số điện thoại nhưng chưa chốt. khach_im = nhân viên trả lời xong khách không nhắn lại. ngoai_size = bé quá cỡ lớn nhất shop có. het_hang = hết mẫu/màu/size khách muốn. dang_trao_doi = cuộc chat còn dang dở, đang chờ một bên.
+- "diem": {"size", "mua_kem", "chot", "thai_do"}, mỗi mục 0, 1, 2 hoặc null nếu không áp dụng (ví dụ spam, hỏi về đơn đã đặt).
+  - size: 2 = hỏi/nhận chiều cao cân nặng rồi chốt rõ một size, có giải thích; 1 = có tư vấn nhưng hỏi lại điều khách đã nói, hoặc chỉ dán bảng size; 0 = khách cần mà không tư vấn.
+  - mua_kem: 2 = mời thêm mẫu phù hợp một cách tự nhiên (nêu lợi ích, ví dụ đủ mức miễn ship); 1 = có nhắc qua loa; 0 = không mời.
+  - chot: 2 = chủ động hỏi chốt, xin thông tin nhận hàng, nhắc lại khi khách im; 1 = chỉ chốt khi khách tự nói lấy; 0 = không hỏi chốt.
+  - thai_do: 2 = thân thiện, trả lời đúng câu khách hỏi, gọn; 1 = lịch sự nhưng máy móc, dán mẫu không khớp câu hỏi; 0 = cộc lốc, bỏ câu hỏi của khách, sai thông tin.
+  Chỉ chấm việc nhân viên làm trong ngày chấm. Tin Tự động không tính là công của nhân viên.
+- "san_pham": mảng tối đa 5 tên gọi hoặc mã sản phẩm khách hỏi (viết thường, ngắn, ví dụ "quần kaki", "set nỉ"). Mảng rỗng nếu không rõ.
+- "phan_hoi_xau": true nếu khách phàn nàn, chê, bực, dọa trả hàng hay báo nhận sai/thiếu/lỗi. "mo_ta_xau": một câu nói rõ khách phàn nàn điều gì (rỗng nếu không có). "do_dong_hang": true nếu lỗi do đóng gói, giao sai, thiếu hàng.
+- "viec": MỘT việc cụ thể sale nên làm tiếp với khách này, viết như lời giao việc, tối đa 200 ký tự (ví dụ "Nhắn lại hỏi chị chọn màu nào để giữ size 150 quần kaki, nhắc mức miễn ship"). Chuỗi rỗng nếu không cần làm gì thêm (đã chốt xong, spam, khách ngoài size đã được báo rõ).
+- "muc_gap": 1 = cần làm ngay (khách đang chờ trả lời, khiếu nại, sắp chốt); 2 = trong ngày; 3 = khi rảnh.
+- "nhan_xet": một câu nhận xét cách nhân viên xử lý, tối đa 200 ký tự.
+
+Tuyệt đối không ghi tên người, số điện thoại, địa chỉ vào bất kỳ trường nào. Viết tiếng Việt.`;
+
+const cat = (x: unknown, n: number) => cheThongTin(String(x ?? "").replace(/\s+/g, " ").trim()).slice(0, n);
+const diem = (x: unknown): number | null => (x === null || x === undefined || x === "" || !Number.isFinite(Number(x)) ? null : Math.max(0, Math.min(2, Math.round(Number(x)))));
+
+/** Đọc câu trả lời của AI: lấy khối JSON, chỉ nhận giá trị hợp lệ, cắt độ dài, che lại SĐT nếu AI lỡ chép. */
+export function docKetQua(text: string): KetQuaCham | null {
+  const a = text.indexOf("{");
+  const b = text.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  let o: any;
+  try {
+    o = JSON.parse(text.slice(a, b + 1));
+  } catch {
+    return null;
+  }
+  if (!o || typeof o !== "object") return null;
+  const loai = (LOAI as readonly string[]).includes(o.loai) ? (o.loai as Loai) : "khac";
+  const ketQua = (KET_QUA as readonly string[]).includes(o.ket_qua) ? (o.ket_qua as KetQua) : "khac";
+  const d = o.diem ?? {};
+  const gap = Number(o.muc_gap);
+  return {
+    loai,
+    ketQua,
+    diemSize: diem(d.size),
+    diemMuaKem: diem(d.mua_kem),
+    diemChot: diem(d.chot),
+    diemThaiDo: diem(d.thai_do),
+    sanPham: [...new Set((Array.isArray(o.san_pham) ? o.san_pham : []).map((x: unknown) => cat(x, 40).toLowerCase()).filter(Boolean))].slice(0, 5) as string[],
+    phanHoiXau: o.phan_hoi_xau === true,
+    moTaXau: o.phan_hoi_xau === true ? cat(o.mo_ta_xau, 300) : "",
+    doDongHang: o.phan_hoi_xau === true && o.do_dong_hang === true,
+    viec: cat(o.viec, 300),
+    mucGap: gap === 1 || gap === 3 ? gap : 2,
+    nhanXet: cat(o.nhan_xet, 300),
+  };
+}
+
+export interface CauHinhAi {
+  baseUrl: string;
+  khoa: string;
+  model: string;
+  huongDanRieng: string;
+}
+
+export function cauHinhAi(model?: string): CauHinhAi | null {
+  const baseUrl = process.env.CSKH_AI_BASE_URL?.trim().replace(/\/+$/, "");
+  const khoa = process.env.CSKH_AI_API_KEY?.trim();
+  const m = (model || process.env.CSKH_AI_MODEL || "").trim();
+  if (!baseUrl || !khoa || !m || !/^https:\/\//.test(baseUrl)) return null;
+  return { baseUrl, khoa, model: m, huongDanRieng: process.env.CSKH_AI_HUONG_DAN?.trim() ?? "" };
+}
+
+export interface LuotCham {
+  kq: KetQuaCham | null;
+  tokenVao: number;
+  tokenRa: number;
+}
+
+/** Gửi một cuộc chat đã soạn cho AI. Lỗi mạng hoặc lỗi của bên AI thì ném lỗi (không kèm khóa). */
+export async function chamMot(hoiThoai: string, c: CauHinhAi): Promise<LuotCham> {
+  const he = c.huongDanRieng ? `${HUONG_DAN}\n\nHướng dẫn riêng của shop:\n${c.huongDanRieng}` : HUONG_DAN;
+  const than = (jsonMode: boolean) =>
+    JSON.stringify({
+      model: c.model,
+      temperature: 0,
+      max_tokens: 800,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      messages: [
+        { role: "system", content: he },
+        { role: "user", content: `Cuộc chat cần chấm:\n\n${hoiThoai}` },
+      ],
+    });
+  const goi = (jsonMode: boolean) => fetch(`${c.baseUrl}/chat/completions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.khoa}` }, body: than(jsonMode) });
+  let res = await goi(true);
+  if (res.status === 400) res = await goi(false); // có bên không nhận response_format
+  if (!res.ok) throw new Error(`AI chấm điểm HTTP ${res.status}`);
+  const body: any = await res.json();
+  const text = String(body?.choices?.[0]?.message?.content ?? "");
+  return { kq: docKetQua(text), tokenVao: Number(body?.usage?.prompt_tokens ?? 0) || 0, tokenRa: Number(body?.usage?.completion_tokens ?? 0) || 0 };
+}
+
+/* ------------------------------- gộp điểm cho trang ------------------------------- */
+
+export interface DongCham extends KetQuaCham {
+  page: string;
+  id: string;
+}
+
+const tb = (xs: Array<number | null>): number | null => {
+  const co = xs.filter((x): x is number => x != null);
+  return co.length ? Math.round((co.reduce((a, b) => a + b, 0) / co.length) * 100) / 100 : null;
+};
+const dem = <T,>(xs: T[], khoa: (x: T) => string) => {
+  const m = new Map<string, number>();
+  for (const x of xs) m.set(khoa(x), (m.get(khoa(x)) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+};
+
+/** Gộp điểm từng cuộc thành bảng cho trang. `canCham` = số cuộc có khách nhắn trong ngày. */
+export function gopCham(k: KetQuaNgay, rows: DongCham[], model: string) {
+  const cuoc = new Map<string, DongCuoc>(k.cuoc.map((c) => [`${c.page}|${c.id}`, c]));
+  const co = rows.filter((r) => cuoc.has(`${r.page}|${r.id}`)).map((r) => ({ r, c: cuoc.get(`${r.page}|${r.id}`)! }));
+  const theoNguoi = new Map<string, typeof co>();
+  for (const x of co) theoNguoi.set(x.c.nguoi ?? "(chưa ai trả lời)", [...(theoNguoi.get(x.c.nguoi ?? "(chưa ai trả lời)") ?? []), x]);
+  const dongDiem = (ten: string, xs: typeof co) => ({ ten, cuoc: xs.length, size: tb(xs.map((x) => x.r.diemSize)), muaKem: tb(xs.map((x) => x.r.diemMuaKem)), chot: tb(xs.map((x) => x.r.diemChot)), thaiDo: tb(xs.map((x) => x.r.diemThaiDo)) });
+  const dong = ({ r, c }: (typeof co)[number]) => ({
+    duoi: c.duoi,
+    page: c.page,
+    id: c.id,
+    nhom: c.nhom,
+    nguoi: c.nguoi,
+    loai: r.loai,
+    ketQua: r.ketQua,
+    diem: [r.diemSize, r.diemMuaKem, r.diemChot, r.diemThaiDo],
+    viec: r.viec,
+    mucGap: r.mucGap,
+    nhanXet: r.nhanXet,
+    chot: c.chot,
+    xau: r.phanHoiXau,
+    moTaXau: r.moTaXau,
+    doDongHang: r.doDongHang,
+  });
+  const tat = co.map(dong);
+  return {
+    model,
+    canCham: k.cuoc.filter((c) => c.tinKhach > 0).length,
+    daCham: co.length,
+    loai: dem(co, (x) => x.r.loai).map(([loai, n]) => ({ loai, cuoc: n })),
+    ketQua: dem(co, (x) => x.r.ketQua).map(([ketQua, n]) => ({ ketQua, cuoc: n })),
+    diem: [dongDiem("Tất cả", co), ...[...theoNguoi.entries()].map(([ten, xs]) => dongDiem(ten, xs)).sort((a, b) => b.cuoc - a.cuoc)],
+    sanPham: dem(co.flatMap((x) => x.r.sanPham), (s) => s).slice(0, 30).map(([ten, n]) => ({ ten, cuoc: n })),
+    // Việc với từng khách: việc gấp trước; cuộc đã có đơn thì không cần nhắc chốt nữa.
+    viec: tat.filter((d) => d.viec && !(d.chot && d.ketQua === "da_chot")).sort((a, b) => a.mucGap - b.mucGap || a.duoi.localeCompare(b.duoi)),
+    xau: tat.filter((d) => d.xau),
+  };
+}
