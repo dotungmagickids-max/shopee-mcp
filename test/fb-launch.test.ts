@@ -121,6 +121,11 @@ it("creative có nút nhắn tin dùng khi Meta báo bài không hợp mục ti�
   const { creativeParamsWithCta, isCreativeIncompatible } = await import("../src/lib/facebook/launch");
   const p = creativeParamsWithCta("111_222", "BD26005-P01-V01");
   assert.equal(p.object_story_id, "111_222");
+  // Mặc định kèm lệnh tắt danh mục sản phẩm; bỏ được khi Meta từ chối tham số này.
+  assert.deepEqual(JSON.parse(p.degrees_of_freedom_spec), { creative_features_spec: { product_extensions: { enroll_status: "OPT_OUT", action_metadata: { type: "MANUAL" } } } });
+  assert.equal(creativeParamsWithCta("111_222", "x", false).degrees_of_freedom_spec, undefined);
+  const { creativeParams } = await import("../src/lib/facebook/launch");
+  assert.deepEqual(Object.keys(creativeParams("111_222", "x", false)), ["name", "object_story_id"]);
   assert.deepEqual(JSON.parse(p.call_to_action), { type: "MESSAGE_PAGE", value: { app_destination: "MESSENGER" } });
   assert.equal(isCreativeIncompatible("Meta API 400: The ad's creative is incompatible with the objective of the campaign that the ad belongs to. (mã 100)"), true);
   assert.equal(isCreativeIncompatible("Meta API 400: Invalid parameter (mã 100)"), false);
