@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, mergeVtpReturns, shapeOrder, reportAgeDays, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, shapeVtpMail, vtpMailDoc, vtpWaitingPickup } from "../src/lib/kho";
+import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, mergeVtpReturns, shapeOrder, reportAgeDays, shapeGiao, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, shapeVtpMail, vtpMailDoc, vtpWaitingPickup } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -253,6 +253,13 @@ describe("kiện hoàn đang chờ về", () => {
     const r3 = shapeVtpMail("PKE1", vtpMailDoc({ ma: "PKE1", status: "", reason: "" }, "2026-11-20", undefined, [], 5));
     assert.deepEqual([r3.key, r3.id, r3.status, r3.items.length], ["VTP:PKE1", "PKE1", "Đang hoàn", 0]);
     assert.equal(vtpMailDoc(row, "2026-11-19", undefined, [{ ...o, status: 15 }], 1).kind, "hoan-mot-phan");
+    // Đơn giao có vấn đề: chỉ mã phân loại và số lượng, không tên sản phẩm; "con" = còn trong báo cáo mới nhất.
+    const g = shapeGiao(row.ma, d, "2026-11-19");
+    assert.equal(g.con, true);
+    assert.equal(g.since, 1000);
+    assert.ok(g.items.every((i) => Object.keys(i).sort().join() === "quantity,sku"));
+    assert.equal(shapeGiao(row.ma, d, "2026-11-20").con, false);
+    assert.deepEqual(shapeGiao("PKE1", { status: "", reason: "", ngay: "2026-11-20", first: 0 }, "2026-11-20"), { ma: "PKE1", id: "", channel: "Viettel Post", status: "", reason: "", items: [], since: null, ngay: "2026-11-20", con: true });
   });
   it("hoàn Viettel: mail + đơn hoàn một phần của Pancake, không lấy đơn đang hoàn của Pancake, không trùng", () => {
     const row = (key: string, kind: string, codes: string[]) => ({ key, kind, codes }) as any;
