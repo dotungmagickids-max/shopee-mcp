@@ -1,5 +1,5 @@
 import { docLenhMau, hoSoTheoVai, loiChuyen, tomTatSua, vaiCuaKhoa, type HoSoRow, type Vai } from "@/lib/mau";
-import { gomMaBan, namXem, type BienTheRow, type LaiRow } from "@/lib/mau-ban";
+import { apMaAn, gomMaBan, namXem, type BienTheRow, type LaiRow } from "@/lib/mau-ban";
 import { allRows, db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -83,7 +83,11 @@ async function docMaBan(vai: Vai, namHoi: string | null) {
     if (error) console.error("[mau] đọc số bán theo mã lỗi:", error.message);
   } else lai = data as LaiRow[];
   const capNhat = rows.reduce<string | null>((a, r) => (r.updated_at && (!a || r.updated_at > a) ? r.updated_at : a), null);
-  return { at: Date.now(), vai, nam, namNay: Number(homNay.slice(0, 4)), capNhat, coAnh, thieuSoBan, ds: gomMaBan(rows, lai, vai) };
+  // Mã đã ẩn (hàng xả…). Database chưa có bảng (migration 0033) thì coi như chưa ẩn mã nào.
+  const an = new Map<string, string>();
+  const dsAn = await db().from("mau_ma_an").select("ma, ly_do").limit(2000);
+  if (!dsAn.error) for (const r of dsAn.data ?? []) an.set(String(r.ma).toUpperCase(), String(r.ly_do ?? ""));
+  return { at: Date.now(), vai, nam, namNay: Number(homNay.slice(0, 4)), capNhat, coAnh, thieuSoBan, anDuoc: !dsAn.error, ds: apMaAn(gomMaBan(rows, lai, vai), an, vai) };
 }
 
 /**
@@ -151,6 +155,14 @@ export async function POST(request: Request) {
       if (error) throw error;
       await ghiNhatKy(data.id as number, lenh.nguoi, vai, "tao", "", "dang_xem");
       return json({ ok: true, id: data.id });
+    }
+
+    if (lenh.viec === "an_ma") {
+      const { error } = lenh.an
+        ? await db().from("mau_ma_an").upsert({ ma: lenh.ma, ly_do: lenh.lyDo, nguoi: lenh.nguoi, luc })
+        : await db().from("mau_ma_an").delete().eq("ma", lenh.ma);
+      if (error) throw error;
+      return json({ ok: true });
     }
 
     const cu = await docHoSo(lenh.id);

@@ -228,6 +228,7 @@ export type LenhMau =
   | { ok: true; viec: "sua"; nguoi: string; id: number; cot: Record<string, string | number | boolean | null> }
   | { ok: true; viec: "trang_thai"; nguoi: string; id: number; den: TrangThai; ghiChu: string }
   | { ok: true; viec: "anh"; nguoi: string; id: number; kieu: string; duLieu: string }
+  | { ok: true; viec: "an_ma"; nguoi: string; ma: string; an: boolean; lyDo: string }
   | { ok: false; error: string; status?: number };
 
 /** Ảnh đại diện đã thu nhỏ ở trình duyệt: tối đa 300.000 ký tự base64 (khoảng 220 KB). */
@@ -239,6 +240,7 @@ export const ANH_TOI_DA = 300_000;
  *   { action: "sua", id, nguoi, ...trường cần đổi }    → sửa hồ sơ (quan_ly, lam)
  *   { action: "trang_thai", id, den, ghi_chu, nguoi }  → đổi trạng thái (chỉ quan_ly)
  *   { action: "anh", id, du_lieu: "data:image/…;base64,…", nguoi } → ảnh đại diện (quan_ly, lam)
+ *   { action: "an_ma", ma, an: true|false, ly_do?, nguoi } → ẩn / hiện lại một mã ở tab Mã đang bán (chỉ quan_ly)
  */
 export function docLenhMau(body: unknown, vai: Vai): LenhMau {
   if (vai === "xem") return { ...sai("Mã truy cập này chỉ được xem"), status: 403 };
@@ -288,7 +290,16 @@ export function docLenhMau(body: unknown, vai: Vai): LenhMau {
     if (!dungLoaiAnh(m[1], Buffer.from(m[2].slice(0, 24), "base64"))) return sai("Tệp không phải ảnh JPG, PNG hoặc WEBP");
     return { ok: true, viec: "anh", nguoi, id, kieu: m[1], duLieu: m[2] };
   }
-  return sai('action phải là "tao", "sua", "trang_thai" hoặc "anh"');
+  if (b.action === "an_ma") {
+    if (vai !== "quan_ly") return { ...sai("Chỉ quản lý được ẩn hoặc hiện lại mã"), status: 403 };
+    const ma = chu(b.ma, false)?.toUpperCase() ?? "";
+    if (!/^[A-Z]{1,4}\d{5}$/.test(ma)) return sai("Mã hàng không hợp lệ");
+    if (typeof b.an !== "boolean") return sai("Thiếu lựa chọn ẩn hay hiện lại");
+    const lyDo = trong(b.ly_do) ? "" : chu(b.ly_do, false);
+    if (lyDo == null || lyDo.length > 200) return sai("Lý do không hợp lệ hoặc dài quá 200 ký tự");
+    return { ok: true, viec: "an_ma", nguoi, ma, an: b.an, lyDo };
+  }
+  return sai('action phải là "tao", "sua", "trang_thai", "anh" hoặc "an_ma"');
 }
 
 /** So mấy byte đầu của tệp với kiểu ảnh khai báo, để không lưu nhầm thứ khác dưới tên ảnh. */

@@ -142,7 +142,7 @@ const store={
   set(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}}
 };
 const S={key:store.get('mk_mau_key'),ten:store.get('mk_mau_ten'),vai:'',ds:[],at:0,busy:false,err:'',
-  loc:'tat',gioi:'',loai:'',tim:'',mo:null,them:false,nk:null,anh:new Map(),chiaSe:'',tab:'mau',ban:{nam:0,data:null,busy:false,err:'',gioi:'',loai:'',namMa:'',mua:'',xep:'ban',tim:''}};
+  loc:'tat',gioi:'',loai:'',tim:'',mo:null,them:false,nk:null,anh:new Map(),chiaSe:'',tab:'mau',ban:{nam:0,data:null,busy:false,err:'',gioi:'',loai:'',namMa:'',mua:'',xep:'ban',tim:'',caAn:false}};
 
 const TT={dang_xem:'Đang xem',chon_lam:'Chọn làm',co_media:'Đã có media',bo:'Bỏ'};
 const CHUYEN={dang_xem:['chon_lam','bo'],chon_lam:['co_media','dang_xem','bo'],co_media:['chon_lam','bo'],bo:['dang_xem']};
@@ -365,7 +365,18 @@ function mockBan(nam){
   const vai=['lam','xem'].includes(Q.get('vai'))?Q.get('vai'):'quan_ly';
   if(vai!=='quan_ly')ds.forEach(x=>{delete x.doanhSo;delete x.lai;});
   ds.sort((a,b)=>b.slBan-a.slBan);
-  return {at:Date.now(),vai,nam,namNay:new Date().getFullYear(),capNhat:new Date().toISOString(),coAnh:true,thieuSoBan:false,ds};
+  MOCK_AN=MOCK_AN||new Map([['MG25004','Hàng xả']]);
+  const con=vai==='quan_ly'?ds.map(x=>MOCK_AN.has(x.ma)?Object.assign(x,{an:true,lyDoAn:MOCK_AN.get(x.ma)}):x):ds.filter(x=>!MOCK_AN.has(x.ma));
+  return {at:Date.now(),vai,nam,namNay:new Date().getFullYear(),capNhat:new Date().toISOString(),coAnh:true,thieuSoBan:false,anDuoc:true,ds:con};
+}
+let MOCK_AN=null;
+async function anMa(x,an,m){
+  const nguoi=S.ten.length>=2?S.ten:'Quản lý';
+  try{
+    if(THU){if(an)MOCK_AN.set(x.ma,'Hàng xả');else MOCK_AN.delete(x.ma);}
+    else{const r=await goi('POST',{action:'an_ma',ma:x.ma,an,ly_do:an?'Hàng xả':'',nguoi});if(r.status!==200)throw new Error(r.body.error||'máy chủ chưa ghi được');}
+    await taiBan(S.ban.nam);
+  }catch(e){m.className='msg err';m.textContent=e.name==='AbortError'||e.name==='TypeError'?loiMang(e):e.message;}
 }
 async function taiBan(nam){
   const B=S.ban;if(B.busy)return;
@@ -400,22 +411,34 @@ function veBan(body){
   if(d.capNhat)ghi.push('Tồn và tốc độ bán theo Pancake lúc '+ngayGio(d.capNhat)+'.');
   if(d.thieuSoBan)ghi.push('CHƯA đọc được số bán theo năm: thứ hạng dưới đây chỉ theo tốc độ bán hiện tại.');
   if(!d.coAnh)ghi.push('Chưa có ảnh (máy chủ chưa bật cột ảnh).');
+  const soAn=d.ds.filter(x=>x.an).length;
+  if(d.vai==='quan_ly'){
+    ghi.push(soAn?'Đang ẩn '+soAn+' mã (hàng xả…), không tính vào thứ hạng.':'Chưa ẩn mã nào.');
+    if(d.anDuoc===false)ghi.push('Máy chủ chưa bật phần ẩn mã.');
+  }
   body.append(mk('p','info',ghi.join(' ')));
+  if(d.vai==='quan_ly'&&soAn){
+    const l=mk('label');const c=mk('input');c.type='checkbox';c.checked=B.caAn;c.addEventListener('change',()=>{B.caAn=c.checked;veLuoiBan(luoi);});
+    l.append(c,document.createTextNode(' Hiện cả '+soAn+' mã đã ẩn (để hiện lại)'));l.style.margin='0 0 10px';body.append(l);
+  }
   const luoi=mk('div');body.append(luoi);veLuoiBan(luoi);
 }
 function veLuoiBan(luoi){
   const B=S.ban,d=B.data;luoi.textContent='';
   const tu=B.tim.trim().toLowerCase();
-  let ds=d.ds.filter(x=>(!B.gioi||x.gioi===B.gioi)&&(!B.loai||x.loai===B.loai)&&(!B.mua||x.mua===B.mua)&&(!B.namMa||String(x.nam)===B.namMa)&&(!tu||(x.ma+' '+x.ten).toLowerCase().includes(tu)));
+  let ds=d.ds.filter(x=>(B.caAn||!x.an)&&(!B.gioi||x.gioi===B.gioi)&&(!B.loai||x.loai===B.loai)&&(!B.mua||x.mua===B.mua)&&(!B.namMa||String(x.nam)===B.namMa)&&(!tu||(x.ma+' '+x.ten).toLowerCase().includes(tu)));
   ds=ds.slice().sort(B.xep==='nhanh'?(a,b)=>b.banNgay-a.banNgay||b.slBan-a.slBan:B.xep==='ton'?(a,b)=>b.ton-a.ton:(a,b)=>b.slBan-a.slBan||b.banNgay-a.banNgay);
   if(!ds.length){luoi.append(mk('div','rong','Không có mã nào khớp bộ lọc.'));return;}
   const g=mk('div','grid');
-  ds.forEach((x,i)=>{
+  let hang=0;
+  ds.forEach(x=>{
+    const i=x.an?-1:hang++;
     const c=mk('div','the ban');
     const k=mk('div','hinh');
     if(laLink(x.anh)||(THU&&x.anh)){const img=mk('img');img.alt='Ảnh '+x.ma;img.loading='lazy';img.referrerPolicy='no-referrer';img.addEventListener('error',()=>{k.textContent='Chưa có ảnh';});img.src=x.anh;k.append(img);}
     else k.textContent='Chưa có ảnh';
-    c.append(k,mk('span','hang','#'+(i+1)));
+    c.append(k,mk('span','hang',x.an?'Đã ẩn':'#'+(i+1)));
+    if(x.an)c.style.opacity='.6';
     const t=mk('div','t');
     t.append(mk('div','code',x.ma),mk('div','ten',x.ten||'(chưa có tên)'),mk('div','m',[x.loai,x.gioi?GIOI[x.gioi]:'',x.mua].filter(Boolean).join(' · ')||'Chưa phân loại'));
     const so=(nhan,gt)=>{const s=mk('div','so');s.append(document.createTextNode(nhan+' '),mk('b',null,gt));return s;};
@@ -425,7 +448,12 @@ function veLuoiBan(luoi){
     else if(x.duBan!=null&&x.duBan<7&&x.banNgay>=1)t.append(mk('span','nhan saphet','Sắp hết'));
     else if(x.ton>=100&&x.banNgay<1)t.append(mk('span','nhan cham','Bán chậm'));
     /* "Bán tốt" = 10 mã bán nhiều nhất trong năm của bộ lọc đang chọn, trừ mã hiện đang bán chậm */
-    if(B.xep==='ban'&&i<10&&x.slBan>0&&!d.thieuSoBan&&!(x.ton>=100&&x.banNgay<1))t.append(document.createTextNode(' '),mk('span','nhan hot','Bán tốt'));
+    if(B.xep==='ban'&&i>=0&&i<10&&x.slBan>0&&!d.thieuSoBan&&!(x.ton>=100&&x.banNgay<1))t.append(document.createTextNode(' '),mk('span','nhan hot','Bán tốt'));
+    if(d.vai==='quan_ly'&&d.anDuoc!==false){
+      const m=mk('div','msg'),b=mk('button',null,x.an?'Hiện lại':'Ẩn (hàng xả)');b.type='button';b.style.cssText='margin-top:8px;padding:6px 10px;font-size:13px;width:100%';
+      b.addEventListener('click',()=>{b.disabled=true;anMa(x,!x.an,m).finally(()=>{b.disabled=false;});});
+      t.append(b,m);
+    }
     c.append(t);g.append(c);
   });
   luoi.append(g);

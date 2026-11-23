@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { anhDau } from "../src/lib/autopilot/pancake";
-import { gioiTuDanhMuc, gomMaBan, loaiTuDanhMuc, muaTuDanhMuc, namXem, type BienTheRow, type LaiRow } from "../src/lib/mau-ban";
+import { apMaAn, gioiTuDanhMuc, gomMaBan, loaiTuDanhMuc, muaTuDanhMuc, namXem, type BienTheRow, type LaiRow } from "../src/lib/mau-ban";
 import { ANH_TOI_DA, docLenhMau, dungLoaiAnh, hoSoTheoVai, linkHopLe, loiChuyen, thieuDeCoMedia, tomTatSua, vaiCuaKhoa, type HoSoRow } from "../src/lib/mau";
 
 const hs = (x: Partial<HoSoRow> = {}): HoSoRow => ({
@@ -275,6 +275,25 @@ describe("mã đang bán (gomMaBan)", () => {
     assert.equal(loaiTuDanhMuc([], "ZZ26001"), "Khác");
     assert.equal(muaTuDanhMuc(["Thu Đông"]), "Thu đông");
     assert.deepEqual(["2025", "2019", "2030", "abc", null].map((v) => namXem(v, "2026-11-23")), [2025, 2026, 2026, 2026, 2026]);
+  });
+
+  it("mã đã ẩn (hàng xả): người làm, người xem không thấy; quản lý thấy có đánh dấu", () => {
+    const an = new Map([["MB25002", "Hàng xả"]]);
+    for (const vai of ["lam", "xem"] as const) assert.deepEqual(apMaAn(gomMaBan(rows, lai, vai), an, vai).map((x) => x.ma), ["MA26001", "AO24001", "MV26003"]);
+    const ql = apMaAn(gomMaBan(rows, lai, "quan_ly"), an, "quan_ly");
+    assert.deepEqual(ql.map((x) => [x.ma, x.an ?? false, x.lyDoAn ?? ""]), [["MB25002", true, "Hàng xả"], ["MA26001", false, ""], ["AO24001", false, ""], ["MV26003", false, ""]]);
+    assert.equal(apMaAn(ql, new Map(), "xem").length, 4);
+  });
+
+  it("lệnh ẩn mã: chỉ quản lý, mã đúng dạng", () => {
+    const l = { action: "an_ma", ma: " ma26001 ", an: true, ly_do: " Hàng  xả ", nguoi: "Người B" };
+    assert.deepEqual(docLenhMau(l, "quan_ly"), { ok: true, viec: "an_ma", nguoi: "Người B", ma: "MA26001", an: true, lyDo: "Hàng xả" });
+    assert.deepEqual(docLenhMau({ ...l, an: false, ly_do: undefined }, "quan_ly"), { ok: true, viec: "an_ma", nguoi: "Người B", ma: "MA26001", an: false, lyDo: "" });
+    const loi = (b: unknown, vai: "quan_ly" | "lam" = "quan_ly") => { const r = docLenhMau(b, vai); return r.ok ? null : r; };
+    assert.equal(loi(l, "lam")!.status, 403);
+    assert.match(loi({ ...l, ma: "COMBO-1" })!.error, /Mã hàng/);
+    assert.match(loi({ ...l, an: "có" })!.error, /ẩn hay hiện/);
+    assert.match(loi({ ...l, ly_do: "x".repeat(201) })!.error, /Lý do/);
   });
 
   it("bộ đồng bộ chỉ nhận đường dẫn ảnh https", () => {

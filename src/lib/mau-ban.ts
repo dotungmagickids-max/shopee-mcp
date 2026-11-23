@@ -41,6 +41,9 @@ export interface MaBan {
   anh: string | null;
   /** Số cái bán được trong năm đang xem (đã trừ hủy, hoàn). */
   slBan: number;
+  /** Mã đang bị ẩn khỏi tab (ví dụ hàng xả) và lý do; chỉ vai quản lý nhận được các mã này. */
+  an?: true;
+  lyDoAn?: string;
   /** Chỉ vai quản lý có hai số dưới. */
   doanhSo?: number | null;
   lai?: number | null;
@@ -123,6 +126,15 @@ export function gomMaBan(rows: BienTheRow[], lai: LaiRow[], vai: Vai): MaBan[] {
     out.push(m);
   }
   return out.sort((a, b) => b.slBan - a.slBan || b.banNgay - a.banNgay || a.ma.localeCompare(b.ma));
+}
+
+/**
+ * Bỏ các mã đã ẩn (hàng xả…) khỏi danh sách. Vai quản lý vẫn nhận các mã đó, có đánh dấu `an`, để hiện lại được.
+ */
+export function apMaAn(ds: MaBan[], an: Map<string, string>, vai: Vai): MaBan[] {
+  if (!an.size) return ds;
+  if (vai !== "quan_ly") return ds.filter((m) => !an.has(m.ma));
+  return ds.map((m) => (an.has(m.ma) ? { ...m, an: true as const, lyDoAn: an.get(m.ma) ?? "" } : m));
 }
 
 /** Năm xem số bán: từ 2023 tới năm hiện tại (giờ Việt Nam); sai thì lấy năm hiện tại. */
