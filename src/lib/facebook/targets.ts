@@ -17,8 +17,13 @@ export type Targets = {
 };
 export const DEFAULT_TARGETS: Targets = { month_budget: null, day_budget: null, ratio: 0.2, ad_budget: 65_000 };
 
-/** Một ngày đã chạy: chi thật, doanh thu và đơn Pancake gắn quảng cáo. */
-export type DayRow = { ngay: string; spendReal: number; revenue: number; orders: number };
+/**
+ * Một ngày của tháng. `revenue`, `orders` = doanh thu và đơn chốt của CẢ KÊNH Facebook trên Pancake (anh chốt
+ * 23/11/2026: tỉ lệ tính trên số Pancake). `hasRevenue` = false khi đơn Pancake ngày đó chưa đồng bộ về; ngày đó
+ * không được đưa vào tỉ lệ. `adRevenue` = phần doanh thu của đơn có gắn mã quảng cáo, chỉ để tham khảo.
+ */
+export type DayRow = { ngay: string; spendReal: number; revenue: number; orders: number; hasRevenue?: boolean; adRevenue?: number };
+const counted = (d: DayRow) => d.hasRevenue !== false;
 
 export const realOf = (meta: number) => Math.round(meta * META_FEE);
 const ratioOf = (spend: number, revenue: number): number | null => (revenue > 0 ? spend / revenue : null);
@@ -34,6 +39,11 @@ export type Plan = {
     revenue: number;
     orders: number;
     ratio: number | null;
+    /** Chi thật của những ngày đã có doanh thu Pancake (mẫu số của tỉ lệ dùng đúng các ngày này). */
+    spentWithRevenue: number;
+    /** Ngày mới nhất đã có doanh thu Pancake; null = chưa ngày nào. */
+    revenueThrough: string | null;
+    adRevenue: number;
     target: number | null;
     /** Còn được chi tới hết tháng (âm = đã vượt). */
     left: number | null;
@@ -45,9 +55,12 @@ export type Plan = {
     forecast: number | null;
   };
   today: {
-    /** Dự chi hôm nay = tổng ngân sách ngày của quảng cáo đang bật × 1,111. null = chưa đọc được từ Meta. */
+    /** Dự chi hôm nay = (ngân sách ngày của quảng cáo đang bật + ngân sách các nháp kế hoạch) × 1,111. null = chưa đọc được phần đang bật từ Meta. */
     planned: number | null;
     plannedMeta: number | null;
+    /** Phần đang thực chạy và phần kế hoạch (nháp chưa lên), đều là chi thật. */
+    running: number | null;
+    drafts: number;
     spentSoFar: number;
     target: number | null;
     /** Mục tiêu ngày lấy từ đâu: anh đặt riêng, hay chia từ mục tiêu tháng. */
@@ -59,7 +72,7 @@ export type Plan = {
     /** Doanh thu hôm nay cần có để dự chi này đạt tỉ lệ mục tiêu. */
     revenueNeeded: number | null;
   };
-  yesterday: { ngay: string; spent: number; revenue: number; ratio: number | null } | null;
+  yesterday: { ngay: string; spent: number; revenue: number | null; ratio: number | null } | null;
   /** Tỉ lệ tháng so mục tiêu: true = đạt, false = vượt, null = chưa có doanh thu. */
   ratioOk: boolean | null;
 };
@@ -73,20 +86,25 @@ const shift = (day: string, n: number): string => {
 /**
  * `days` = các ngày của tháng hiện tại (có thể thiếu ngày, có thể gồm hôm nay đang chạy dở).
  * `activeMetaDaily` = tổng ngân sách ngày (số Meta) của nhóm/chiến dịch đang bật; null nếu chưa đọc được.
+ * `draftMetaDaily` = tổng ngân sách ngày (số Meta) của các nháp kế hoạch chưa lên.
  */
-export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number | null, t: Targets): Plan {
+export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number | null, t: Targets, draftMetaDaily = 0): Plan {
   const prefix = today.slice(0, 7);
   const inMonth = days.filter((d) => d.ngay.startsWith(prefix) && d.ngay <= today);
   const sum = (f: (d: DayRow) => number, xs = inMonth) => xs.reduce((s, d) => s + f(d), 0);
   const spent = sum((d) => d.spendReal);
-  const revenue = sum((d) => d.revenue);
+  const withRevenue = inMonth.filter(counted);
+  const revenue = sum((d) => d.revenue, withRevenue);
+  const spentWithRevenue = sum((d) => d.spendReal, withRevenue);
   const spentBeforeToday = sum((d) => d.spendReal, inMonth.filter((d) => d.ngay < today));
   const spentSoFar = sum((d) => d.spendReal, inMonth.filter((d) => d.ngay === today));
   const daysLeft = daysInMonth(today) - Number(today.slice(8, 10)) + 1;
 
   const target = t.month_budget && t.month_budget > 0 ? t.month_budget : null;
   const needPerDay = target == null ? null : Math.round((target - spentBeforeToday) / daysLeft);
-  const planned = activeMetaDaily == null ? null : realOf(activeMetaDaily);
+  const running = activeMetaDaily == null ? null : realOf(activeMetaDaily);
+  const draftsReal = realOf(Math.max(0, draftMetaDaily));
+  const planned = running == null ? null : running + draftsReal;
 
   const dayTarget = t.day_budget && t.day_budget > 0 ? t.day_budget : needPerDay != null ? Math.max(0, needPerDay) : null;
   const targetFrom: Plan["today"]["targetFrom"] = t.day_budget && t.day_budget > 0 ? "day" : needPerDay != null ? "month" : null;
@@ -96,13 +114,16 @@ export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number
 
   const y = shift(today, -1);
   const yRow = days.find((d) => d.ngay === y);
-  const ratio = ratioOf(spent, revenue);
+  const ratio = ratioOf(spentWithRevenue, revenue);
   return {
     month: {
       spent,
       revenue,
-      orders: sum((d) => d.orders),
+      orders: sum((d) => d.orders, withRevenue),
       ratio,
+      spentWithRevenue,
+      revenueThrough: withRevenue.length ? withRevenue[withRevenue.length - 1].ngay : null,
+      adRevenue: sum((d) => d.adRevenue ?? 0),
       target,
       left: target == null ? null : target - spent,
       daysLeft,
@@ -111,7 +132,9 @@ export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number
     },
     today: {
       planned,
-      plannedMeta: activeMetaDaily,
+      plannedMeta: activeMetaDaily == null ? null : activeMetaDaily + Math.max(0, draftMetaDaily),
+      running,
+      drafts: draftsReal,
       spentSoFar,
       target: dayTarget,
       targetFrom,
@@ -119,7 +142,11 @@ export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number
       adsNeeded,
       revenueNeeded: planned == null || t.ratio <= 0 ? null : Math.round(planned / t.ratio),
     },
-    yesterday: yRow ? { ngay: y, spent: yRow.spendReal, revenue: yRow.revenue, ratio: ratioOf(yRow.spendReal, yRow.revenue) } : null,
+    yesterday: yRow
+      ? counted(yRow)
+        ? { ngay: y, spent: yRow.spendReal, revenue: yRow.revenue, ratio: ratioOf(yRow.spendReal, yRow.revenue) }
+        : { ngay: y, spent: yRow.spendReal, revenue: null, ratio: null }
+      : null,
     ratioOk: ratio == null ? null : ratio <= t.ratio,
   };
 }
