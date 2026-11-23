@@ -132,6 +132,8 @@ export interface MaBanRow {
   nguon: string;
   an: boolean;
   ly_do_an: string;
+  /** hot | deu (bán đều) | '' ; thiếu khi database chưa có cột (migration 0034). */
+  nhom?: string | null;
 }
 
 /** Mã gửi ra trang. `an`, `lyDoAn` chỉ có ở mã đang ẩn, và chỉ vai quản lý nhận được mã đang ẩn. */
@@ -149,6 +151,8 @@ export interface MaBanXem {
   namBan: number | null;
   soBanLuc: string | null;
   nguon: string;
+  /** hot | deu | '' */
+  nhom: string;
   an?: true;
   lyDoAn?: string;
 }
@@ -158,7 +162,7 @@ export function maBanTheoVai(rows: MaBanRow[], anhRieng: Map<string, string>, va
   return rows
     .filter((r) => !r.an || vai === "quan_ly")
     .map((r) => {
-      const x: MaBanXem = { ma: r.ma, ten: r.ten, gioi: r.gioi, loai: r.loai, mua: r.mua, nam: r.nam, anh: laAnh(r.anh_url) ? r.anh_url : null, slBan: r.sl_ban, namBan: r.nam_ban, soBanLuc: r.so_ban_luc, nguon: r.nguon };
+      const x: MaBanXem = { ma: r.ma, ten: r.ten, gioi: r.gioi, loai: r.loai, mua: r.mua, nam: r.nam, anh: laAnh(r.anh_url) ? r.anh_url : null, slBan: r.sl_ban, namBan: r.nam_ban, soBanLuc: r.so_ban_luc, nguon: r.nguon, nhom: r.nhom === "hot" || r.nhom === "deu" ? r.nhom : "" };
       const rieng = anhRieng.get(r.ma);
       if (rieng) x.anhRieng = rieng;
       if (r.an) {
