@@ -240,21 +240,62 @@ describe("cskh: AI chấm điểm", () => {
     assert.equal(docKetQua("không phải json"), null);
     assert.equal(docKetQua("{hỏng"), null);
   });
-  it("cấu hình AI cần đủ địa chỉ https, khóa và model", () => {
-    const giu = { ...process.env };
-    delete process.env.CSKH_AI_BASE_URL;
-    assert.equal(cauHinhAi(), null);
-    Object.assign(process.env, { CSKH_AI_BASE_URL: "https://ai.example/v1/", CSKH_AI_API_KEY: "khoa-ai-thu", CSKH_AI_MODEL: "model-a" });
-    assert.deepEqual(cauHinhAi(), { baseUrl: "https://ai.example/v1", khoa: "khoa-ai-thu", model: "model-a", huongDanRieng: "" });
-    assert.equal(cauHinhAi("model-b")!.model, "model-b");
-    process.env.CSKH_AI_BASE_URL = "http://ai.example/v1";
-    assert.equal(cauHinhAi(), null);
-    for (const k of ["CSKH_AI_BASE_URL", "CSKH_AI_API_KEY", "CSKH_AI_MODEL"]) if (giu[k] === undefined) delete process.env[k];
+  it("cấu hình AI: không đặt địa chỉ thì dùng Claude; bên khác cần đủ địa chỉ https, khóa và model", () => {
+    const ten = ["CSKH_AI_BASE_URL", "CSKH_AI_API_KEY", "CSKH_AI_MODEL", "ANTHROPIC_API_KEY", "CSKH_AI_HUONG_DAN"];
+    const giu = Object.fromEntries(ten.map((k) => [k, process.env[k]]));
+    for (const k of ten) delete process.env[k];
+    try {
+      assert.equal(cauHinhAi(), null);
+      process.env.ANTHROPIC_API_KEY = "khoa-claude-thu";
+      assert.deepEqual(cauHinhAi(), { ben: "claude", baseUrl: "", khoa: "khoa-claude-thu", model: "claude-opus-5-5", huongDanRieng: "" });
+      assert.equal(cauHinhAi("claude-haiku-5-5")!.model, "claude-haiku-5-5");
+      process.env.CSKH_AI_API_KEY = "khoa-rieng";
+      assert.equal(cauHinhAi()!.khoa, "khoa-rieng");
+      Object.assign(process.env, { CSKH_AI_BASE_URL: "https://ai.example/v1/", CSKH_AI_API_KEY: "khoa-ai-thu", CSKH_AI_MODEL: "model-a" });
+      assert.deepEqual(cauHinhAi(), { ben: "openai", baseUrl: "https://ai.example/v1", khoa: "khoa-ai-thu", model: "model-a", huongDanRieng: "" });
+      assert.equal(cauHinhAi("model-b")!.model, "model-b");
+      process.env.CSKH_AI_BASE_URL = "http://ai.example/v1";
+      assert.equal(cauHinhAi(), null);
+    } finally {
+      for (const k of ten) if (giu[k] === undefined) delete process.env[k];
+      else process.env[k] = giu[k];
+    }
+  });
+  it("gọi Claude bằng SDK chính thức: Haiku gọi thường, Opus có model dự phòng; từ chối và lỗi khóa báo rõ", async () => {
+    const that = globalThis.fetch;
+    const goi: Array<{ url: string; than: any; khoa: string | null }> = [];
+    let traLoi: () => Response = () => Response.json({ id: "msg_thu", type: "message", role: "assistant", model: "x", content: [{ type: "thinking", thinking: "" }, { type: "text", text: JSON.stringify(tra) }], stop_reason: "end_turn", usage: { input_tokens: 100, cache_read_input_tokens: 600, output_tokens: 120 } });
+    try {
+      globalThis.fetch = (async (u: any, init: any = {}) => {
+        const req = u instanceof Request ? u : new Request(String(u), init);
+        goi.push({ url: req.url, than: JSON.parse(await req.text()), khoa: req.headers.get("x-api-key") ?? req.headers.get("authorization") });
+        return traLoi();
+      }) as typeof fetch;
+      const haiku = { ben: "claude" as const, baseUrl: "", khoa: "khoa-claude-thu-1", model: "claude-haiku-5-5", huongDanRieng: "" };
+      const r = await chamMot("09:00 Khách: xin giá", haiku);
+      assert.equal(r.kq!.tiemNang, "am");
+      assert.deepEqual([r.tokenVao, r.tokenRa], [700, 120]);
+      assert.ok(goi[0].url.startsWith("https://api.anthropic.com/v1/messages"));
+      assert.ok(goi[0].khoa!.endsWith("khoa-claude-thu-1"));
+      assert.equal(goi[0].than.model, "claude-haiku-5-5");
+      assert.equal(goi[0].than.fallbacks, undefined);
+      assert.deepEqual(goi[0].than.output_config, { effort: "low" });
+      assert.deepEqual(goi[0].than.system[0].cache_control, { type: "ephemeral" });
+      assert.ok(goi[0].than.messages[0].content.includes("xin giá"));
+      await chamMot("x", { ...haiku, model: "claude-opus-5-5" });
+      assert.equal(goi[1].than.fallbacks, "default");
+      traLoi = () => Response.json({ id: "msg_thu", type: "message", role: "assistant", model: "x", content: [], stop_reason: "refusal", usage: { input_tokens: 1, output_tokens: 0 } });
+      await assert.rejects(chamMot("x", haiku), /từ chối/);
+      traLoi = () => Response.json({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }, { status: 401 });
+      await assert.rejects(chamMot("x", haiku), (e: Error) => /Khóa Claude không đúng/.test(e.message) && !e.message.includes("khoa-claude-thu"));
+    } finally {
+      globalThis.fetch = that;
+    }
   });
   it("gọi AI qua cổng kiểu OpenAI, thử lại khi bên đó không nhận response_format, lỗi không lộ khóa", async () => {
     const that = globalThis.fetch;
     const goi: any[] = [];
-    const c = { baseUrl: "https://ai.example/v1", khoa: "khoa-ai-thu", model: "model-a", huongDanRieng: "Miễn ship theo mức của shop." };
+    const c = { ben: "openai" as const, baseUrl: "https://ai.example/v1", khoa: "khoa-ai-thu", model: "model-a", huongDanRieng: "Miễn ship theo mức của shop." };
     try {
       globalThis.fetch = (async (u: string, init: RequestInit = {}) => {
         const than = JSON.parse(String(init.body));
