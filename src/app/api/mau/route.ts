@@ -76,8 +76,14 @@ async function docSoBan(nam: number, ma?: string): Promise<LaiRow[]> {
 
 /** Tab "Mã bán tốt": đọc danh sách tự quản. Không gọi Pancake, không tự cập nhật. */
 async function docMaBan(vai: Vai) {
+  const cot = "ma, ten, gioi, loai, mua, nam, anh_url, sl_ban, nam_ban, so_ban_luc, nguon, an, ly_do_an";
+  const docBang = (them: string) => allRows<MaBanRow>(() => db().from("mau_ma_ban").select(cot + them).order("ma"));
   const [rows, anh] = await Promise.all([
-    allRows<MaBanRow>(() => db().from("mau_ma_ban").select("ma, ten, gioi, loai, mua, nam, anh_url, sl_ban, nam_ban, so_ban_luc, nguon, an, ly_do_an").order("ma")),
+    // Database chưa có cột nhóm (migration 0034) thì vẫn trả danh sách, không có nhóm.
+    docBang(", nhom").catch((err) => {
+      if (!/nhom/.test(err instanceof Error ? err.message : "")) throw err;
+      return docBang("");
+    }),
     allRows<{ ma: string; cap_nhat_luc: string }>(() => db().from("mau_ma_anh").select("ma, cap_nhat_luc").order("ma")),
   ]);
   return { at: Date.now(), vai, namNay: Number(homNayVN().slice(0, 4)), ds: maBanTheoVai(rows, new Map(anh.map((a) => [a.ma, a.cap_nhat_luc])), vai) };

@@ -256,17 +256,18 @@ describe("mã bán tốt (danh sách tự quản)", () => {
   });
 
   const dong = (x: Partial<MaBanRow>): MaBanRow => ({ ma: "MA26001", ten: "Quần thử", gioi: "trai", loai: "Quần", mua: "", nam: 2026, anh_url: null, sl_ban: 0, nam_ban: null, so_ban_luc: null, nguon: "tay", an: false, ly_do_an: "", ...x });
-  const bang = [dong({ sl_ban: 50, anh_url: "https://example.com/a.jpg" }), dong({ ma: "MB25002", sl_ban: 80, an: true, ly_do_an: "Hàng xả" }), dong({ ma: "MC26003", anh_url: "javascript:alert(1)" })];
+  const bang = [dong({ sl_ban: 50, anh_url: "https://example.com/a.jpg", nhom: "hot" }), dong({ ma: "MB25002", sl_ban: 80, an: true, ly_do_an: "Hàng xả" }), dong({ ma: "MC26003", anh_url: "javascript:alert(1)" })];
 
   it("mã đang ẩn (hàng xả): chỉ quản lý thấy; xếp theo số bán; ảnh tự đăng có dấu phiên bản", () => {
     const anh = new Map([["MC26003", "2026-11-23T11:00:00Z"]]);
     for (const vai of ["lam", "xem"] as const) assert.deepEqual(maBanTheoVai(bang, anh, vai).map((x) => x.ma), ["MA26001", "MC26003"]);
     const ql = maBanTheoVai(bang, anh, "quan_ly");
-    assert.deepEqual(ql.map((x) => [x.ma, x.slBan, x.an ?? false, x.lyDoAn ?? "", x.anh, x.anhRieng ?? null]), [
-      ["MB25002", 80, true, "Hàng xả", null, null],
-      ["MA26001", 50, false, "", "https://example.com/a.jpg", null],
-      ["MC26003", 0, false, "", null, "2026-11-23T11:00:00Z"],
+    assert.deepEqual(ql.map((x) => [x.ma, x.slBan, x.an ?? false, x.lyDoAn ?? "", x.anh, x.anhRieng ?? null, x.nhom]), [
+      ["MB25002", 80, true, "Hàng xả", null, null, ""],
+      ["MA26001", 50, false, "", "https://example.com/a.jpg", null, "hot"],
+      ["MC26003", 0, false, "", null, "2026-11-23T11:00:00Z", ""],
     ]);
+    assert.equal(maBanTheoVai([dong({ nhom: "la" }), dong({ ma: "MD26004", nhom: "deu" })], new Map(), "lam").map((x) => x.nhom).join(","), ",deu");
   });
 
   it("đọc trai/gái, loại, mùa từ danh mục", () => {
@@ -292,6 +293,8 @@ describe("mã bán tốt (danh sách tự quản)", () => {
     assert.match(loi({ action: "ma_ban_sua", ma: "QD26001", nguoi: "Người B" })!.error, /Chưa có thông tin/);
     assert.match(loi({ action: "ma_ban_sua", ma: "QD26001", loai: "Giày", nguoi: "Người B" })!.error, /Loại/);
     assert.match(loi({ action: "ma_ban_sua", ma: "QD26001", mua: "Hè", nguoi: "Người B" })!.error, /Mùa/);
+    assert.match(loi({ action: "ma_ban_sua", ma: "QD26001", nhom: "top", nguoi: "Người B" })!.error, /Nhóm/);
+    assert.deepEqual(docLenhMau({ action: "ma_ban_sua", ma: "QD26001", nhom: "deu", nguoi: "Người B" }, "lam"), { ok: true, viec: "ma_ban_sua", nguoi: "Người B", ma: "QD26001", cot: { nhom: "deu" } });
     for (const kieu of ["dau", "so_ban"]) {
       assert.equal(loi({ action: "ma_ban_nap", kieu, nguoi: "Người B" }, "lam")!.status, 403);
       assert.deepEqual(docLenhMau({ action: "ma_ban_nap", kieu, nguoi: "Người B" }, "quan_ly"), { ok: true, viec: "ma_ban_nap", nguoi: "Người B", kieu });
