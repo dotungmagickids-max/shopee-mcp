@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { bamSdt, boThe, chuanSdt, docHoiThoai, docTin, gioPancake, maTrongChu, pageTokens, rutHoiThoai, rutTin } from "../src/lib/cskh/pancake-chat";
 import { rutDon, ungVienHoiThoai } from "../src/lib/cskh/data";
 import { tonTheoMa } from "../src/lib/cskh/ton";
-import { cauHinhAi, chamMot, cheThongTin, docKetQua, gopCham, soanHoiThoai, type DongCham } from "../src/lib/cskh/cham";
+import { canCham, cauHinhAi, chamMot, cheThongTin, docKetQua, gopCham, soanHoiThoai, type DongCham } from "../src/lib/cskh/cham";
 import { MAC_DINH, dauNgay, hanTraLoi, moc90, tinhNgay, tomTat, trungVi, type HoiThoai, type Tin } from "../src/lib/cskh/tinh";
 
 const NGAY = "2026-01-10";
@@ -348,5 +348,16 @@ describe("cskh: AI chấm điểm", () => {
     assert.deepEqual(g.xau.map((v) => [v.duoi, v.moTaXau]), [["40002", "Khách chê vải"]]);
     assert.deepEqual(g.loai, [{ loai: "hoi_gia_size", cuoc: 2 }, { loai: "khieu_nai", cuoc: 1 }]);
     assert.deepEqual(g.sanPham, [{ ten: "quần kaki", cuoc: 3 }]);
+  });
+});
+
+describe("cskh: chấm lại khi có tin mới", () => {
+  it("chưa chấm thì chấm; có tin mới sau lần chấm thì chấm lại; không có thì bỏ qua", () => {
+    const c = { khachCuoiLuc: luc(10), nvCuoiLuc: luc(11) };
+    assert.equal(canCham(c, undefined), true);
+    assert.equal(canCham(c, luc(12)), false);
+    assert.equal(canCham(c, luc(10, 30)), true);
+    assert.equal(canCham({ khachCuoiLuc: luc(13), nvCuoiLuc: null }, luc(12)), true);
+    assert.equal(canCham({ khachCuoiLuc: null, nvCuoiLuc: null }, luc(12)), false);
   });
 });

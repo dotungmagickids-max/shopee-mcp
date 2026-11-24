@@ -3,7 +3,7 @@
  * Đọc Pancake chỉ bằng GET; chữ của khách chỉ nằm trong bộ nhớ lúc chấm, không lưu.
  */
 import { allRows, db } from "../supabase";
-import { cauHinhAi, chamMot, gopCham, soanHoiThoai, type DongCham, type KetQuaCham } from "./cham";
+import { canCham, cauHinhAi, chamMot, gopCham, soanHoiThoai, type DongCham, type KetQuaCham } from "./cham";
 import { congNgay, docNgay, ngayVN } from "./data";
 import { docTinCoChu, pageTokens } from "./pancake-chat";
 import { dauNgay, tinhNgay, type KetQuaNgay } from "./tinh";
@@ -92,8 +92,13 @@ export async function chamNgay(ngay = congNgay(ngayVN(), -1), opts: { model?: st
   const { ds, dons } = await docNgay(ngay);
   const k = tinhNgay(ds, dons, ngay);
   const can = k.cuoc.filter((x) => x.tinKhach > 0 && pages.has(x.page));
-  const da = new Set(opts.lai ? [] : (await docCham(ngay, c.model)).map((r) => `${r.page}|${r.id}`));
-  const chua = can.filter((x) => !da.has(`${x.page}|${x.id}`));
+  // Lần chấm trước của từng cuộc; cuộc có tin mới sau lần đó thì chấm lại.
+  const da = new Map<string, number>();
+  if (!opts.lai) {
+    const rows = await allRows<any>(() => db().from("cskh_cham").select("page_id,hoi_thoai_id,cham_luc").eq("ngay", ngay).eq("model", c.model).order("page_id").order("hoi_thoai_id"));
+    for (const r of rows) da.set(`${r.page_id}|${r.hoi_thoai_id}`, Date.parse(r.cham_luc));
+  }
+  const chua = can.filter((x) => canCham(x, da.get(`${x.page}|${x.id}`)));
   const lam = chua.slice(0, toiDa);
   let xong = 0;
   let hong = 0;
