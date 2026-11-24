@@ -28,6 +28,15 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
           bật tắt hay đổi ngân sách.
         </p>
         {msg ? <p className="warnbox">{msg}</p> : null}
+        {v.missing.length ? (
+          <form method="post" action="/api/fb/backfill" className="warnbox" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", margin: "8px 0" }}>
+            <span>
+              <b>Thiếu số chi của {v.missing.length} ngày</b> ({v.missing.map(dm).join(", ")}): số đã chi tháng này đang thấp hơn thật. Có thể do chưa thu số, hoặc ngày đó không chi.
+            </span>
+            <button type="submit">Thu lại số các ngày thiếu</button>
+            <span className="sub">Mỗi lần bấm thu 4 ngày, mất khoảng 1–2 phút. Chỉ đọc Meta và Pancake.</span>
+          </form>
+        ) : null}
         {v.pancakeOk ? null : <p className="error">Chưa đọc được doanh thu Pancake: đang tạm dùng doanh thu của đơn gắn mã quảng cáo, tỉ lệ sẽ cao hơn thật.</p>}
         {v.missingTable ? <p className="error">Chưa có bảng fb_targets (cần áp migration 0037): đang dùng mặc định, chưa lưu được mục tiêu.</p> : null}
         {v.errors.length ? <p className="error">Thiếu số, tổng có thể thấp hơn thật: {v.errors.join("; ").slice(0, 500)}</p> : null}

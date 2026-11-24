@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { withPancake } from "../src/lib/facebook/targets-data";
+import { missingSpendDays } from "../src/lib/facebook/targets";
 import { buildPlan, daysInMonth, DEFAULT_TARGETS, parseMoney, parseRatio, sumActiveBudgets, type DayRow } from "../src/lib/facebook/targets";
 
 const day = (ngay: string, spendReal: number, revenue: number, orders = 1): DayRow => ({ ngay, spendReal, revenue, orders });
@@ -112,6 +113,13 @@ describe("FB Magic Tool: mục tiêu quảng cáo", () => {
     const unknown = buildPlan("2026-11-21", days, null, DEFAULT_TARGETS, 500_000);
     assert.equal(unknown.today.planned, null); // chưa đọc được phần đang chạy thì không báo tổng
     assert.equal(unknown.today.drafts, 555_500);
+  });
+
+  it("ngày thiếu số chi: từ ngày 1 tới hôm qua, bỏ hôm nay và ngày đã có chi", () => {
+    const have = [day("2026-11-03", 500_000, 0), day("2026-11-04", 0, 0), day("2026-11-06", 700_000, 0), day("2026-10-31", 1, 0)];
+    assert.deepEqual(missingSpendDays("2026-11-07", have), ["2026-11-01", "2026-11-02", "2026-11-04", "2026-11-05"]);
+    assert.deepEqual(missingSpendDays("2026-11-01", have), []); // ngày 1: chưa có ngày nào để thiếu
+    assert.equal(missingSpendDays("2026-11-21", days).length, 0);
   });
 
   it("đọc ô nhập tiền và phần trăm", () => {

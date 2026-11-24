@@ -6,7 +6,7 @@ import { db } from "../supabase";
 import { buildPlan as buildLaunchPlan, planBudget, type LaunchConfig, type LaunchItem } from "./launch";
 import { PAGES } from "./magic-data";
 import { activeAdsets, listAccounts, scrub } from "./meta";
-import { buildPlan, DEFAULT_TARGETS, realOf, sumActiveBudgets, type DayRow, type Plan, type Targets } from "./targets";
+import { buildPlan, DEFAULT_TARGETS, missingSpendDays, realOf, sumActiveBudgets, type DayRow, type Plan, type Targets } from "./targets";
 
 /** Mục tiêu đã lưu. Chưa có bảng (chưa áp migration) thì dùng mặc định và báo `missing`. */
 export async function loadTargets(): Promise<{ targets: Targets; missing: boolean; updated_at: string | null }> {
@@ -130,6 +130,8 @@ export type TargetsView = {
   days: DayRow[];
   active: ActiveBudget | null;
   drafts: DraftBudget[];
+  /** Ngày trong tháng chưa có số chi (chưa thu số, hoặc không chi). */
+  missing: string[];
   /** true = doanh thu lấy được từ Pancake; false = Pancake lỗi, đang tạm dùng doanh thu của đơn gắn mã quảng cáo. */
   pancakeOk: boolean;
   plan: Plan;
@@ -159,5 +161,5 @@ export async function loadTargetsView(today: string): Promise<TargetsView> {
   // Có tài khoản đọc lỗi thì tổng dự chi vẫn hiện, kèm cảnh báo là có thể thiếu.
   const draftMeta = drafts.reduce((s, d) => s + d.metaDaily, 0);
   const plan = buildPlan(today, days, active ? active.metaDaily : null, t.targets, draftMeta);
-  return { targets: t.targets, missingTable: t.missing, updated_at: t.updated_at, days, active, drafts, pancakeOk: !!sales, plan, errors };
+  return { targets: t.targets, missingTable: t.missing, updated_at: t.updated_at, days, active, drafts, missing: missingSpendDays(today, adDays), pancakeOk: !!sales, plan, errors };
 }

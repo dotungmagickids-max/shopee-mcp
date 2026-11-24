@@ -151,6 +151,17 @@ export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number
   };
 }
 
+/**
+ * Các ngày của tháng (từ ngày 1 tới hôm qua) chưa có số chi quảng cáo. Thường là ngày chưa được thu số;
+ * cũng có thể là ngày thật sự không chi đồng nào.
+ */
+export function missingSpendDays(today: string, days: DayRow[]): string[] {
+  const have = new Set(days.filter((d) => d.spendReal > 0).map((d) => d.ngay));
+  const out: string[] = [];
+  for (let d = `${today.slice(0, 7)}-01`; d < today; d = shift(d, 1)) if (!have.has(d)) out.push(d);
+  return out;
+}
+
 /** Ô nhập tiền: "200tr", "6,5 triệu", "65k", "65.000", "65000" → đồng. Sai dạng hoặc ≤ 0 → null. */
 export function parseMoney(input: unknown): number | null {
   const s = String(input ?? "").trim().toLowerCase().replace(/đ|vnd|\s/g, "");
