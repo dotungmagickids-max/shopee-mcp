@@ -6,7 +6,7 @@ import { db } from "../supabase";
 import { buildPlan as buildLaunchPlan, planBudget, type LaunchConfig, type LaunchItem } from "./launch";
 import { PAGES } from "./magic-data";
 import { activeAdsets, listAccounts, scrub } from "./meta";
-import { buildPlan, DEFAULT_TARGETS, missingSpendDays, realOf, sumActiveBudgets, type DayRow, type Plan, type Targets } from "./targets";
+import { buildPlan, DEFAULT_TARGETS, isRunning, missingSpendDays, realOf, sumActiveBudgets, type DayRow, type Plan, type Targets } from "./targets";
 
 /** Mục tiêu đã lưu. Chưa có bảng (chưa áp migration) thì dùng mặc định và báo `missing`. */
 export async function loadTargets(): Promise<{ targets: Targets; missing: boolean; updated_at: string | null }> {
@@ -50,6 +50,13 @@ export function withPancake(days: DayRow[], sales: Map<string, { orders: number;
       return { ...d, adRevenue: d.adRevenue ?? d.revenue, revenue: s?.revenue ?? 0, orders: s?.orders ?? 0, hasRevenue: !!s };
     })
     .sort((a, b) => a.ngay.localeCompare(b.ngay));
+}
+
+/** Lần cuối số chi hôm nay được thu về (bảng fb_ad_daily). null = hôm nay chưa có số. */
+export async function loadSpendUpdatedAt(today: string): Promise<string | null> {
+  const { data, error } = await db().from("fb_ad_daily").select("updated_at").eq("ngay", today).order("updated_at", { ascending: false }).limit(1);
+  if (error) return null;
+  return (data?.[0]?.updated_at as string | undefined) ?? null;
 }
 
 export type DraftBudget = { id: number; name: string; page: string; items: number; metaDaily: number; start_time: string | null; created_at: string };
@@ -103,7 +110,13 @@ export async function loadMonthDays(today: string): Promise<DayRow[]> {
   return [...byDay.values()].map((d) => ({ ...d, spendReal: realOf(d.spendReal), revenue: Math.round(d.revenue) })).sort((a, b) => a.ngay.localeCompare(b.ngay));
 }
 
-export type ActiveBudget = { metaDaily: number; byAccount: { id: string; name: string; metaDaily: number; adsets: number; skipped: number }[]; errors: string[] };
+export type ActiveBudget = {
+  metaDaily: number;
+  byAccount: { id: string; name: string; metaDaily: number; adsets: number; skipped: number; campaigns: string[] }[];
+  errors: string[];
+  /** Giờ đọc Meta (ISO). */
+  readAt: string;
+};
 
 /** Tổng ngân sách ngày của nhóm/chiến dịch đang bật ở mọi tài khoản theo dõi (đã bỏ BOSS TUYỀN 3/4/5/6). */
 export async function loadActiveBudget(): Promise<ActiveBudget> {
@@ -112,15 +125,16 @@ export async function loadActiveBudget(): Promise<ActiveBudget> {
   const byAccount = await Promise.all(
     accounts.map(async (a) => {
       try {
-        const s = sumActiveBudgets(await activeAdsets(a.id));
-        return { id: a.id, name: a.name, ...s };
+        const running = (await activeAdsets(a.id)).filter(isRunning);
+        const campaigns = [...new Set(running.map((r) => r.campaign_name ?? r.campaign_id ?? "").filter(Boolean))];
+        return { id: a.id, name: a.name, ...sumActiveBudgets(running), campaigns };
       } catch (e) {
         errors.push(`${a.name}: ${scrub(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
-        return { id: a.id, name: a.name, metaDaily: 0, adsets: 0, skipped: 0 };
+        return { id: a.id, name: a.name, metaDaily: 0, adsets: 0, skipped: 0, campaigns: [] as string[] };
       }
     })
   );
-  return { metaDaily: byAccount.reduce((s, a) => s + a.metaDaily, 0), byAccount: byAccount.filter((a) => a.adsets > 0), errors };
+  return { metaDaily: byAccount.reduce((s, a) => s + a.metaDaily, 0), byAccount: byAccount.filter((a) => a.adsets > 0), errors, readAt: new Date().toISOString() };
 }
 
 export type TargetsView = {
@@ -130,6 +144,7 @@ export type TargetsView = {
   days: DayRow[];
   active: ActiveBudget | null;
   drafts: DraftBudget[];
+  spendUpdatedAt: string | null;
   /** Ngày trong tháng chưa có số chi (chưa thu số, hoặc không chi). */
   missing: string[];
   /** true = doanh thu lấy được từ Pancake; false = Pancake lỗi, đang tạm dùng doanh thu của đơn gắn mã quảng cáo. */
@@ -140,7 +155,7 @@ export type TargetsView = {
 
 export async function loadTargetsView(today: string): Promise<TargetsView> {
   const errors: string[] = [];
-  const [t, adDays, active, sales, drafts] = await Promise.all([
+  const [t, adDays, active, sales, drafts, spendUpdatedAt] = await Promise.all([
     loadTargets(),
     loadMonthDays(today).catch((e) => {
       errors.push(e instanceof Error ? e.message : String(e));
@@ -155,11 +170,12 @@ export async function loadTargetsView(today: string): Promise<TargetsView> {
       return null;
     }),
     loadDraftBudgets().catch(() => [] as DraftBudget[]),
+    loadSpendUpdatedAt(today).catch(() => null),
   ]);
   const days = sales ? withPancake(adDays, sales) : adDays.map((d) => ({ ...d, adRevenue: d.revenue }));
   if (active?.errors.length) errors.push(...active.errors);
   // Có tài khoản đọc lỗi thì tổng dự chi vẫn hiện, kèm cảnh báo là có thể thiếu.
   const draftMeta = drafts.reduce((s, d) => s + d.metaDaily, 0);
   const plan = buildPlan(today, days, active ? active.metaDaily : null, t.targets, draftMeta);
-  return { targets: t.targets, missingTable: t.missing, updated_at: t.updated_at, days, active, drafts, missing: missingSpendDays(today, adDays), pancakeOk: !!sales, plan, errors };
+  return { targets: t.targets, missingTable: t.missing, updated_at: t.updated_at, days, active, drafts, spendUpdatedAt, missing: missingSpendDays(today, adDays), pancakeOk: !!sales, plan, errors };
 }

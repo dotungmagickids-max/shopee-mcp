@@ -184,6 +184,9 @@ export function parseRatio(input: unknown): number | null {
   return r >= 0.01 && r <= 1 ? r : null;
 }
 
+/** Nhóm thực sự đang chạy: cả nhóm và chiến dịch đều ACTIVE. Nhóm bật mà chiến dịch tắt thì không tiêu tiền. */
+export const isRunning = (r: { adset_status?: string; campaign_status?: string }): boolean => r.adset_status === "ACTIVE" && r.campaign_status === "ACTIVE";
+
 /**
  * Tổng ngân sách ngày (số Meta) từ danh sách nhóm đang bật. Chiến dịch CBO (ngân sách ở chiến dịch) chỉ tính một lần
  * dù có nhiều nhóm; còn lại cộng ngân sách từng nhóm. Nhóm không có ngân sách ngày (ngân sách trọn đời) bị bỏ qua

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { withPancake } from "../src/lib/facebook/targets-data";
-import { missingSpendDays } from "../src/lib/facebook/targets";
+import { isRunning, missingSpendDays } from "../src/lib/facebook/targets";
 import { buildPlan, daysInMonth, DEFAULT_TARGETS, parseMoney, parseRatio, sumActiveBudgets, type DayRow } from "../src/lib/facebook/targets";
 
 const day = (ngay: string, spendReal: number, revenue: number, orders = 1): DayRow => ({ ngay, spendReal, revenue, orders });
@@ -120,6 +120,14 @@ describe("FB Magic Tool: mục tiêu quảng cáo", () => {
     assert.deepEqual(missingSpendDays("2026-11-07", have), ["2026-11-01", "2026-11-02", "2026-11-04", "2026-11-05"]);
     assert.deepEqual(missingSpendDays("2026-11-01", have), []); // ngày 1: chưa có ngày nào để thiếu
     assert.equal(missingSpendDays("2026-11-21", days).length, 0);
+  });
+
+  it("chỉ tính nhóm thực sự đang chạy: nhóm và chiến dịch đều bật", () => {
+    assert.equal(isRunning({ adset_status: "ACTIVE", campaign_status: "ACTIVE" }), true);
+    assert.equal(isRunning({ adset_status: "ACTIVE", campaign_status: "PAUSED" }), false); // chiến dịch tắt nghỉ lễ
+    assert.equal(isRunning({ adset_status: "PAUSED", campaign_status: "ACTIVE" }), false);
+    assert.equal(isRunning({ adset_status: "ARCHIVED", campaign_status: "ACTIVE" }), false);
+    assert.equal(isRunning({}), false);
   });
 
   it("đọc ô nhập tiền và phần trăm", () => {
