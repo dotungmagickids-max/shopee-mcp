@@ -181,6 +181,12 @@ const NHAN_KQ: Record<string, string> = {
 const NHAN_TN: Record<string, string> = { nong: "nóng", am: "ấm", lanh: "lạnh", khong: "không" };
 const giay = (s: number | null | undefined) => (s == null ? "–" : s < 120 ? `${Math.round(s)}s` : `${Math.round(s / 60)}p`);
 const diem = (x: number | null | undefined) => (x == null ? "–" : x.toFixed(1).replace(".", ","));
+/** Tên model lấy từ biến môi trường: chỉ in khi trông giống tên model. Đặt nhầm khóa vào CSKH_AI_MODEL thì không in ra, chỉ báo cấu hình sai. */
+export const tenModel = (m: string) =>
+  /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$/.test(m) && !/^sk-|key|secret|token/i.test(m)
+    ? m
+    : "KHÔNG HỢP LỆ (CSKH_AI_MODEL không phải tên model, có thể đặt nhầm khóa; giá trị đã ẩn, kiểm cấu hình máy chủ)";
+
 export const linkPancake = (page: string, id: string) => `https://pancake.vn/${encodeURIComponent(page)}?c_id=${encodeURIComponent(id)}`;
 const cat = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
@@ -212,7 +218,7 @@ export function dongCskh(v: VaoCskh): string[] {
     out.push("## Chấm AI: chưa có (chưa đặt model hoặc chưa chấm ngày này)");
   } else {
     const g = v.g;
-    out.push(`## Chấm AI: ${g.daCham}/${g.canCham} cuộc có tin khách, model ${g.model}, lần chấm cuối ${luc(v.chamLuc)}`);
+    out.push(`## Chấm AI: ${g.daCham}/${g.canCham} cuộc có tin khách, model ${tenModel(g.model)}, lần chấm cuối ${luc(v.chamLuc)}`);
     const tatCa = g.diem.find((d) => d.ten === "Tất cả");
     if (tatCa) out.push(`- điểm chung (thang 0–10): size ${diem(tatCa.size)}, mua kèm ${diem(tatCa.muaKem)}, chốt ${diem(tatCa.chot)}, thái độ ${diem(tatCa.thaiDo)}`);
     out.push(`- kết quả: ${g.ketQua.map((x) => `${NHAN_KQ[x.ketQua] ?? x.ketQua} ${x.cuoc}`).join(", ")}`);
