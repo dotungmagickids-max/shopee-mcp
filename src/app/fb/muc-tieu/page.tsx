@@ -12,10 +12,22 @@ const hm = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString("vi-V
 const THU = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
 const wd = (d: string) => THU[new Date(`${d}T00:00:00Z`).getUTCDay()];
 
-export default async function TargetsPage({ searchParams }: { searchParams: Promise<{ msg?: string }> }) {
-  const { msg } = await searchParams;
+const isDay = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+const addD = (d: string, n: number) => {
+  const x = new Date(`${d}T00:00:00Z`);
+  x.setUTCDate(x.getUTCDate() + n);
+  return x.toISOString().slice(0, 10);
+};
+
+export default async function TargetsPage({ searchParams }: { searchParams: Promise<{ msg?: string; ngay?: string; sua?: string }> }) {
+  const sp = await searchParams;
+  const msg = sp.msg;
   const today = vnDate();
-  const v = await loadTargetsView(today);
+  // Ngày xem kế hoạch: hôm nay hoặc tối đa 60 ngày tới. Ngày đã qua xem ở bảng từng ngày.
+  const day = isDay(sp.ngay) && sp.ngay! >= today && sp.ngay! <= addD(today, 60) ? sp.ngay! : today;
+  const v = await loadTargetsView(today, day);
+  const editing = v.periods?.find((x) => x.id === Number(sp.sua)) ?? null;
+  const isToday = day === today;
   const { plan: p, targets: t } = v;
   const monthPct = p.month.target ? Math.min(100, Math.round((p.month.spent / p.month.target) * 100)) : null;
   const over = (x: number | null) => x != null && x < 0;
@@ -50,9 +62,32 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
 
       <div className="card">
         <div className="sechead">
-          <h2>Hôm nay {wd(today)} {dm(today)}</h2>
-          <span className="sub">Đọc số lúc {hm(v.active?.readAt ?? null) ?? "–"}. Tải lại trang để cập nhật.</span>
+          <h2>
+            Kế hoạch {isToday ? "hôm nay" : "ngày"} {wd(day)} {dm(day)}
+          </h2>
+          <form method="get" action="/fb/muc-tieu" className="filters" style={{ margin: 0 }}>
+            <input type="date" name="ngay" defaultValue={day} min={today} max={addD(today, 60)} aria-label="Chọn ngày lập kế hoạch" />
+            <button type="submit" className="secondary">Xem</button>
+            {[0, 1, 2].map((n) => (
+              <a key={n} href={`/fb/muc-tieu?ngay=${addD(today, n)}`} className={day === addD(today, n) ? "on" : ""}>
+                {n === 0 ? "Hôm nay" : n === 1 ? "Mai" : "Ngày kia"}
+              </a>
+            ))}
+          </form>
+          <span className="sub">Đọc Meta lúc {hm(v.active?.readAt ?? null) ?? "–"}.</span>
         </div>
+        {!isToday ? (
+          <p className="sub" style={{ margin: "0 0 8px" }}>
+            Ngày tới: phần đang chạy là ngân sách đang bật lúc này (giả định vẫn chạy tới ngày đó); kế hoạch gồm các nháp hẹn chạy từ ngày đó trở về trước và nháp không hẹn giờ.
+          </p>
+        ) : null}
+        {v.period ? (
+          <p className="sub" style={{ margin: "0 0 8px" }}>
+            Ngày này nằm trong mục tiêu khoảng {dm(v.period.tu)} → {dm(v.period.den)}
+            {v.period.note ? ` (${v.period.note})` : ""}: {v.period.day_budget === 0 ? "nghỉ, không chạy" : `${vnd(v.period.day_budget)}đ/ngày`}
+            {v.period.ratio != null ? `, tỉ lệ ${pct(v.period.ratio)}` : ""}.
+          </p>
+        ) : null}
 
         <div className="budgetbar">
           <div className="bb-track">
@@ -78,10 +113,10 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
             </span>
           </div>
           <div className="goalcard">
-            <span className="gc-name">Đã chi tới giờ</span>
+            <span className="gc-name">{isToday ? "Đã chi tới giờ" : "Đã chi"}</span>
             <span className="gc-num">{vnd(p.today.spentSoFar)}đ</span>
             <span className="gc-src">
-              Chi thật từ 0h hôm nay.
+              {isToday ? "Chi thật từ 0h hôm nay." : "Ngày chưa tới."}
               <br />
               Nguồn: số Meta, thu mỗi giờ 9h–23h{v.spendUpdatedAt ? `; lần cuối ${hm(v.spendUpdatedAt)}` : "; hôm nay chưa thu lần nào"}.
             </span>
@@ -96,13 +131,13 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
                   ? `Thiếu ${vnd(p.today.gap)}đ so với mục tiêu ngày; mỗi quảng cáo mới ${vnd(t.ad_budget)}đ/ngày trên Meta.`
                   : `Dự chi đã vượt mục tiêu ngày ${vnd(-p.today.gap)}đ: không cần lên thêm.`}
               <br />
-              Mục tiêu ngày: {p.today.targetFrom === "day" ? "anh đặt riêng." : p.today.targetFrom === "month" ? `chia phần còn lại của tháng cho ${p.month.daysLeft} ngày.` : "chưa đặt."}
+              Mục tiêu ngày: {v.period ? `theo khoảng ${dm(v.period.tu)} → ${dm(v.period.den)}.` : p.today.targetFrom === "day" ? "anh đặt riêng." : p.today.targetFrom === "month" ? `chia phần còn lại của tháng cho ${p.month.daysLeft} ngày.` : "chưa đặt."}
             </span>
           </div>
           <div className="goalcard">
-            <span className="gc-name">Doanh thu hôm nay cần có</span>
+            <span className="gc-name">Doanh thu {isToday ? "hôm nay" : dm(day)} cần có</span>
             <span className="gc-num">{p.today.revenueNeeded == null ? "–" : `${vnd(p.today.revenueNeeded)}đ`}</span>
-            <span className="gc-src">Để dự chi hôm nay đạt tỉ lệ {pct(t.ratio)}. Doanh thu thật hôm nay chỉ có sau khi Pancake đồng bộ sáng mai.</span>
+            <span className="gc-src">Để dự chi ngày này đạt tỉ lệ {pct(t.ratio)}. Doanh thu thật của một ngày chỉ có sau khi Pancake đồng bộ sáng hôm sau.</span>
           </div>
         </div>
       </div>
@@ -167,23 +202,24 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="card">
-        <h2>Đặt mục tiêu</h2>
+        <h2>Mục tiêu chung</h2>
+        <p className="sub" style={{ margin: "0 0 8px" }}>Dùng cho mọi ngày không nằm trong mục tiêu khoảng ngày bên dưới.</p>
         <form method="post" action="/api/fb/targets" className="filters">
           <label className="named">
             <span className="sub">Chi thật cả tháng (vd 60tr)</span>
-            <input name="month_budget" defaultValue={t.month_budget ? String(t.month_budget) : ""} placeholder="để trống = chưa đặt" size={18} inputMode="text" />
+            <input name="month_budget" defaultValue={v.base.month_budget ? String(v.base.month_budget) : ""} placeholder="để trống = chưa đặt" size={18} inputMode="text" />
           </label>
           <label className="named">
             <span className="sub">Chi thật mỗi ngày (vd 2tr)</span>
-            <input name="day_budget" defaultValue={t.day_budget ? String(t.day_budget) : ""} placeholder="để trống = chia từ tháng" size={18} inputMode="text" />
+            <input name="day_budget" defaultValue={v.base.day_budget ? String(v.base.day_budget) : ""} placeholder="để trống = chia từ tháng" size={18} inputMode="text" />
           </label>
           <label className="named">
             <span className="sub">Quảng cáo / doanh thu (%)</span>
-            <input name="ratio" defaultValue={String(Math.round(t.ratio * 1000) / 10)} size={8} inputMode="decimal" required />
+            <input name="ratio" defaultValue={String(Math.round(v.base.ratio * 1000) / 10)} size={8} inputMode="decimal" required />
           </label>
           <label className="named">
             <span className="sub">Ngân sách mỗi quảng cáo mới (Meta, đ/ngày)</span>
-            <input name="ad_budget" defaultValue={String(t.ad_budget)} size={12} inputMode="numeric" required />
+            <input name="ad_budget" defaultValue={String(v.base.ad_budget)} size={12} inputMode="numeric" required />
           </label>
           <button type="submit">Lưu mục tiêu</button>
         </form>
@@ -191,6 +227,91 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
           Mục tiêu tháng và ngày là chi thật (đã nhân 1,111). Chỉ lưu con số để so sánh; không đổi ngân sách nào trên Meta.
           {v.updated_at ? ` Lưu lần cuối: ${new Date(v.updated_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}.` : ""}
         </p>
+      </div>
+
+      <div className="card" id="khoang">
+        <h2>Mục tiêu theo khoảng ngày</h2>
+        <p className="sub" style={{ margin: "0 0 8px" }}>
+          Vd tuần sale, ngày lễ, ngày nghỉ (ghi 0). Ngày nằm trong một khoảng thì dùng mục tiêu của khoảng đó thay cho mục tiêu chung; trùng nhiều khoảng thì lấy
+          khoảng nhập sau cùng.
+        </p>
+        {v.periods == null ? (
+          <p className="error">Chưa có bảng fb_target_periods (cần áp migration 0038).</p>
+        ) : (
+          <>
+            <form method="post" action="/api/fb/target-periods" className="filters">
+              {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
+              <input type="hidden" name="ngay" value={day} />
+              <label className="named">
+                <span className="sub">Từ ngày</span>
+                <input type="date" name="tu" defaultValue={editing?.tu ?? day} required />
+              </label>
+              <label className="named">
+                <span className="sub">Đến ngày</span>
+                <input type="date" name="den" defaultValue={editing?.den ?? day} required />
+              </label>
+              <label className="named">
+                <span className="sub">Chi thật mỗi ngày (0 = nghỉ)</span>
+                <input name="day_budget" defaultValue={editing ? String(editing.day_budget) : ""} placeholder="vd 2tr" size={14} required />
+              </label>
+              <label className="named">
+                <span className="sub">Tỉ lệ QC/doanh thu (%)</span>
+                <input name="ratio" defaultValue={editing?.ratio != null ? String(Math.round(editing.ratio * 1000) / 10) : ""} placeholder="trống = chung" size={10} />
+              </label>
+              <label className="named">
+                <span className="sub">Ghi chú</span>
+                <input name="note" defaultValue={editing?.note ?? ""} placeholder="vd Sale 12.12" size={18} />
+              </label>
+              <button type="submit">{editing ? "Lưu sửa" : "Thêm"}</button>
+              {editing ? (
+                <a className="secondary" href={`/fb/muc-tieu?ngay=${day}#khoang`}>
+                  Hủy sửa
+                </a>
+              ) : null}
+            </form>
+            {v.periods.length ? (
+              <div className="table-wrap" style={{ marginTop: 10 }}>
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th className="l">Khoảng ngày</th>
+                      <th>Chi thật/ngày</th>
+                      <th>Tỉ lệ</th>
+                      <th className="l">Ghi chú</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v.periods.map((x) => (
+                      <tr key={x.id} className={v.period?.id === x.id ? "picked-row" : ""}>
+                        <td className="l">
+                          {dm(x.tu)} → {dm(x.den)}
+                          {x.den < today ? <span className="sub"> (đã qua)</span> : null}
+                          {v.overlapIds.includes(x.id) ? <span className="low"> · trùng khoảng khác</span> : null}
+                        </td>
+                        <td>{x.day_budget === 0 ? "nghỉ" : vnd(x.day_budget)}</td>
+                        <td>{x.ratio == null ? "chung" : pct(x.ratio)}</td>
+                        <td className="l">{x.note ?? ""}</td>
+                        <td>
+                          <span className="acts">
+                            <a className="btnlink" href={`/fb/muc-tieu?ngay=${day}&sua=${x.id}#khoang`}>Sửa</a>
+                            <form method="post" action="/api/fb/target-periods" style={{ margin: 0 }}>
+                              <input type="hidden" name="delete" value={x.id} />
+                              <input type="hidden" name="ngay" value={day} />
+                              <button type="submit" className="secondary">Xóa</button>
+                            </form>
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="sub" style={{ marginTop: 8 }}>Chưa có khoảng ngày nào.</p>
+            )}
+          </>
+        )}
       </div>
 
       {v.active?.byAccount.length ? (
@@ -241,6 +362,8 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
                     <th>Ngân sách/ngày (Meta)</th>
                     <th>Chi thật/ngày</th>
                     <th>Hẹn chạy</th>
+                    <th>Tính vào {dm(day)}</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -252,14 +375,25 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
                       <td>{d.metaDaily ? vnd(d.metaDaily) : "chưa nhập ngân sách"}</td>
                       <td>{d.metaDaily ? vnd(d.metaDaily * 1.111) : "–"}</td>
                       <td>{d.start_time ? d.start_time.replace("T", " ") : "khi bật"}</td>
+                      <td>{v.draftIds.includes(d.id) ? "có" : <span className="sub">chưa tới ngày</span>}</td>
+                      <td>
+                        <span className="acts">
+                          <a className="btnlink" href={`/fb/len-camp?page=${d.page_id}&draft=${d.id}`}>Sửa</a>
+                          <form method="post" action="/api/fb/launch-drafts" style={{ margin: 0 }}>
+                            <input type="hidden" name="delete" value={d.id} />
+                            <input type="hidden" name="ngay" value={day} />
+                            <button type="submit" className="secondary">Xóa</button>
+                          </form>
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <p className="sub" style={{ marginTop: 6 }}>
-              Các nháp này được cộng vào dự chi hôm nay. Nháp nào đã lên quảng cáo thật thì xóa ở <a href="/fb/len-camp">màn Lên camp</a>, không thì bị tính hai lần (một lần ở nháp, một
-              lần ở phần đang chạy).
+              Nháp có cột "Tính vào" là "có" được cộng vào dự chi ngày đang xem. Nháp đã lên quảng cáo thật thì bấm Xóa, không thì bị tính hai lần (một lần ở
+              nháp, một lần ở phần đang chạy). Bấm Sửa để mở nháp ở màn Lên camp.
             </p>
           </>
         ) : (

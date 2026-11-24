@@ -87,5 +87,7 @@
 .fb .dot.run { background: #1877f2; }
 .fb .dot.plan { background: #8fb8f7; }
 .fb .dot.goal { background: #b42318; width: 3px; }
+.fb .btnlink { display: inline-block; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; text-decoration: none; }
+.fb tr.picked-row td { background: #eef4ff; }
 .fb .named { display: inline-flex; flex-direction: column; gap: 2px; }
 .fb .pickbar .warn { color: var(--error); font-weight: 600; }

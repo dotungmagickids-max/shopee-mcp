@@ -14,8 +14,38 @@ export type Targets = {
   ratio: number;
   /** Ngân sách/ngày (số Meta, đ) của một quảng cáo mới, dùng để đổi "còn thiếu" ra số quảng cáo cần lên. */
   ad_budget: number;
+  /** Ngày này mục tiêu là 0 (nghỉ, không chạy). Chỉ đặt qua khoảng ngày. */
+  zeroDay?: boolean;
 };
 export const DEFAULT_TARGETS: Targets = { month_budget: null, day_budget: null, ratio: 0.2, ad_budget: 65_000 };
+
+/** Mục tiêu cho một khoảng ngày (bảng fb_target_periods). Tiền là chi thật. */
+export type TargetPeriod = { id: number; tu: string; den: string; day_budget: number; ratio: number | null; note: string | null };
+
+/**
+ * Mục tiêu áp cho một ngày: khoảng ngày chứa ngày đó (nhiều khoảng trùng thì lấy khoảng nhập sau cùng, tức id lớn
+ * nhất) thắng mục tiêu ngày chung; không có khoảng nào thì giữ mục tiêu chung. Trả về mục tiêu đã gộp và khoảng đang áp.
+ */
+export function targetsForDay(day: string, t: Targets, periods: TargetPeriod[]): { targets: Targets; period: TargetPeriod | null } {
+  const hit = periods.filter((p) => p.tu <= day && day <= p.den).sort((a, b) => b.id - a.id)[0] ?? null;
+  if (!hit) return { targets: t, period: null };
+  // Khoảng đặt 0đ (nghỉ) vẫn là mục tiêu hợp lệ: giữ đúng 0, không rơi về mục tiêu chung.
+  return { targets: { ...t, day_budget: hit.day_budget, ratio: hit.ratio ?? t.ratio, zeroDay: hit.day_budget === 0 }, period: hit };
+}
+
+/** Các khoảng ngày bị trùng nhau (để báo anh), theo cặp id. */
+export function overlaps(periods: TargetPeriod[]): [number, number][] {
+  const out: [number, number][] = [];
+  const xs = [...periods].sort((a, b) => a.tu.localeCompare(b.tu));
+  for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) if (xs[j].tu <= xs[i].den) out.push([xs[i].id, xs[j].id]);
+  return out;
+}
+
+/**
+ * Nháp kế hoạch được tính vào ngày nào: nháp có hẹn giờ chạy thì tính từ ngày hẹn trở đi; nháp không hẹn thì tính từ
+ * hôm nay (lên là chạy). Ngày xem trước ngày bắt đầu của nháp thì không tính.
+ */
+export const draftCountsOn = (day: string, today: string, startTime: string | null): boolean => day >= (startTime ? startTime.slice(0, 10) : today);
 
 /**
  * Một ngày của tháng. `revenue`, `orders` = doanh thu và đơn chốt của CẢ KÊNH Facebook trên Pancake (anh chốt
@@ -106,8 +136,9 @@ export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number
   const draftsReal = realOf(Math.max(0, draftMetaDaily));
   const planned = running == null ? null : running + draftsReal;
 
-  const dayTarget = t.day_budget && t.day_budget > 0 ? t.day_budget : needPerDay != null ? Math.max(0, needPerDay) : null;
-  const targetFrom: Plan["today"]["targetFrom"] = t.day_budget && t.day_budget > 0 ? "day" : needPerDay != null ? "month" : null;
+  const fixedDay = t.zeroDay || (t.day_budget != null && t.day_budget > 0);
+  const dayTarget = fixedDay ? (t.day_budget ?? 0) : needPerDay != null ? Math.max(0, needPerDay) : null;
+  const targetFrom: Plan["today"]["targetFrom"] = fixedDay ? "day" : needPerDay != null ? "month" : null;
   const gap = dayTarget == null || planned == null ? null : dayTarget - planned;
   const perAd = realOf(Math.max(1, t.ad_budget));
   const adsNeeded = gap == null ? null : gap > 0 ? Math.ceil(gap / perAd) : 0;
