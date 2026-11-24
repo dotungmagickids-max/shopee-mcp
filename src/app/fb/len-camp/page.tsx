@@ -7,7 +7,7 @@ export const maxDuration = 300;
 
 const DEFAULT_PAGE = "159993608025607"; // Magic Kids
 
-export default async function LaunchPage({ searchParams }: { searchParams: Promise<{ page?: string; posts?: string }> }) {
+export default async function LaunchPage({ searchParams }: { searchParams: Promise<{ page?: string; posts?: string; draft?: string }> }) {
   const sp = await searchParams;
   const pageId = sp.page && PAGES[sp.page] ? sp.page : DEFAULT_PAGE;
   const preselect = (sp.posts ?? "").split(",").filter((x) => /^\d+_\d+$/.test(x)).slice(0, 30);
@@ -35,7 +35,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
         {error ? <p className="error">Không tải được bài: {error}</p> : null}
         {data?.errors.length ? <p className="error">Thiếu số: {data.errors.join("; ").slice(0, 500)}</p> : null}
       </div>
-      {data ? <Launcher pageId={pageId} pageName={PAGES[pageId]} posts={data.posts} accounts={data.accounts} usedNames={data.usedNames} usedCampaigns={data.usedCampaigns} drafts={data.drafts} preselect={preselect} /> : null}
+      {data ? <Launcher pageId={pageId} pageName={PAGES[pageId]} posts={data.posts} accounts={data.accounts} usedNames={data.usedNames} usedCampaigns={data.usedCampaigns} drafts={data.drafts} preselect={preselect} openDraftId={Number(sp.draft) || undefined} /> : null}
     </>
   );
 }

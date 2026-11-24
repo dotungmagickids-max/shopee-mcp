@@ -6,7 +6,7 @@ import { db } from "../supabase";
 import { buildPlan as buildLaunchPlan, planBudget, type LaunchConfig, type LaunchItem } from "./launch";
 import { PAGES } from "./magic-data";
 import { activeAdsets, listAccounts, scrub } from "./meta";
-import { buildPlan, DEFAULT_TARGETS, isRunning, missingSpendDays, realOf, sumActiveBudgets, type DayRow, type Plan, type Targets } from "./targets";
+import { buildPlan, DEFAULT_TARGETS, draftCountsOn, isRunning, missingSpendDays, overlaps, realOf, sumActiveBudgets, targetsForDay, type TargetPeriod, type DayRow, type Plan, type Targets } from "./targets";
 
 /** Mục tiêu đã lưu. Chưa có bảng (chưa áp migration) thì dùng mặc định và báo `missing`. */
 export async function loadTargets(): Promise<{ targets: Targets; missing: boolean; updated_at: string | null }> {
@@ -52,6 +52,20 @@ export function withPancake(days: DayRow[], sales: Map<string, { orders: number;
     .sort((a, b) => a.ngay.localeCompare(b.ngay));
 }
 
+/** Các khoảng mục tiêu, mới nhất trước. Chưa có bảng (chưa áp migration) thì trả null. */
+export async function loadPeriods(): Promise<TargetPeriod[] | null> {
+  const { data, error } = await db().from("fb_target_periods").select("id, tu, den, day_budget, ratio, note").order("tu", { ascending: false }).limit(200);
+  if (error) return null;
+  return (data ?? []).map((r) => ({
+    id: Number(r.id),
+    tu: String(r.tu).slice(0, 10),
+    den: String(r.den).slice(0, 10),
+    day_budget: Number(r.day_budget),
+    ratio: r.ratio == null ? null : Number(r.ratio),
+    note: r.note ?? null,
+  }));
+}
+
 /** Lần cuối số chi hôm nay được thu về (bảng fb_ad_daily). null = hôm nay chưa có số. */
 export async function loadSpendUpdatedAt(today: string): Promise<string | null> {
   const { data, error } = await db().from("fb_ad_daily").select("updated_at").eq("ngay", today).order("updated_at", { ascending: false }).limit(1);
@@ -59,7 +73,7 @@ export async function loadSpendUpdatedAt(today: string): Promise<string | null> 
   return (data?.[0]?.updated_at as string | undefined) ?? null;
 }
 
-export type DraftBudget = { id: number; name: string; page: string; items: number; metaDaily: number; start_time: string | null; created_at: string };
+export type DraftBudget = { id: number; name: string; page: string; page_id: string; items: number; metaDaily: number; start_time: string | null; created_at: string };
 
 /** Các nháp kế hoạch lên camp (mọi page) kèm ngân sách ngày nếu lên đúng như nháp. Chưa có bảng thì coi như không có nháp. */
 export async function loadDraftBudgets(): Promise<DraftBudget[]> {
@@ -75,6 +89,7 @@ export async function loadDraftBudgets(): Promise<DraftBudget[]> {
       id: Number(d.id),
       name: String(d.name ?? ""),
       page: PAGES[String(d.page_id)] ?? String(d.page_id),
+      page_id: String(d.page_id),
       items: items.length,
       metaDaily: budget && items.length ? planBudget(buildLaunchPlan(full, items)) : 0,
       start_time: typeof cfg.start_time === "string" && cfg.start_time ? cfg.start_time : null,
@@ -138,6 +153,17 @@ export async function loadActiveBudget(): Promise<ActiveBudget> {
 }
 
 export type TargetsView = {
+  /** Ngày đang xem kế hoạch (hôm nay hoặc một ngày tới). */
+  day: string;
+  /** Mục tiêu chung (bảng fb_targets), chưa gộp khoảng ngày. */
+  base: Targets;
+  /** Khoảng ngày đang áp cho ngày xem; null = dùng mục tiêu chung. */
+  period: TargetPeriod | null;
+  /** null = chưa có bảng fb_target_periods. */
+  periods: TargetPeriod[] | null;
+  overlapIds: number[];
+  /** Nháp được tính vào ngày đang xem. */
+  draftIds: number[];
   targets: Targets;
   missingTable: boolean;
   updated_at: string | null;
@@ -153,9 +179,9 @@ export type TargetsView = {
   errors: string[];
 };
 
-export async function loadTargetsView(today: string): Promise<TargetsView> {
+export async function loadTargetsView(today: string, day: string = today): Promise<TargetsView> {
   const errors: string[] = [];
-  const [t, adDays, active, sales, drafts, spendUpdatedAt] = await Promise.all([
+  const [t, adDays, active, sales, drafts, spendUpdatedAt, periods] = await Promise.all([
     loadTargets(),
     loadMonthDays(today).catch((e) => {
       errors.push(e instanceof Error ? e.message : String(e));
@@ -171,11 +197,24 @@ export async function loadTargetsView(today: string): Promise<TargetsView> {
     }),
     loadDraftBudgets().catch(() => [] as DraftBudget[]),
     loadSpendUpdatedAt(today).catch(() => null),
+    loadPeriods().catch(() => null),
   ]);
   const days = sales ? withPancake(adDays, sales) : adDays.map((d) => ({ ...d, adRevenue: d.revenue }));
   if (active?.errors.length) errors.push(...active.errors);
   // Có tài khoản đọc lỗi thì tổng dự chi vẫn hiện, kèm cảnh báo là có thể thiếu.
-  const draftMeta = drafts.reduce((s, d) => s + d.metaDaily, 0);
-  const plan = buildPlan(today, days, active ? active.metaDaily : null, t.targets, draftMeta);
-  return { targets: t.targets, missingTable: t.missing, updated_at: t.updated_at, days, active, drafts, spendUpdatedAt, missing: missingSpendDays(today, adDays), pancakeOk: !!sales, plan, errors };
+  // Phần "hôm nay" tính cho ngày đang xem: mục tiêu của khoảng ngày chứa nó, và chỉ những nháp có hiệu lực ngày đó.
+  const forDay = targetsForDay(day, t.targets, periods ?? []);
+  const counted = drafts.filter((d) => draftCountsOn(day, today, d.start_time));
+  const draftMeta = counted.reduce((s, d) => s + d.metaDaily, 0);
+  const plan = buildPlan(today, days, active ? active.metaDaily : null, forDay.targets, draftMeta);
+  if (day !== today) plan.today.spentSoFar = 0;
+  return {
+    day,
+    base: t.targets,
+    period: forDay.period,
+    periods,
+    overlapIds: [...new Set(overlaps(periods ?? []).flat())],
+    draftIds: counted.map((d) => d.id),
+    targets: forDay.targets,
+    missingTable: t.missing, updated_at: t.updated_at, days, active, drafts, spendUpdatedAt, missing: missingSpendDays(today, adDays), pancakeOk: !!sales, plan, errors };
 }

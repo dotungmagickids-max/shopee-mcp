@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, welcomeTemplate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
 import type { LaunchDraft, LaunchResult, PostRow } from "@/lib/facebook/launch-data";
 
@@ -10,7 +10,7 @@ const day = (iso: string) => (iso ? new Date(iso).toLocaleDateString("vi-VN", { 
 const HOT = 5;
 const STEADY = 1;
 
-type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns?: string[]; drafts?: LaunchDraft[] | null; preselect?: string[] };
+type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns?: string[]; drafts?: LaunchDraft[] | null; preselect?: string[]; openDraftId?: number };
 
 const SHAPES: [Shape, string][] = [
   ["1-1-n", "1-1-N: 1 chiến dịch, 1 nhóm, mỗi bài 1 quảng cáo (test)"],
@@ -18,7 +18,7 @@ const SHAPES: [Shape, string][] = [
   ["n-1-1", "N-1-1: mỗi bài 1 chiến dịch riêng"],
 ];
 
-export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], drafts: savedDrafts = null, preselect = [] }: Props) {
+export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], drafts: savedDrafts = null, preselect = [], openDraftId }: Props) {
   const [drafts, setDrafts] = useState<LaunchDraft[]>(savedDrafts ?? []);
   const [startTime, setStartTime] = useState("");
   const [draftMsg, setDraftMsg] = useState<string | null>(null);
@@ -133,6 +133,13 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
     setError(have.length < d.items.length ? `Nháp có ${d.items.length} bài, chỉ còn ${have.length} bài nằm trong 30 ngày gần nhất.` : null);
     setDraftMsg(`Đã mở nháp "${d.name}". Bấm Xem trước để kiểm lại rồi mới tạo.`);
   };
+  // Mở sẵn nháp khi đến từ nút Sửa ở màn Mục tiêu (một lần, lúc vào trang).
+  useEffect(() => {
+    const d = openDraftId ? drafts.find((x) => x.id === openDraftId) : undefined;
+    if (d) openDraft(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDraftId]);
+
   const removeDraft = async (d: LaunchDraft) => {
     if (!window.confirm(`Xóa nháp "${d.name}"?`)) return;
     const res = await fetch("/api/fb/launch-drafts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: d.id }) }).catch(() => null);

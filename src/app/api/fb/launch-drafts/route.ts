@@ -16,6 +16,18 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 export async function POST(request: Request) {
   if (!adminFromRequest(request)) return json({ error: "Chưa đăng nhập." }, 401);
   if (!sameOrigin(request)) return json({ error: "bad origin" }, 403);
+  // Form ở màn Mục tiêu (nút Xóa nháp): xóa rồi quay lại trang đó.
+  if ((request.headers.get("content-type") ?? "").includes("form")) {
+    const f = await request.formData();
+    const id = Number(f.get("delete"));
+    const ngay = String(f.get("ngay") ?? "");
+    const origin = new URL(request.url).origin;
+    const back = (msg: string) =>
+      Response.redirect(`${origin}/fb/muc-tieu?msg=${encodeURIComponent(msg)}${/^\d{4}-\d{2}-\d{2}$/.test(ngay) ? `&ngay=${ngay}` : ""}`, 303);
+    if (!Number.isInteger(id) || id <= 0) return back("Mã nháp không hợp lệ.");
+    const { error } = await db().from("fb_launch_drafts").delete().eq("id", id);
+    return back(error ? `Chưa xóa được nháp: ${error.message.slice(0, 160)}` : "Đã xóa nháp.");
+  }
   const body: any = await request.json().catch(() => null);
   if (body?.delete != null) {
     const id = Number(body.delete);

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { withPancake } from "../src/lib/facebook/targets-data";
-import { isRunning, missingSpendDays } from "../src/lib/facebook/targets";
+import { draftCountsOn, isRunning, missingSpendDays, overlaps, targetsForDay } from "../src/lib/facebook/targets";
 import { buildPlan, daysInMonth, DEFAULT_TARGETS, parseMoney, parseRatio, sumActiveBudgets, type DayRow } from "../src/lib/facebook/targets";
 
 const day = (ngay: string, spendReal: number, revenue: number, orders = 1): DayRow => ({ ngay, spendReal, revenue, orders });
@@ -128,6 +128,34 @@ describe("FB Magic Tool: mục tiêu quảng cáo", () => {
     assert.equal(isRunning({ adset_status: "PAUSED", campaign_status: "ACTIVE" }), false);
     assert.equal(isRunning({ adset_status: "ARCHIVED", campaign_status: "ACTIVE" }), false);
     assert.equal(isRunning({}), false);
+  });
+
+  it("mục tiêu theo khoảng ngày thắng mục tiêu chung; khoảng nhập sau thắng khi trùng; 0 = nghỉ", () => {
+    const base = { ...DEFAULT_TARGETS, month_budget: 40_000_000, day_budget: 1_500_000 };
+    const periods = [
+      { id: 1, tu: "2026-12-10", den: "2026-12-14", day_budget: 4_000_000, ratio: 0.25, note: "Sale 12.12" },
+      { id: 2, tu: "2026-12-12", den: "2026-12-12", day_budget: 6_000_000, ratio: null, note: null },
+      { id: 3, tu: "2026-11-24", den: "2026-11-24", day_budget: 0, ratio: null, note: "Nghỉ lễ" },
+    ];
+    assert.equal(targetsForDay("2026-12-09", base, periods).period, null);
+    assert.equal(targetsForDay("2026-12-09", base, periods).targets.day_budget, 1_500_000);
+    const sale = targetsForDay("2026-12-11", base, periods);
+    assert.equal(sale.period?.id, 1);
+    assert.deepEqual([sale.targets.day_budget, sale.targets.ratio], [4_000_000, 0.25]);
+    const peak = targetsForDay("2026-12-12", base, periods);
+    assert.deepEqual([peak.period?.id, peak.targets.day_budget, peak.targets.ratio], [2, 6_000_000, 0.2]); // tỉ lệ trống: dùng chung
+    const off = targetsForDay("2026-11-24", base, periods);
+    const p = buildPlan("2026-11-24", days, 0, off.targets);
+    assert.deepEqual([p.today.target, p.today.targetFrom, p.today.adsNeeded], [0, "day", 0]); // nghỉ: mục tiêu 0, không cần lên thêm
+    assert.deepEqual(overlaps(periods), [[1, 2]]);
+  });
+
+  it("nháp tính vào ngày nào: có hẹn giờ thì từ ngày hẹn, không hẹn thì từ hôm nay", () => {
+    assert.equal(draftCountsOn("2026-11-24", "2026-11-24", null), true);
+    assert.equal(draftCountsOn("2026-11-26", "2026-11-24", null), true);
+    assert.equal(draftCountsOn("2026-11-24", "2026-11-24", "2026-11-25T08:00"), false);
+    assert.equal(draftCountsOn("2026-11-25", "2026-11-24", "2026-11-25T08:00"), true);
+    assert.equal(draftCountsOn("2026-11-27", "2026-11-24", "2026-11-25T08:00"), true);
   });
 
   it("đọc ô nhập tiền và phần trăm", () => {
