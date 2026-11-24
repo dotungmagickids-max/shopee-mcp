@@ -1,7 +1,7 @@
 /** Số gọn cho báo cáo sáng (lệnh mk_so_sang): mốc giờ, nguồn, thiếu thì ghi "chưa có" chứ không ghi 0. Mọi số, mã, tên ở đây là dữ liệu giả. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dongCskh, dongKieuGiao, khoangNgay, linkPancake, type VaoKieuGiao } from "../src/lib/so-gon";
+import { dongCskh, dongKieuGiao, khoangNgay, linkPancake, tenModel, type VaoKieuGiao } from "../src/lib/so-gon";
 import { gopCham, type DongCham } from "../src/lib/cskh/cham";
 import { MAC_DINH, dauNgay, tinhNgay, type HoiThoai, type Tin } from "../src/lib/cskh/tinh";
 
@@ -111,6 +111,14 @@ describe("số gọn CSKH", () => {
     assert.doesNotMatch(s, /c_id=g-50002/, "cuộc đã có đơn không còn là khách cần chăm");
     assert.match(s, /Chưa chấm: 1 cuộc/);
     assert.ok(s.includes(linkPancake(PAGE, "g-50003")));
+  });
+  it("CSKH_AI_MODEL đặt nhầm thành khóa: không in giá trị ra", () => {
+    const khoaGia = "sk-test-" + "x".repeat(40);
+    const s = dongCskh({ ngay: NGAY, k, g: { ...g, model: khoaGia }, chamLuc: null, tenPage: {}, chuaCham: [], toiDa: 15 }).join("\n");
+    assert.ok(!s.includes(khoaGia));
+    assert.match(s, /model KHÔNG HỢP LỆ/);
+    assert.equal(tenModel("claude-opus-5-5"), "claude-opus-5-5");
+    assert.match(tenModel("a b"), /KHÔNG HỢP LỆ/);
   });
   it("chưa có bản tính ngày đó thì nói rõ, không bịa số", () => {
     assert.deepEqual(dongCskh({ ngay: NGAY, k: null, g: null, chamLuc: null, tenPage: {}, chuaCham: [], toiDa: 15, loi: "chưa đồng bộ" }), ["## CSKH 10/01: chưa có (chưa đồng bộ)"]);
