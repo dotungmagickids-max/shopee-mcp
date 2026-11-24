@@ -151,6 +151,17 @@ export function buildPlan(today: string, days: DayRow[], activeMetaDaily: number
   };
 }
 
+/**
+ * Các ngày của tháng (từ ngày 1 tới hôm qua) chưa có số chi quảng cáo. Thường là ngày chưa được thu số;
+ * cũng có thể là ngày thật sự không chi đồng nào.
+ */
+export function missingSpendDays(today: string, days: DayRow[]): string[] {
+  const have = new Set(days.filter((d) => d.spendReal > 0).map((d) => d.ngay));
+  const out: string[] = [];
+  for (let d = `${today.slice(0, 7)}-01`; d < today; d = shift(d, 1)) if (!have.has(d)) out.push(d);
+  return out;
+}
+
 /** Ô nhập tiền: "200tr", "6,5 triệu", "65k", "65.000", "65000" → đồng. Sai dạng hoặc ≤ 0 → null. */
 export function parseMoney(input: unknown): number | null {
   const s = String(input ?? "").trim().toLowerCase().replace(/đ|vnd|\s/g, "");
@@ -172,6 +183,9 @@ export function parseRatio(input: unknown): number | null {
   const r = n >= 1 ? n / 100 : n;
   return r >= 0.01 && r <= 1 ? r : null;
 }
+
+/** Nhóm thực sự đang chạy: cả nhóm và chiến dịch đều ACTIVE. Nhóm bật mà chiến dịch tắt thì không tiêu tiền. */
+export const isRunning = (r: { adset_status?: string; campaign_status?: string }): boolean => r.adset_status === "ACTIVE" && r.campaign_status === "ACTIVE";
 
 /**
  * Tổng ngân sách ngày (số Meta) từ danh sách nhóm đang bật. Chiến dịch CBO (ngân sách ở chiến dịch) chỉ tính một lần

@@ -73,5 +73,19 @@
 .fb .good { color: #1a7f37; }
 .fb .bad { color: #b42318; }
 .fb td.good, .fb td.bad { font-weight: 700; }
+.fb .sechead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 8px; }
+.fb .sechead h2 { margin: 0; }
+.fb .gc-src { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.fb .gc-of { font-size: 15px; font-weight: 500; color: var(--muted); }
+.fb .budgetbar { margin: 6px 0 14px; }
+.fb .bb-track { position: relative; display: flex; height: 18px; border-radius: 999px; background: var(--border); overflow: visible; }
+.fb .bb-run { background: #1877f2; height: 100%; border-radius: 999px 0 0 999px; }
+.fb .bb-plan { background: #8fb8f7; height: 100%; }
+.fb .bb-goal { position: absolute; top: -5px; bottom: -5px; width: 3px; background: #b42318; border-radius: 2px; }
+.fb .bb-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 13px; }
+.fb .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.fb .dot.run { background: #1877f2; }
+.fb .dot.plan { background: #8fb8f7; }
+.fb .dot.goal { background: #b42318; width: 3px; }
 .fb .named { display: inline-flex; flex-direction: column; gap: 2px; }
 .fb .pickbar .warn { color: var(--error); font-weight: 600; }

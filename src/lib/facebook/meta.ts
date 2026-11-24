@@ -127,17 +127,31 @@ export async function listAccounts(): Promise<MetaAccount[]> {
  * Các nhóm quảng cáo đang thực sự chạy (nhóm và chiến dịch đều bật) của một tài khoản, kèm ngân sách ngày ở nhóm
  * và ở chiến dịch. Chỉ đọc. Ngân sách là số Meta, đơn vị đồng.
  */
-export async function activeAdsets(accountId: string): Promise<{ adset_id: string; adset_daily: number | null; campaign_id: string | null; campaign_daily: number | null }[]> {
+export type AdsetBudgetRow = {
+  adset_id: string;
+  adset_status: string;
+  adset_daily: number | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  campaign_status: string;
+  campaign_daily: number | null;
+};
+
+export async function activeAdsets(accountId: string): Promise<AdsetBudgetRow[]> {
+  // Lọc phía Meta chỉ để bớt dữ liệu; trạng thái thật được kiểm lại phía mình (isRunning), vì Meta có lúc trả cả nhóm đã tắt.
   const rows = await getAll(`act_${accountId}/adsets`, {
-    fields: "id,daily_budget,effective_status,campaign{id,daily_budget,effective_status}",
-    effective_status: JSON.stringify(["ACTIVE"]),
+    fields: "id,daily_budget,effective_status,campaign{id,name,daily_budget,effective_status}",
+    filtering: JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]),
     limit: "200",
   });
   const num = (v: unknown) => (v == null || v === "" || Number(v) <= 0 ? null : Number(v));
   return rows.map((r) => ({
     adset_id: String(r.id),
+    adset_status: String(r.effective_status ?? ""),
     adset_daily: num(r.daily_budget),
     campaign_id: r.campaign?.id ? String(r.campaign.id) : null,
+    campaign_name: r.campaign?.name ? String(r.campaign.name) : null,
+    campaign_status: String(r.campaign?.effective_status ?? ""),
     campaign_daily: num(r.campaign?.daily_budget),
   }));
 }
