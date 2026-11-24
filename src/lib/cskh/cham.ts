@@ -166,6 +166,15 @@ export interface CauHinhAi {
 
 export const MODEL_CLAUDE_MAC_DINH = "claude-opus-5-5";
 
+/**
+ * Cuộc nào cần chấm (lại): chưa chấm, hoặc có tin mới (của khách hay nhân viên) sau lần chấm trước.
+ * Nhờ vậy lịch chấm nhiều lần trong ngày chỉ tốn tiền cho cuộc có thay đổi.
+ */
+export function canCham(c: Pick<DongCuoc, "khachCuoiLuc" | "nvCuoiLuc">, chamLuc: number | undefined): boolean {
+  if (chamLuc == null) return true;
+  return Math.max(c.khachCuoiLuc ?? 0, c.nvCuoiLuc ?? 0) > chamLuc;
+}
+
 export function cauHinhAi(model?: string): CauHinhAi | null {
   const baseUrl = process.env.CSKH_AI_BASE_URL?.trim().replace(/\/+$/, "") ?? "";
   const huongDanRieng = process.env.CSKH_AI_HUONG_DAN?.trim() ?? "";
