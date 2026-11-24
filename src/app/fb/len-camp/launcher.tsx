@@ -10,7 +10,7 @@ const day = (iso: string) => (iso ? new Date(iso).toLocaleDateString("vi-VN", { 
 const HOT = 5;
 const STEADY = 1;
 
-type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns?: string[]; drafts?: LaunchDraft[] | null; preselect?: string[]; openDraftId?: number };
+type Props = { pageId: string; pageName: string; posts: PostRow[]; accounts: { id: string; name: string }[]; usedNames: string[]; usedCampaigns?: string[]; drafts?: LaunchDraft[] | null; preselect?: string[]; initialShape?: Shape; openDraftId?: number };
 
 const SHAPES: [Shape, string][] = [
   ["1-1-n", "1-1-N: 1 chiến dịch, 1 nhóm, mỗi bài 1 quảng cáo (test)"],
@@ -18,7 +18,7 @@ const SHAPES: [Shape, string][] = [
   ["n-1-1", "N-1-1: mỗi bài 1 chiến dịch riêng"],
 ];
 
-export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], drafts: savedDrafts = null, preselect = [], openDraftId }: Props) {
+export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], drafts: savedDrafts = null, preselect = [], initialShape, openDraftId }: Props) {
   const [drafts, setDrafts] = useState<LaunchDraft[]>(savedDrafts ?? []);
   const [startTime, setStartTime] = useState("");
   const [draftMsg, setDraftMsg] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
   const [accs, setAccs] = useState<string[]>([]);
   const [budget, setBudget] = useState("");
   const [structure, setStructure] = useState<"abo" | "cbo">("abo");
-  const [shape, setShape] = useState<Shape>("1-1-n");
+  const [shape, setShape] = useState<Shape>(initialShape ?? "1-1-n");
   /** Tên anh tự gõ; null = dùng tên máy gợi ý (tự đổi theo bài đã chọn và cấu hình). */
   const [adsetTyped, setAdsetTyped] = useState<string | null>(null);
   const [campTyped, setCampTyped] = useState<string | null>(null);
@@ -219,8 +219,8 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
         </div>
         {preselect.length ? (
           <p className="sub" style={{ marginBottom: 8 }}>
-            Đã chọn sẵn {preFound.length}/{preselect.length} bài từ màn Bài đã đăng
-            {preFound.length < preselect.length ? " (bài còn lại không nằm trong 30 ngày gần nhất hoặc là bài ngoài tường)" : ""}.
+            Đã chọn sẵn {preFound.length}/{preselect.length} bài từ màn Bài đã đăng / Đề xuất
+            {preFound.length < preselect.length ? " (bài còn lại không nằm trong khoảng ngày đang đọc hoặc là bài ngoài tường)" : ""}.
           </p>
         ) : null}
         <div className="table-wrap" style={{ maxHeight: 520, overflowY: "auto" }}>

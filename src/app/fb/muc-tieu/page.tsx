@@ -124,6 +124,7 @@ export default async function TargetsPage({ searchParams }: { searchParams: Prom
           <div className={`goalcard ${p.today.gap == null ? "" : p.today.gap > 0 ? "warn" : "good"}`}>
             <span className="gc-name">Còn phải lên thêm</span>
             <span className="gc-num">{p.today.adsNeeded == null ? "–" : `${p.today.adsNeeded} quảng cáo`}</span>
+            {p.today.adsNeeded ? <a className="btnlink" href="/fb/de-xuat">Xem đề xuất nên lên mã, bài nào</a> : null}
             <span className="gc-src">
               {p.today.gap == null
                 ? "Cần đặt mục tiêu tháng hoặc ngày ở khung bên dưới."
