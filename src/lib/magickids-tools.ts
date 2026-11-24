@@ -153,6 +153,34 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
     async ({ status }) => call("mk_list_proposals", { p_agent: agent, p_status: status ?? null })
   );
 
+  server.registerTool(
+    "mk_so_sang",
+    {
+      title: "Magickids: số gọn cho báo cáo sáng",
+      description:
+        "Số tính sẵn của một ngày (mặc định hôm qua, giờ VN), vài chục dòng chữ, mỗi số kèm mốc giờ và nguồn. " +
+        "phan=kieu_giao: doanh số từng kênh, chi quảng cáo thật (Facebook bỏ BOSS TUYỀN và CPAS), số tháng cho MT-03/04/07, số cái bán theo mã. " +
+        "phan=cskh: tỉ lệ chốt theo page, người trực, điểm AI chấm, khách cần sale chăm (kèm link Pancake), cuộc chưa chấm. " +
+        "Dòng ghi 'chưa có' hoặc 'CHƯA ĐỦ NGÀY' thì lấy từ nguồn gốc như cũ; không coi là 0. Chỉ đọc.",
+      inputSchema: {
+        phan: z.enum(["kieu_giao", "cskh", "tat_ca"]).default("tat_ca"),
+        ngay: date.optional().describe("Ngày cần số, mặc định hôm qua"),
+        ma: z.array(z.string().regex(/^[A-Za-z0-9]{3,20}$/)).max(20).optional().describe("Mã hàng cần đếm số cái bán (MT-01, MT-02)"),
+        ma_tu: date.optional().describe("Đếm số cái từ ngày này (tính theo cả tháng), mặc định đầu tháng của `ngay`"),
+        toi_da: z.coerce.number().int().min(1).max(50).default(15).describe("Số khách tiềm năng / cuộc chưa chấm tối đa mỗi danh sách"),
+      },
+      annotations: ro,
+    },
+    async ({ phan, ngay, ma, ma_tu, toi_da }) => {
+      try {
+        const { soSang } = await import("./so-gon");
+        return { content: [{ type: "text", text: await soSang({ phan, ngay, ma, maTu: ma_tu, toiDa: toi_da }) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }] };
+      }
+    }
+  );
+
   if (ctx.access !== "read_write") return;
   const add = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
 
