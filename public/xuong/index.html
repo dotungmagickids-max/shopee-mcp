@@ -40,6 +40,8 @@ main{max-width:760px;margin:0 auto;padding:12px}
 .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .loc{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .loc button{padding:6px 12px;font-size:14px;border-radius:999px}
+.locthang{margin-bottom:8px}
+.locthang select{margin-left:8px;padding:6px 8px;font-size:15px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
 .loc button.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
 .card>summary{cursor:pointer;padding:10px 12px;list-style:none}
@@ -179,7 +181,7 @@ const store={
   set(k,v){try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}}
 };
 const S={key:store.get('mk_xuong_key'),ten:store.get('mk_xuong_ten'),tab:'tra',data:null,at:0,busy:false,err:'',anh:{},anhAt:0,
-  loc:{don:'mo',tra:'cho'},open:new Set(),saved:null,chuaBat:false};
+  loc:{don:'mo',tra:'cho'},thang:'',open:new Set(),saved:null,chuaBat:false};
 
 const num=n=>n==null?'—':Number(n).toLocaleString('vi-VN');
 const day=(iso,nam)=>{if(!iso)return '';const p=String(iso).slice(0,10).split('-');return p[2]+'/'+p[1]+(nam?'/'+p[0]:'');};
@@ -202,7 +204,7 @@ function mock(){
     lo(3,'MA26003','Tái 1',null,360,341,341,null,{theoMau:[{mau:'Ghi',conNo:19}],lanVe:[{ngay:lui(-9),giao:341,khoDem:341,choDem:false}]}),
     lo(4,'MA26004','L1',4,58,58,58,lui(-6),{choVe:false,maTran:mt(['140','150'],[['Đen',[0,0]]]),lanVe:[{ngay:lui(-6),giao:58,khoDem:58,choDem:false}]})
   ];
-  const don=(id,ma,soPhieu,ngayDat,tongDat,trangThai,x)=>Object.assign({id,ma,soPhieu,ngayDat,duKienCat:null,tongDat,daCat:0,daGiao:0,khoDem:0,choCat:0,conNo:0,trangThai,nhan:'',chuaDoiSoat:false,maTran:null,theoMau:[],los:[]},x||{});
+  const don=(id,ma,soPhieu,ngayDat,tongDat,trangThai,x)=>Object.assign({id,ma,soPhieu,ngayDat,duKienCat:null,ngayCat:null,tongDat,daCat:0,daGiao:0,khoDem:0,choCat:0,conNo:0,trangThai,nhan:'',chuaDoiSoat:false,maTran:null,theoMau:[],los:[]},x||{});
   const d={at:Date.now(),homNay:hn,ghiThongTin:true,tomTat:{},los,
     don:[
       don(1,'MA26001','L1',lui(-30),192,'dang_tra',{los:['L1'],maTran:mt(['130','140','150','160'],[['Đỏ',[20,24,44,64]],['Trắng',[8,16,12,4]]])}),
@@ -391,6 +393,23 @@ function loc(body,tab,nhom){
   body.append(w);
   return (nhom.find(n=>n[0]===S.loc[tab])||nhom[0])[2];
 }
+// Lọc theo tháng: đơn lấy ngày đặt (không có thì ngày cắt); lô lấy ngày cắt (không có thì ngày đặt của phiếu).
+const thangDon=p=>String(p.ngayDat||p.ngayCat||'').slice(0,7);
+const thangLo=d=>x=>{const p=x.phieuId!=null?d.don.find(q=>q.id===x.phieuId):null;return String(x.ngayCat||(p&&p.ngayDat)||'').slice(0,7);};
+function locThang(body,ds,thang){
+  const dem={};for(const x of ds){const t=thang(x)||'-';dem[t]=(dem[t]||0)+1;}
+  const cac=Object.keys(dem).filter(t=>t!=='-').sort().reverse();
+  if(S.thang&&!dem[S.thang])S.thang='';
+  if(cac.length+(dem['-']?1:0)<2)return ds;
+  const w=mk('div','locthang'),lb=mk('label','m','Tháng'),sel=document.createElement('select');
+  const them=(v,t)=>{const o=document.createElement('option');o.value=v;o.textContent=t;if(S.thang===v)o.selected=true;sel.append(o);};
+  them('','Mọi tháng ('+ds.length+')');
+  for(const t of cac)them(t,'Tháng '+t.slice(5)+'/'+t.slice(0,4)+' ('+dem[t]+')');
+  if(dem['-'])them('-','Chưa ghi ngày ('+dem['-']+')');
+  sel.onchange=()=>{S.thang=sel.value;ve();};
+  lb.append(sel);w.append(lb);body.append(w);
+  return S.thang?ds.filter(x=>(thang(x)||'-')===S.thang):ds;
+}
 function bang(m,tieuDe,nong){
   const wrap=mk('div','scroll'),tb=mk('table'),hr=mk('tr');
   hr.append(mk('th','',tieuDe));for(const s of m.sizes)hr.append(mk('th','num',s));hr.append(mk('th','num','Tổng'));
@@ -417,16 +436,17 @@ function the(khoa,sum,det){
 const lopNhan=k=>k==='late'?'late':k==='ok'?'ok':k==='warn'?'amber':'m';
 
 function veDon(d,body){
-  const ds=loc(body,'don',[['mo','Chưa xong',d.don.filter(p=>p.trangThai!=='xong')],['cho','Chờ cắt',d.don.filter(p=>p.choCat>0)],['tat','Tất cả',d.don]]);
+  const dd=locThang(body,d.don,thangDon);
+  const ds=loc(body,'don',[['mo','Chưa xong',dd.filter(p=>p.trangThai!=='xong')],['cho','Chờ cắt',dd.filter(p=>p.choCat>0)],['tat','Tất cả',dd]]);
   if(!ds.length){body.append(mk('div','m',d.don.length?'Không có đơn nào ở nhóm này.':'Sổ chưa có phiếu đặt nào.'));return;}
   for(const p of ds){
     const top=mk('div','top');
     top.append(mk('span','code',p.ma+(p.id!=null&&p.soPhieu?' · '+p.soPhieu:'')),
       mk('span',p.trangThai==='xong'?'ok':p.trangThai==='cho_cat'?'amber':'m',p.nhan));
-    const dong2=p.id==null?'Lô '+p.soPhieu+' · không có phiếu đặt':((p.ngayDat?'Đặt ngày '+day(p.ngayDat,true):'Chưa ghi ngày đặt')+(p.tongDat!=null?' · tổng đặt '+num(p.tongDat):''));
+    const dong2=p.id==null?'Lô '+p.soPhieu+' · lô cũ, sổ chưa có phiếu đặt'+(p.ngayCat?' · cắt '+day(p.ngayCat,true):''):((p.ngayDat?'Đặt ngày '+day(p.ngayDat,true):'Chưa ghi ngày đặt')+(p.tongDat!=null?' · tổng đặt '+num(p.tongDat):''));
     const top2=mk('div','top');
     top2.append(mk('span','m',dong2),mk('span','owe'+(p.conNo>0?'':' m'),p.chuaDoiSoat&&!p.conNo?'?':num(p.conNo)));
-    const sum=[dauThe(p.ma,[top,top2]),o4([[num(p.tongDat),'đặt'],[num(p.daCat),'đã cắt'],[num(p.daGiao),'đã giao'],[num(p.khoDem),'kho đã đếm']])];
+    const sum=[dauThe(p.ma,[top,top2]),o4([p.id==null?['—','đặt (chưa có phiếu)']:[num(p.tongDat),'đặt'],[num(p.daCat),'đã cắt'],[num(p.daGiao),'đã giao'],[num(p.khoDem),'kho đã đếm']])];
     const det=[];
     det.push(mk('div','','Còn nợ (đã cắt, kho chưa đếm được): '+(p.chuaDoiSoat&&!p.conNo?'chưa đối soát':num(p.conNo)+' cái')+(p.choCat>0?' · Chờ cắt: '+num(p.choCat)+' cái':'')));
     if(p.choCat>0)det.push(mk('div',p.duKienCat?'m':'amber',p.duKienCat?'Dự kiến cắt '+day(p.duKienCat,true):'Chưa có ngày dự kiến cắt'));
@@ -435,7 +455,7 @@ function veDon(d,body){
     else if(p.theoMau.length)det.push(mk('div','','Đặt: '+p.theoMau.map(c=>c.mau+' '+num(c.so)).join(' · ')+' (chưa chia size)'));
     if(p.los.length){
       const b=mk('button','','Xem tiến độ lô '+p.los.join(', '));b.type='button';
-      b.onclick=()=>{for(const x of d.los)if(x.ma===p.ma&&p.los.includes(x.lo))S.open.add('tra'+x.id);S.loc.tra='tat';S.tab='tra';ve();};
+      b.onclick=()=>{for(const x of d.los)if(x.ma===p.ma&&p.los.includes(x.lo))S.open.add('tra'+x.id);S.loc.tra='tat';S.thang='';S.tab='tra';ve();};
       const w=mk('div');w.append(b);det.push(w);
     }else det.push(mk('div','m','Chưa có lô cắt nào cho phiếu này.'));
     body.append(the('don'+(p.id!=null?p.id:p.ma+'|'+p.soPhieu),sum,det));
@@ -454,7 +474,8 @@ function dongSx(x){
   return tt.length?tt.join(' · '):'';
 }
 function veTra(d,body){
-  const ds=loc(body,'tra',[['cho','Còn nợ',d.los.filter(x=>x.choVe)],['tre','Trễ hẹn',d.los.filter(x=>x.choVe&&x.ngayTre>0)],['tat','Tất cả',d.los]]);
+  const ll=locThang(body,d.los,thangLo(d));
+  const ds=loc(body,'tra',[['cho','Còn nợ',ll.filter(x=>x.choVe)],['tre','Trễ hẹn',ll.filter(x=>x.choVe&&x.ngayTre>0)],['tat','Tất cả',ll]]);
   if(!ds.length){body.append(mk('div','m',d.los.length?'Không có lô nào ở nhóm này.':'Sổ chưa có lô cắt nào.'));return;}
   for(const x of ds){
     const chua=x.trangThai==='chua_doi_soat',det=[];
