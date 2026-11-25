@@ -70,7 +70,7 @@ async function adHistory(): Promise<Map<string, AdSum>> {
   return out;
 }
 
-export async function loadLaunch(pageId: string): Promise<LaunchData> {
+export async function loadLaunch(pageId: string, days = 30): Promise<LaunchData> {
   const errors: string[] = [];
   const note = (label: string) => (e: unknown) => {
     errors.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
@@ -78,7 +78,7 @@ export async function loadLaunch(pageId: string): Promise<LaunchData> {
   };
   const today = vnDate();
   const [read, accounts, stock, history, manual, drafts] = await Promise.all([
-    readPagePosts(pageId, addDays(today, -29), today, 31),
+    readPagePosts(pageId, addDays(today, -(days - 1)), today, days + 1),
     listAccounts().catch(note("Tài khoản")),
     loadStock().catch(note("Tồn kho")),
     adHistory().catch(note("Kết quả cũ")),

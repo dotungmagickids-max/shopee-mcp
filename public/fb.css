@@ -91,3 +91,19 @@
 .fb tr.picked-row td { background: #eef4ff; }
 .fb .named { display: inline-flex; flex-direction: column; gap: 2px; }
 .fb .pickbar .warn { color: var(--error); font-weight: 600; }
+
+/* Đề xuất chạy */
+.fb .sgcard .sghead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.fb .sgcard .sgbtns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.fb .sgcard .btnlink.go { background: #1877f2; border-color: #1877f2; color: #fff; }
+.fb .lab { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; }
+.fb .lab-scale { background: #1a7f37; }
+.fb .lab-test { background: #1877f2; }
+.fb .lab-try { background: #b7791f; }
+.fb .lab-watch { background: #6b7280; }
+.fb .lab-stop { background: #b42318; }
+.fb .postgrid.small { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.fb .post .adnote.v-winner { background: #1a7f37; }
+.fb .post .adnote.v-rerun { background: #b7791f; }
+.fb .post .adnote.v-new { background: #1877f2; }
+.fb .post .adnote.v-loser { background: #b42318; }
