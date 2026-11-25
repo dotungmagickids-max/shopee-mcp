@@ -5,7 +5,7 @@ import { pancakeStock } from "@/lib/kho";
 import { cached } from "@/lib/kho-store";
 import { checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, soChoXuong, suaDuoc } from "@/lib/xuong";
 import { docAnhPhieu, docAnhVao } from "@/lib/xuong-doc-anh";
-import { docLenhNhap, loiNhap } from "@/lib/xuong-nhap";
+import { congDongCat, docLenhNhap, loiNhap, nguonCongThem } from "@/lib/xuong-nhap";
 import { CHUA_BAT_PHIEU, chuaCoBang, docPhieu, soTiep, trungSo, type PhieuDaLuu, type PhieuGui } from "@/lib/xuong-phieu";
 
 export const runtime = "nodejs";
@@ -190,13 +190,25 @@ async function nhapPhieu(body: unknown): Promise<Response> {
   try {
     if (lenh.loai === "cat") {
       // Lô đã có số cắt thì phải bấm ghi đè rõ ràng, tránh nhập nhầm tên lô làm mất số cũ.
-      const co = await db().from("sx_lo_cat").select("id").eq("ma_hang", lenh.ma).eq("lo", lenh.lo).maybeSingle();
+      const co = await db()
+        .from("sx_lo_cat")
+        .select("id, nguon, ngay_cat, dong:sx_lo_cat_dong(mau, size, so_cat)")
+        .eq("ma_hang", lenh.ma)
+        .eq("lo", lenh.lo)
+        .maybeSingle();
       if (co.error) {
         console.error("[xuong] kiểm lô lỗi:", co.error.message);
         return json({ error: loiNhap({}).error }, 502);
       }
-      if (co.data && !lenh.ghiDe) return json({ error: `Lô ${lenh.ma} ${lenh.lo} đã có số cắt`, daCo: true }, 409);
-      if (!co.data && lenh.ghiDe) return json({ error: `Chưa có lô ${lenh.ma} ${lenh.lo} để ghi đè` }, 400);
+      if (co.data && !lenh.ghiDe && !lenh.congThem) return json({ error: `Lô ${lenh.ma} ${lenh.lo} đã có số cắt`, daCo: true }, 409);
+      if (!co.data && (lenh.ghiDe || lenh.congThem)) return json({ error: `Chưa có lô ${lenh.ma} ${lenh.lo} để ${lenh.ghiDe ? "ghi đè" : "cộng thêm"}` }, 400);
+      if (co.data && lenh.congThem) {
+        // Một lô cắt nhiều lần: cộng số lần này vào số cũ, giữ ngày cắt đầu tiên, nối nguồn.
+        const lo = co.data as unknown as { nguon: string | null; ngay_cat: string | null; dong: { mau: string; size: string; so_cat: number }[] };
+        lenh.args.p_lines = congDongCat(lo.dong ?? [], lenh.args.p_lines as { mau: string; size: string; so_cat: number }[]);
+        lenh.args.p_ngay_cat = lo.ngay_cat ? null : lenh.ngayCat;
+        lenh.args.p_nguon = nguonCongThem(lo.nguon, lenh.ngayCat, lenh.tong, lenh.nguoi);
+      }
     }
     if (lenh.loai === "giao_sua") {
       // Kiểm lại ngay trước khi ghi: chỉ phiếu do xưởng nhập ở trang này và kho chưa đếm mới được sửa.
