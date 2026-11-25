@@ -80,6 +80,7 @@ td.hot{color:var(--red);font-weight:700}
 .msg{margin-top:8px;font-size:14px;font-weight:600}
 .msg.err{color:var(--red)}
 .msg.ok{color:var(--accent)}
+.msg.amber{color:var(--amber)}
 .note{background:#fff8e6;border:1px solid #f0d48a;border-radius:8px;padding:8px 10px;font-size:14px;color:#6b3f00}
 #gate{max-width:420px;margin:40px auto;padding:16px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 #gate h2{margin:0 0 6px;font-size:20px}
@@ -249,8 +250,9 @@ function mockNhap(b){
     if(!x)return {status:400,body:{error:'Chưa có lô cắt '+b.ma_hang+' '+b.lo+'. Nhập phiếu cắt của lô này trước'}};
     x.lanVe.push({id:Date.now(),sua:true,soPhieu:b.so_phieu||'',dong:b.dong,ngay:b.ngay,giao:tong,khoDem:0,choDem:true});x.daGiao+=tong;x.choKhoDem+=tong;
   }else{
-    if(x&&!b.ghi_de)return {status:409,body:{error:'Lô '+b.ma_hang+' '+b.lo+' đã có số cắt',daCo:true}};
-    if(x)x.soCat=tong;
+    if(x&&!b.ghi_de&&!b.cong_them)return {status:409,body:{error:'Lô '+b.ma_hang+' '+b.lo+' đã có số cắt',daCo:true}};
+    if(x&&b.cong_them){x.soCat+=tong;const p=x.phieuId!=null?MOCK.don.find(q=>q.id===x.phieuId):null;if(p)p.choCat=Math.max(0,p.choCat-tong);}
+    else if(x)x.soCat=tong;
     else{
       const p=MOCK.don.find(q=>q.ma===b.ma_hang&&q.id!=null&&q.soPhieu===(b.dot_dat||''));
       MOCK.los.push({id:Date.now(),ma:b.ma_hang,lo:b.lo,phieuId:p?p.id:null,mau:'',soCat:tong,daGiao:0,khoDem:0,choKhoDem:0,conNo:tong,ngayTre:0,henTra:b.hen_tra||null,ngayCat:b.ngay_cat,trangThai:'dang_ve',nhan:{k:'idle',t:''},choVe:true,maTran:null,theoMau:[],lanVe:[],doiHen:[],
@@ -935,7 +937,7 @@ const tongDong=(p,h)=>p.sizes.reduce((a,_,i)=>a+soO(h.o[i]),0);
 function nguonNhap(d,loai){
   const ds=[];if(!d)return ds;
   if(loai==='cat'){
-    for(const p of d.don)if(p.id!=null&&p.choCat>0)ds.push({nhan:p.ma+(p.soPhieu?' · đợt '+p.soPhieu:'')+' · chờ cắt '+num(p.choCat),ma:p.ma,lo:p.soPhieu&&!d.los.some(x=>x.ma===p.ma&&x.lo===p.soPhieu)?p.soPhieu:'',dot:p.soPhieu||'',mt:p.maTran,mau:(p.theoMau||[]).map(c=>c.mau),goi:'đặt'});
+    for(const p of d.don)if(p.id!=null&&p.choCat>0)ds.push({nhan:p.ma+(p.soPhieu?' · đợt '+p.soPhieu:'')+' · chờ cắt '+num(p.choCat),ma:p.ma,lo:p.soPhieu||'',dot:p.soPhieu||'',mt:p.maTran,mau:(p.theoMau||[]).map(c=>c.mau),goi:'đặt'});
   }else{
     for(const x of d.los)if(x.trangThai!=='dong'&&(x.choVe||x.trangThai==='chua_doi_soat'))ds.push({nhan:x.ma+' · '+x.lo+(x.trangThai==='chua_doi_soat'?'':' · còn nợ '+num(Math.max(0,x.conNo))),ma:x.ma,lo:x.lo,dot:'',mt:x.maTran,mau:(x.theoMau||[]).map(c=>c.mau),goi:'còn nợ'});
   }
@@ -1045,7 +1047,7 @@ function veNhap(d,body){
   if(!p.suaId)d1.append(nutAnh,tbAnh);
   const noi=(k,i)=>{i.oninput=()=>{p[k]=i.value;p.daCo=false;};return i;};
   const [wMa,iMa]=o('Mã hàng','text',p.ma,30);noi('ma',iMa);
-  const [wLo,iLo]=o(p.loai==='cat'?(p.dot&&p.lo===p.dot?'Tên lô (lấy theo đơn, sửa được)':'Tên lô (ví dụ L2)'):'Lô','text',p.lo,30);noi('lo',iLo);
+  const [wLo,iLo]=o(p.loai==='cat'?(p.dot&&p.lo===p.dot?'Tên lô (lấy theo đơn; cắt nhiều lần vẫn để tên này)':'Tên lô (ví dụ L2)'):'Lô','text',p.lo,30);noi('lo',iLo);
   if(p.suaId){iMa.disabled=true;iLo.disabled=true;}
   const r1=mk('div','row2');r1.append(wMa,wLo);d1.append(r1);
   const [wNg,iNg]=o(L.ngay,'date',p.ngay);iNg.max=homNay();noi('ngay',iNg);
@@ -1056,7 +1058,7 @@ function veNhap(d,body){
   if(p.doc)d2.append(mk('div','note',p.doc));
   luoiNhap(p,d2);c2.append(d2);body.append(c2);
   const msg=mk('div','msg');
-  const lay=ghiDe=>{
+  const lay=che=>{const ghiDe=che==='de',cong=che==='cong';
     const ten=iTen.value.replace(/\s+/g,' ').trim();
     if(ten.length<2||ten.length>40)return 'Ghi tên người nhập trước (2 đến 40 ký tự).';
     S.ten=ten;store.set('mk_xuong_ten',ten);
@@ -1077,26 +1079,26 @@ function veNhap(d,body){
     if(!dong.length)return 'Chưa có số lượng nào.';
     const tong=dong.reduce((a,x)=>a+x.so,0);
     const than=p.suaId?{action:'giao_sua',id:p.suaId,ngay:p.ngay,so_phieu:p.soPhieu.trim()||undefined,dong,nguoi:ten}
-      :p.loai==='cat'?{action:'cat',ma_hang:ma,lo,ngay_cat:p.ngay,hen_tra:p.hen||undefined,dot_dat:p.dot||undefined,ghi_de:ghiDe||undefined,dong,nguoi:ten}
+      :p.loai==='cat'?{action:'cat',ma_hang:ma,lo,ngay_cat:p.ngay,hen_tra:p.hen||undefined,dot_dat:p.dot||undefined,ghi_de:ghiDe||undefined,cong_them:cong||undefined,dong,nguoi:ten}
       :{action:'giao',ma_hang:ma,lo,ngay:p.ngay,so_phieu:p.soPhieu.trim()||undefined,dong,nguoi:ten};
     return {than,tong,ma,lo};
   };
-  const luu=async(ghiDe,nut)=>{
+  const luu=async(che,nut)=>{
     msg.className='msg err';
-    const v=lay(ghiDe);if(typeof v==='string'){msg.textContent=v;return;}
-    if(!confirm((p.suaId?'SỬA phiếu đóng gói ':ghiDe?'THAY số cắt của lô ':'Lưu '+L.ten.toLowerCase()+' ')+v.ma+' '+v.lo+': tổng '+num(v.tong)+' cái?\nSố vào sổ ngay, Magickids thấy luôn.'))return;
+    const v=lay(che);if(typeof v==='string'){msg.textContent=v;return;}
+    if(!confirm((p.suaId?'SỬA phiếu đóng gói ':che==='de'?'THAY TOÀN BỘ số cắt cũ của lô ':che==='cong'?'CỘNG THÊM lần cắt này vào lô ':'Lưu '+L.ten.toLowerCase()+' ')+v.ma+' '+v.lo+': tổng '+num(v.tong)+' cái?\nSố vào sổ ngay, Magickids thấy luôn.'))return;
     nut.disabled=true;NP.busy=true;msg.className='msg m';msg.textContent='Đang lưu…';
     try{
       const r=await goi('POST',v.than);
       if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
-      if(r.status===409&&r.body&&r.body.daCo){p.daCo=true;NP.msg={k:'err',t:'Lô '+v.ma+' '+v.lo+' đã có số cắt trong sổ. Nếu đây là lô mới, đổi tên lô (ví dụ L3). Nếu muốn sửa số cắt của lô này, bấm "Thay số cắt của lô đã có".'};ve();return;}
+      if(r.status===409&&r.body&&r.body.daCo){p.daCo=true;NP.msg={k:'amber',t:'Lô '+v.ma+' '+v.lo+' đã có số cắt trong sổ. Đây là lần cắt tiếp của lô: bấm "Cộng thêm vào lô". Nhập sai lần trước, muốn thay số cũ: bấm "Thay số cắt cũ".'};ve();return;}
       if(r.status!==200||!r.body||!r.body.ok){msg.className='msg err';msg.textContent='Chưa lưu được: '+(r.body&&r.body.error||'máy chủ báo lỗi '+r.status)+'.';nut.disabled=false;return;}
-      NP.msg={k:'ok',t:'Đã '+(p.suaId?'sửa':'lưu')+' lúc '+hhmm(Date.now())+': '+L.ten.toLowerCase()+' '+v.ma+' '+v.lo+', tổng '+num(v.tong)+' cái. Xem lại ở tab "Tiến độ trả hàng".'};
+      NP.msg={k:'ok',t:'Đã '+(p.suaId?'sửa':che==='cong'?'cộng thêm':'lưu')+' lúc '+hhmm(Date.now())+': '+L.ten.toLowerCase()+' '+v.ma+' '+v.lo+', tổng '+num(v.tong)+' cái. Xem lại ở tab "Tiến độ trả hàng".'};
       NP.p=nhapMoi(p.loai);await tai();scrollTo(0,0);
     }catch(e){msg.className='msg err';msg.textContent='Chưa lưu được ('+loiMang(e)+'). Thử lại.';nut.disabled=false;}
     finally{NP.busy=false;}
   };
-  const bLuu=mk('button','primary',p.suaId?'Lưu phiếu đã sửa':'Lưu '+L.ten.toLowerCase()+' vào sổ');bLuu.type='button';bLuu.onclick=()=>luu(false,bLuu);
+  const bLuu=mk('button','primary',p.suaId?'Lưu phiếu đã sửa':'Lưu '+L.ten.toLowerCase()+' vào sổ');bLuu.type='button';bLuu.onclick=()=>luu('',bLuu);
   const hang=mk('div','loc');hang.append(bLuu);
   if(p.suaId){
     const bHuy=mk('button','','Hủy phiếu này');bHuy.type='button';
@@ -1113,7 +1115,11 @@ function veNhap(d,body){
     };
     hang.append(bHuy);
   }
-  if(p.loai==='cat'&&p.daCo){const bDe=mk('button','','Thay số cắt của lô đã có');bDe.type='button';bDe.onclick=()=>luu(true,bDe);hang.append(bDe);}
+  if(p.loai==='cat'&&p.daCo){
+    bLuu.remove();
+    const bCong=mk('button','primary','Cộng thêm vào lô');bCong.type='button';bCong.onclick=()=>luu('cong',bCong);
+    const bDe=mk('button','','Thay số cắt cũ');bDe.type='button';bDe.onclick=()=>luu('de',bDe);hang.prepend(bCong);hang.append(bDe);
+  }
   const bXoa=mk('button','','Xóa trắng');bXoa.type='button';bXoa.onclick=()=>{NP.p=nhapMoi(p.loai);NP.msg=null;ve();};hang.append(bXoa);
   body.append(hang,msg);
 }

@@ -10,7 +10,7 @@ import { NGUON_XUONG, ngayHopLe } from "./xuong";
  */
 
 export type LenhNhap =
-  | { ok: true; loai: "cat"; fn: "mk_sx_lot_save"; args: Record<string, unknown>; ma: string; lo: string; ghiDe: boolean; tong: number }
+  | { ok: true; loai: "cat"; fn: "mk_sx_lot_save"; args: Record<string, unknown>; ma: string; lo: string; ghiDe: boolean; congThem: boolean; ngayCat: string; nguoi: string; tong: number }
   | { ok: true; loai: "giao"; fn: "mk_sx_arrival_save"; args: Record<string, unknown>; ma: string; lo: string; tong: number }
   | { ok: true; loai: "giao_sua"; fn: "mk_sx_arrival_save"; args: Record<string, unknown>; id: number; huy: boolean; tong: number }
   | { ok: false; error: string };
@@ -37,10 +37,11 @@ const gioVN = (now: number) => new Date(now + 7 * 3600_000).toISOString().slice(
 
 /**
  * Đọc thân POST của /api/xuong:
- *   { action: "cat",  ma_hang, lo, ngay_cat?, hen_tra?, dot_dat?, ghi_de?, dong: [{ mau, size, so }], nguoi }
+ *   { action: "cat",  ma_hang, lo, ngay_cat?, hen_tra?, dot_dat?, ghi_de? | cong_them?, dong: [{ mau, size, so }], nguoi }
  *   { action: "giao", ma_hang, lo, ngay, so_phieu?, dong: [{ mau, size, so }], nguoi }
  *   { action: "giao_sua", id, ngay, so_phieu?, huy?, dong: [{ mau, size, so }], nguoi }   (sửa phiếu đóng gói kho chưa đếm; huy = đưa mọi dòng về 0)
  * Dòng có số 0 hoặc trống bị bỏ. `ghi_de` = thay số cắt của lô đã có (không đổi ngày hẹn ở đây).
+ * `cong_them` = lần cắt tiếp của lô đã có (một lô cắt nhiều lần, anh dặn 25/11): route cộng số mới vào số cũ bằng `congDongCat`.
  */
 export function docLenhNhap(body: unknown, homNay: string, now: number = Date.now()): LenhNhap {
   if (!body || typeof body !== "object" || Array.isArray(body)) return sai("Thân yêu cầu phải là một đối tượng JSON");
@@ -86,6 +87,8 @@ export function docLenhNhap(body: unknown, homNay: string, now: number = Date.no
 
   if (b.action === "cat") {
     const ghiDe = b.ghi_de === true;
+    const congThem = b.cong_them === true;
+    if (ghiDe && congThem) return sai("Chỉ chọn một: thay số cắt hoặc cộng thêm lần cắt");
     const ngayCat = ngay(b.ngay_cat, "ngày cắt", true);
     if (ngayCat && typeof ngayCat === "object") return ngayCat;
     if ((ngayCat as string) > homNay) return sai("Ngày cắt không được ở tương lai");
@@ -95,13 +98,13 @@ export function docLenhNhap(body: unknown, homNay: string, now: number = Date.no
     const dot = trong(b.dot_dat) ? null : chu(b.dot_dat);
     if (dot != null && dot.length > 30) return sai("Đợt của phiếu đặt không hợp lệ");
     return {
-      ok: true, loai: "cat", fn: "mk_sx_lot_save", ma, lo: lo as string, ghiDe, tong,
+      ok: true, loai: "cat", fn: "mk_sx_lot_save", ma, lo: lo as string, ghiDe, congThem, ngayCat: ngayCat as string, nguoi, tong,
       args: {
         p_agent: agent, p_ma_hang: ma, p_lo: lo, p_nguon: `${NGUON_XUONG}, phiếu cắt: ${nguoi}`,
         p_lines: dong.map((d) => ({ mau: d.mau, size: d.size, so_cat: d.so })),
         p_ngay_cat: ngayCat,
         // Lô đã có thì ngày hẹn chỉ đổi qua mục "Đổi ngày hẹn trả" để giữ lịch sử.
-        p_hen_tra: ghiDe ? null : hen,
+        p_hen_tra: ghiDe || congThem ? null : hen,
         p_dot_dat: dot,
       },
     };
@@ -136,6 +139,32 @@ export function docLenhNhap(body: unknown, homNay: string, now: number = Date.no
       p_so_phieu_xuong: soPhieu || null,
     },
   };
+}
+
+type DongCat = { mau: string; size: string; so_cat: number };
+
+/**
+ * Lần cắt tiếp của một lô đã có: cộng số mới vào số cũ theo màu × size (màu, size so không phân biệt hoa thường, khoảng trắng).
+ * Giữ tên màu như dòng cũ; màu, size mới thì thêm dòng. Trả đủ các dòng để `mk_sx_lot_save` thay toàn bộ.
+ */
+export function congDongCat(cu: DongCat[], moi: DongCat[]): DongCat[] {
+  const khoa = (d: DongCat) => `${d.mau.replace(/\s+/g, " ").trim().toLowerCase()}|${d.size.trim().toLowerCase()}`;
+  const kq = cu.map((d) => ({ mau: d.mau, size: d.size, so_cat: d.so_cat }));
+  const viTri = new Map(kq.map((d, i) => [khoa(d), i]));
+  for (const d of moi) {
+    const i = viTri.get(khoa(d));
+    if (i === undefined) {
+      viTri.set(khoa(d), kq.length);
+      kq.push({ ...d });
+    } else kq[i].so_cat += d.so_cat;
+  }
+  return kq;
+}
+
+/** Nguồn của lô sau khi cộng một lần cắt: giữ nguồn cũ, nối thêm lần cắt mới (database cắt ở 500 ký tự). */
+export function nguonCongThem(cu: string | null, ngayCat: string, tong: number, nguoi: string): string {
+  const them = `thêm lần cắt ${ngayCat.slice(8, 10)}/${ngayCat.slice(5, 7)} (${tong} cái): ${nguoi}`;
+  return cu ? `${cu} · ${them}` : `${NGUON_XUONG}, ${them}`;
 }
 
 /** Đổi lỗi database khi nhập phiếu thành câu cho xưởng. Lỗi luật (P0001) đã là tiếng Việt, chỉ bỏ tên hàm nội bộ. */

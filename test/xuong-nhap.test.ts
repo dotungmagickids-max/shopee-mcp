@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { describe, it } from "node:test";
 import { docAnhVao, lamSachBang, lamSachVai } from "../src/lib/xuong-doc-anh";
-import { docLenhNhap, loiNhap, soNguyen } from "../src/lib/xuong-nhap";
+import { congDongCat, docLenhNhap, loiNhap, nguonCongThem, soNguyen } from "../src/lib/xuong-nhap";
 
 const nay = "2026-11-23";
 const gio = Date.parse("2026-11-23T03:04:05Z"); // 10:04:05 giờ Việt Nam
@@ -172,5 +172,31 @@ describe("POST /api/xuong nhập phiếu", () => {
       const ten = ["XUONG_API_KEY", "KHO_API_KEY", "ANTHROPIC_API_KEY"];
       ten.forEach((k, i) => (cu[i] == null ? delete process.env[k] : (process.env[k] = cu[i])));
     }
+  });
+});
+
+describe("một lô cắt nhiều lần", () => {
+  it("cong_them: không gửi ngày hẹn, mang theo ngày cắt và người nhập để route cộng số", () => {
+    const r = docLenhNhap({ action: "cat", ma_hang: "MA26005", lo: "Lô 2", ngay_cat: "2026-11-22", hen_tra: "2026-12-05", cong_them: true, dong: [{ mau: "Đỏ", size: "130", so: 5 }], nguoi: "Người A" }, nay, gio);
+    assert.ok(r.ok && r.loai === "cat");
+    if (!r.ok || r.loai !== "cat") return;
+    assert.deepEqual([r.congThem, r.ghiDe, r.ngayCat, r.nguoi, r.args.p_hen_tra], [true, false, "2026-11-22", "Người A", null]);
+  });
+  it("không cho chọn cùng lúc ghi đè và cộng thêm", () => {
+    const r = docLenhNhap({ action: "cat", ma_hang: "MA26005", lo: "L2", ngay_cat: "2026-11-22", ghi_de: true, cong_them: true, dong: [{ mau: "Đỏ", size: "130", so: 5 }], nguoi: "Người A" }, nay, gio);
+    assert.ok(!r.ok);
+  });
+  it("congDongCat cộng theo màu × size, không phân biệt hoa thường, thêm dòng mới", () => {
+    assert.deepEqual(
+      congDongCat(
+        [{ mau: "Xanh than", size: "130", so_cat: 10 }, { mau: "Trắng", size: "140", so_cat: 4 }],
+        [{ mau: "xanh  than", size: "130", so_cat: 5 }, { mau: "Đỏ", size: "150", so_cat: 7 }]
+      ),
+      [{ mau: "Xanh than", size: "130", so_cat: 15 }, { mau: "Trắng", size: "140", so_cat: 4 }, { mau: "Đỏ", size: "150", so_cat: 7 }]
+    );
+  });
+  it("nguonCongThem giữ nguồn cũ và nối lần cắt mới", () => {
+    assert.equal(nguonCongThem("phiếu cắt: A", "2026-11-25", 120, "B"), "phiếu cắt: A · thêm lần cắt 25/11 (120 cái): B");
+    assert.match(nguonCongThem(null, "2026-11-25", 1, "B"), /^Trang xưởng \(\/xuong\), thêm lần cắt 25\/11/);
   });
 });
