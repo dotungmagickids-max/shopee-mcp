@@ -139,17 +139,17 @@ table.nhap button{padding:4px 10px}
 <header>
   <h1>Magickids · Hàng xưởng</h1>
   <button id="btnReload" type="button">Tải lại</button>
-  <button id="btnKey" type="button">Đổi mã</button>
+  <button id="btnKey" type="button">Đăng xuất</button>
 </header>
 <div class="thu" id="thuBar" hidden>Bản chạy thử: số liệu giả, lưu thử chỉ nằm trong máy này, không gửi lên máy chủ.</div>
 
 <div id="gate" hidden>
-  <h2>Nhập mã truy cập</h2>
-  <div class="m">Mã do Magickids cấp riêng cho xưởng. Máy sẽ nhớ mã cho lần sau.</div>
-  <label for="keyIn">Mã truy cập</label>
-  <input id="keyIn" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <h2>Đăng nhập</h2>
+  <div class="m">Nhập mật khẩu Magickids đã đặt cho xưởng (mã truy cập cũ cũng dùng được). Máy nhớ đăng nhập 60 ngày.</div>
+  <label for="keyIn">Mật khẩu</label>
+  <input id="keyIn" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false">
   <div class="msg err" id="gateMsg"></div>
-  <button class="primary" id="keyOk" type="button">Vào xem</button>
+  <button class="primary" id="keyOk" type="button">Đăng nhập</button>
 </div>
 
 <main id="app" hidden>
@@ -326,7 +326,7 @@ async function tai(){
   S.busy=true;S.err='';ve();
   try{
     const r=await goi('GET');
-    if(r.status===401){S.key='';store.set('mk_xuong_key','');S.busy=false;hoiMa('Mã truy cập không đúng. Nhập lại mã Magickids đã gửi cho xưởng.');return;}
+    if(r.status===401){S.key='';store.set('mk_xuong_key','');S.busy=false;hoiMa('Phiên đăng nhập đã hết hạn hoặc mật khẩu đã đổi. Đăng nhập lại.');return;}
     if(r.status!==200||!r.body||!Array.isArray(r.body.los)||!Array.isArray(r.body.don))throw new Error(r.body&&r.body.error||'máy chủ không trả sổ');
     S.data=r.body;S.at=Date.now();taiAnh();
     if(r.body.ghiThongTin===false)S.chuaBat=true;
@@ -553,7 +553,7 @@ function nut(form,msg,nhan,lay,x,khoa,iTen,xong){
     b.disabled=true;msg.className='msg m';msg.textContent='Đang lưu…';
     try{
       const r=await goi('POST',than);
-      if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
+      if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Phiên đăng nhập đã hết hạn hoặc mật khẩu đã đổi. Đăng nhập lại.');return;}
       if(r.status===501||r.body&&r.body.chuaBat){S.chuaBat=true;msg.className='msg err';msg.textContent=CHUA_BAT+'. Báo Magickids để bật; ngày hẹn trả vẫn đổi được.';b.disabled=false;return;}
       if(r.status!==200||!r.body||!r.body.ok){msg.className='msg err';msg.textContent='Chưa lưu được: '+(r.body&&r.body.error||'máy chủ báo lỗi '+r.status)+'.';b.disabled=false;return;}
       S.saved={khoa,txt:'Đã lưu lúc '+hhmm(Date.now())+': '+xong(than)+'. Số bên dưới là số máy chủ vừa trả về.'};S.open.add(khoa);
@@ -633,7 +633,7 @@ async function taiPhieu(buoc){
   PH.srvBusy=true;PH.srvErr='';
   try{
     const r=await goi('GET',null,'phieu');
-    if(r.status===401){S.key='';store.set('mk_xuong_key','');PH.srvBusy=false;hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
+    if(r.status===401){S.key='';store.set('mk_xuong_key','');PH.srvBusy=false;hoiMa('Phiên đăng nhập đã hết hạn hoặc mật khẩu đã đổi. Đăng nhập lại.');return;}
     if(r.status!==200||!r.body||!Array.isArray(r.body.phieu))throw new Error(r.body&&r.body.error||'máy chủ không trả danh sách phiếu');
     PH.srv=r.body.phieu;PH.srvAt=Date.now();PH.chuaBat=!!r.body.chuaBat;
   }catch(e){PH.srvErr='Chưa đọc được phiếu trên máy chủ ('+(e.message&&e.name!=='AbortError'&&e.name!=='TypeError'?e.message:loiMang(e))+').';}
@@ -646,7 +646,7 @@ async function dayPhieu(){
   sach.gui=PH.gui;
   try{
     const r=await goi('POST',{action:'phieu_luu',id:p.sid||undefined,nguoi:S.ten||undefined,phieu:sach});
-    if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
+    if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Phiên đăng nhập đã hết hạn hoặc mật khẩu đã đổi. Đăng nhập lại.');return;}
     if(r.status===501||r.body&&r.body.chuaBat){PH.chuaBat=true;PH.luu={k:'amber',t:'Máy chủ chưa bật phần lưu phiếu: phiếu đang nằm trên máy này. In và gửi vẫn được.'};}
     else if(r.status===404&&p.sid){delete p.sid;luuPhieu();PH.luu={k:'err',t:'Phiếu này đã bị xóa trên máy chủ. Bấm "Sửa phiếu" rồi "Xem phiếu" lần nữa để lưu thành phiếu mới.'};}
     else if(r.status!==200||!r.body||!r.body.ok)PH.luu={k:'err',t:'Chưa lưu lên máy chủ được: '+(r.body&&r.body.error||'máy chủ báo lỗi '+r.status)+'. Phiếu vẫn nằm trên máy này.'};
@@ -986,7 +986,7 @@ function nutDocAnh(loai,nhan){
     try{
       const anh=await thuNhoAnh(f);
       const r=await goi('POST',{action:'doc_anh',loai,anh});
-      if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
+      if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Phiên đăng nhập đã hết hạn hoặc mật khẩu đã đổi. Đăng nhập lại.');return;}
       if(r.status!==200||!r.body||!r.body.ok){tb.className='msg err';tb.textContent=(r.body&&r.body.chuaBat?'Máy chủ chưa bật phần đọc ảnh: báo Magickids để bật. ':'')+'Chưa đọc được ảnh'+(r.body&&r.body.error&&!r.body.chuaBat?': '+r.body.error:'')+'. Nhập tay vẫn được.';return;}
       NP.docBusy=false;nhan(r.body);
     }catch(e){tb.className='msg err';tb.textContent='Chưa đọc được ảnh ('+(e.message&&e.name!=='AbortError'&&e.name!=='TypeError'?e.message:loiMang(e))+'). Nhập tay vẫn được.';}
@@ -1090,7 +1090,7 @@ function veNhap(d,body){
     nut.disabled=true;NP.busy=true;msg.className='msg m';msg.textContent='Đang lưu…';
     try{
       const r=await goi('POST',v.than);
-      if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Mã truy cập không còn đúng. Nhập lại mã.');return;}
+      if(r.status===401){S.key='';store.set('mk_xuong_key','');hoiMa('Phiên đăng nhập đã hết hạn hoặc mật khẩu đã đổi. Đăng nhập lại.');return;}
       if(r.status===409&&r.body&&r.body.daCo){p.daCo=true;NP.msg={k:'amber',t:'Lô '+v.ma+' '+v.lo+' đã có số cắt trong sổ. Đây là lần cắt tiếp của lô: bấm "Cộng thêm vào lô". Nhập sai lần trước, muốn thay số cũ: bấm "Thay số cắt cũ".'};ve();return;}
       if(r.status!==200||!r.body||!r.body.ok){msg.className='msg err';msg.textContent='Chưa lưu được: '+(r.body&&r.body.error||'máy chủ báo lỗi '+r.status)+'.';nut.disabled=false;return;}
       NP.msg={k:'ok',t:'Đã '+(p.suaId?'sửa':che==='cong'?'cộng thêm':'lưu')+' lúc '+hhmm(Date.now())+': '+L.ten.toLowerCase()+' '+v.ma+' '+v.lo+', tổng '+num(v.tong)+' cái. Xem lại ở tab "Tiến độ trả hàng".'};
@@ -1142,10 +1142,19 @@ function veNhap(d,body){
 for(const b of $('tabs').children)b.onclick=()=>{S.tab=b.dataset.t;S.saved=null;PH.xem=false;ve();};
 $('btnReload').onclick=()=>{S.saved=null;tai();};
 $('btnKey').onclick=()=>{if(THU)return;S.key='';store.set('mk_xuong_key','');S.data=null;hoiMa('');};
-$('keyOk').onclick=()=>{
-  const k=$('keyIn').value.trim();
-  if(!k){$('gateMsg').textContent='Chưa nhập mã.';return;}
-  S.key=k;store.set('mk_xuong_key',k);tai();
+$('keyOk').onclick=async()=>{
+  const k=$('keyIn').value.trim(),nut=$('keyOk'),tb=$('gateMsg');
+  if(!k){tb.textContent='Chưa nhập mật khẩu.';return;}
+  nut.disabled=true;tb.className='msg m';tb.textContent='Đang đăng nhập…';
+  try{
+    const r=await fetch(API+'/dang-nhap',{method:'POST',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({mat_khau:k})});
+    const b=await r.json().catch(()=>null);
+    tb.className='msg err';
+    if(r.status===401){tb.textContent='Mật khẩu không đúng.';return;}
+    if(r.status!==200||!b||!b.ok||!b.ve){tb.textContent='Chưa đăng nhập được: '+(b&&b.error||'máy chủ báo lỗi '+r.status)+'.';return;}
+    tb.textContent='';S.key=b.ve;store.set('mk_xuong_key',b.ve);tai();
+  }catch(e){tb.className='msg err';tb.textContent='Chưa đăng nhập được ('+loiMang(e)+'). Thử lại.';}
+  finally{nut.disabled=false;}
 };
 $('keyIn').onkeydown=e=>{if(e.key==='Enter')$('keyOk').click();};
 if(THU){$('thuBar').hidden=false;$('btnKey').hidden=true;}

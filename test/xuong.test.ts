@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SoSanXuat } from "../src/lib/san-xuat-data";
-import { CHUA_BAT_THONG_TIN, checkXuongKey, docLenhGhi, docMaAnh, locAnh, loiGhi, ngayHopLe, soChoXuong, suaDuoc } from "../src/lib/xuong";
+import { CHUA_BAT_THONG_TIN, HAN_VE_MS, checkXuongKey, docLenhGhi, kiemMatKhau, taoVe, veHopLe, docMaAnh, locAnh, loiGhi, ngayHopLe, soChoXuong, suaDuoc } from "../src/lib/xuong";
 
 const so: SoSanXuat = {
   los: [
@@ -250,5 +250,58 @@ describe("xưởng sửa phiếu đóng gói", () => {
       { id: 7, sua: true, soPhieu: "0457", dong: [{ mau: "Đỏ", size: "130", so: 5 }], ngay: "2026-11-22", giao: 5, khoDem: 0, choDem: true },
     ]);
     assert.ok(!JSON.stringify(lan).includes("nguon"));
+  });
+});
+
+describe("đăng nhập bằng mật khẩu chung", () => {
+  const dat = (k: string, v: string | undefined) => (v == null ? delete process.env[k] : (process.env[k] = v));
+  const voi = async (mk: string | undefined, chay: () => Promise<void> | void) => {
+    const cu = [process.env.XUONG_API_KEY, process.env.KHO_API_KEY, process.env.XUONG_MAT_KHAU];
+    dat("XUONG_API_KEY", "khoa-xuong");
+    dat("KHO_API_KEY", "khoa-kho");
+    dat("XUONG_MAT_KHAU", mk);
+    try {
+      await chay();
+    } finally {
+      dat("XUONG_API_KEY", cu[0]);
+      dat("KHO_API_KEY", cu[1]);
+      dat("XUONG_MAT_KHAU", cu[2]);
+    }
+  };
+  const t0 = Date.parse("2026-11-25T00:00:00Z");
+
+  it("nhận mật khẩu chung hoặc mã cũ; mật khẩu ngắn dưới 8 ký tự coi như chưa đặt", async () => {
+    await voi("matkhau-chung", () => {
+      assert.equal(kiemMatKhau("matkhau-chung"), "ok");
+      assert.equal(kiemMatKhau("khoa-xuong"), "ok");
+      assert.equal(kiemMatKhau("khoa-kho"), "bad");
+      assert.equal(kiemMatKhau("sai"), "bad");
+      assert.equal(kiemMatKhau(undefined), "bad");
+    });
+    await voi("ngan", () => assert.equal(kiemMatKhau("ngan"), "bad"));
+  });
+
+  it("vé có chữ ký và hạn 60 ngày; đổi mật khẩu thì vé cũ hết dùng", async () => {
+    let ve = "";
+    await voi("matkhau-chung", () => {
+      ve = taoVe(t0).ve;
+      assert.ok(veHopLe(ve, t0 + 1000));
+      assert.ok(!veHopLe(ve, t0 + HAN_VE_MS + 1));
+      assert.ok(!veHopLe(ve.slice(0, -1) + (ve.endsWith("0") ? "1" : "0"), t0));
+      assert.equal(checkXuongKey(new Request("https://x.test/api/xuong", { headers: { "x-mk-key": ve } }), t0 + 1000), "ok");
+    });
+    await voi("matkhau-moi-khac", () => assert.ok(!veHopLe(ve, t0 + 1000)));
+  });
+
+  it("/api/xuong/dang-nhap: đúng trả vé dùng được, sai 401", async () => {
+    const { POST } = await import("../src/app/api/xuong/dang-nhap/route");
+    const goi = (mat_khau: string) => POST(new Request("https://x.test/api/xuong/dang-nhap", { method: "POST", body: JSON.stringify({ mat_khau }) }));
+    await voi("matkhau-chung", async () => {
+      const r = await goi("matkhau-chung");
+      assert.equal(r.status, 200);
+      const b = (await r.json()) as { ok: boolean; ve: string };
+      assert.ok(b.ok && veHopLe(b.ve));
+      assert.equal((await goi("sai-roi")).status, 401);
+    });
   });
 });

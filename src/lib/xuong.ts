@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { soChoKho, type KhoLo } from "./kho-san-xuat";
 import { conChoVe, soNgay, tinhLo, type HangVe, type LoCat, type MaTran, type PhieuDat, type TienDoLo, type TomTat } from "./san-xuat";
 import type { SoSanXuat } from "./san-xuat-data";
@@ -14,13 +14,61 @@ import type { SoSanXuat } from "./san-xuat-data";
  * Kiểm tra header `x-mk-key` với XUONG_API_KEY. Mã của xưởng phải KHÁC mã của kho (KHO_API_KEY),
  * để người của xưởng không gọi được API kho; đặt trùng thì coi như chưa đặt đúng.
  */
-export function checkXuongKey(request: Request): "ok" | "unset" | "trung" | "bad" {
+export function checkXuongKey(request: Request, now: number = Date.now()): "ok" | "unset" | "trung" | "bad" {
   const secret = process.env.XUONG_API_KEY?.trim();
   if (!secret) return "unset";
   if (secret === process.env.KHO_API_KEY?.trim()) return "trung";
-  const a = Buffer.from(request.headers.get("x-mk-key") ?? "");
-  const b = Buffer.from(secret);
-  return a.length === b.length && timingSafeEqual(a, b) ? "ok" : "bad";
+  const gui = request.headers.get("x-mk-key") ?? "";
+  if (giongNhau(gui, secret)) return "ok";
+  return veHopLe(gui, now) ? "ok" : "bad";
+}
+
+const giongNhau = (x: string, y: string) => {
+  const a = Buffer.from(x);
+  const b = Buffer.from(y);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+// ---------- Đăng nhập bằng mật khẩu chung (anh chốt 25/11: tạm một mật khẩu cho anh Tùng, anh Dũng, chị Hiền QLSX) ----------
+
+/** Mật khẩu chung tối thiểu 8 ký tự; ngắn hơn thì coi như chưa đặt, để không ai dò được. */
+export const MAT_KHAU_TOI_THIEU = 8;
+/** Vé đăng nhập còn hạn 60 ngày; hết hạn thì nhập lại mật khẩu. */
+export const HAN_VE_MS = 60 * 86_400_000;
+
+const matKhauChung = () => {
+  const m = process.env.XUONG_MAT_KHAU?.trim() ?? "";
+  return m.length >= MAT_KHAU_TOI_THIEU ? m : "";
+};
+
+/** Khóa ký vé: đổi mã xưởng hoặc đổi mật khẩu chung thì mọi vé cũ hết dùng được. */
+const khoaVe = () => `${process.env.XUONG_API_KEY?.trim() ?? ""}|${matKhauChung()}`;
+const kyVe = (han: number) => createHmac("sha256", khoaVe()).update(`xuong|v1|${han}`).digest("hex");
+
+/** Vé dạng `v1.<hạn ms>.<chữ ký>`: máy chủ không lưu gì, chỉ kiểm chữ ký và hạn. */
+export function taoVe(now: number = Date.now()): { ve: string; han: number } {
+  const han = now + HAN_VE_MS;
+  return { ve: `v1.${han}.${kyVe(han)}`, han };
+}
+
+export function veHopLe(ve: string, now: number = Date.now()): boolean {
+  const m = /^v1\.(\d{13})\.([0-9a-f]{64})$/.exec(ve);
+  if (!m || !process.env.XUONG_API_KEY?.trim()) return false;
+  const han = Number(m[1]);
+  if (han <= now || han > now + HAN_VE_MS) return false;
+  return giongNhau(m[2], kyVe(han));
+}
+
+/**
+ * Kiểm mật khẩu khi đăng nhập. Nhận mật khẩu chung (XUONG_MAT_KHAU) hoặc mã xưởng cũ (XUONG_API_KEY), để máy đang dùng mã không bị chặn.
+ * "unset" khi chưa đặt XUONG_API_KEY (trang xưởng chưa bật).
+ */
+export function kiemMatKhau(matKhau: unknown): "ok" | "unset" | "bad" {
+  const ma = process.env.XUONG_API_KEY?.trim();
+  if (!ma || ma === process.env.KHO_API_KEY?.trim()) return "unset";
+  if (typeof matKhau !== "string" || !matKhau || matKhau.length > 200) return "bad";
+  const mk = matKhauChung();
+  return (mk && giongNhau(matKhau, mk)) || giongNhau(matKhau, ma) ? "ok" : "bad";
 }
 
 // ---------- Bản đọc cho xưởng ----------
