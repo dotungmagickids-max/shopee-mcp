@@ -1,4 +1,5 @@
 import { db } from "../supabase";
+import { luuTinChoAnh } from "../tin-cho-anh";
 
 async function tg(method: string, body: Record<string, unknown>): Promise<any | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -54,7 +55,12 @@ export async function sendTelegramMessage(
     disable_web_page_preview: true,
     ...(opts.replyMarkup ? { reply_markup: opts.replyMarkup } : {}),
   });
-  return r?.result?.message_id ?? null;
+  const id = r?.result?.message_id ?? null;
+  // Tin vào chat mặc định (anh / Phòng họp): lưu thêm để Minh Anh chuyển Zalo riêng anh (25/11/2026).
+  if (String(to.chat_id) === String(process.env.TELEGRAM_CHAT_ID ?? "")) {
+    await luuTinChoAnh("autopilot", text, { coNut: !!opts.replyMarkup, tgMessageId: id });
+  }
+  return id;
 }
 
 /**
@@ -76,7 +82,12 @@ export async function sendTelegramPhoto(
       parse_mode: "HTML",
       ...(opts.replyMarkup ? { reply_markup: opts.replyMarkup } : {}),
     });
-    if (r?.result?.message_id) return r.result.message_id;
+    if (r?.result?.message_id) {
+      if (String(to.chat_id) === String(process.env.TELEGRAM_CHAT_ID ?? "")) {
+        await luuTinChoAnh("autopilot", caption, { coNut: !!opts.replyMarkup, tgMessageId: r.result.message_id });
+      }
+      return r.result.message_id;
+    }
   }
   return sendTelegramMessage(caption, opts);
 }
