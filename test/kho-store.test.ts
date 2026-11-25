@@ -1,7 +1,7 @@
 /** Dữ liệu vận hành của kho trên Supabase: lọc mã, ghi chú, dòng sổ video. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cacheFresh, cleanCodes, cleanGiaoMark, cleanMark, cleanNote, kiemEntry, lechEntry, nhapEntry, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
+import { cacheFresh, cleanCodes, cleanGiaoMark, cleanHuyMark, cleanMark, cleanNote, kiemEntry, lechEntry, nhapEntry, cleanVtpRows, validDay, validKey, videoRow } from "../src/lib/kho-store";
 
 describe("kho-store", () => {
   it("lọc mã đơn: viết hoa, bỏ khoảng trắng, bỏ trùng và thứ không phải mã", () => {
@@ -56,6 +56,8 @@ describe("kho-store", () => {
     // Kết quả xử lý đơn giao có vấn đề: chỉ nhận kết quả đã biết, bỏ trường lạ, cắt ghi chú.
     assert.deepEqual(cleanGiaoMark({ state: "phat-lai", note: "  hẹn chiều mai  ", ten: "x", sdt: "0900000000" }), { state: "phat-lai", note: "hẹn chiều mai" });
     assert.deepEqual(cleanGiaoMark({ state: "xoa-don" }), {});
+    assert.deepEqual(cleanHuyMark({ state: "lay-lai", note: " ok ", sdt: "0900000000" }), { state: "lay-lai", note: "ok" });
+    assert.deepEqual(cleanHuyMark({ state: "giao" }), {});
     assert.deepEqual(cleanGiaoMark({ state: "" }), { state: "" });
     assert.equal(String(cleanGiaoMark({ note: "a".repeat(999) }).note).length, 300);
   });

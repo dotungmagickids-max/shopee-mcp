@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { shops } from "./autopilot/config";
 import { normSku, productCode } from "./autopilot/pancake";
 import { callShopee, chunk } from "./autopilot/shopee-call";
-import { cleanVtpRows, giaoMarksGet, vtpMailGet, vtpMailSave, type VtpKhau, type VtpMailDoc } from "./kho-store";
+import { cleanVtpRows, giaoMarksGet, huyMarksGet, vtpMailGet, vtpMailSave, type VtpKhau, type VtpMailDoc } from "./kho-store";
 
 /**
  * Tra đơn cho bàn đóng hàng (công cụ quay video đóng hàng của kho). Chỉ đọc Pancake POS.
@@ -965,6 +965,59 @@ export async function vtpMailPush(ngay: string, rowsIn: unknown, khau: VtpKhau =
   });
   await vtpMailSave(ngay, docs, khau);
   return { saved: rows.length, matched: rows.length - notFound.length, notFound };
+}
+
+/** Một đơn đã hủy gần đây (Pancake, gồm cả đơn sàn đồng bộ về). Không có tên, SĐT, địa chỉ khách, không có tiền. */
+export interface HuyRow {
+  id: string;
+  sys: string;
+  kenh: string;
+  /** Mọi mã có thể in trên tem: mã đơn, số đơn Pancake, mã vận đơn, mã Viettel Post. */
+  codes: string[];
+  /** Giờ đơn đổi sang Đã hủy (ms); Pancake không có thì lấy giờ cập nhật cuối. */
+  huyLuc: number | null;
+  /** Hãng vận chuyển đã lấy hàng (đơn đi Pancake có giờ lấy). */
+  daLay: boolean;
+}
+
+export function shapeHuy(o: any): HuyRow {
+  const src = String(o?.order_sources_name ?? "");
+  return {
+    id: String(o?.id ?? ""),
+    sys: o?.system_id == null ? "" : String(o.system_id),
+    kenh: /tik\s*tok/i.test(src) ? "TikTok" : /shopee/i.test(src) ? "Shopee" : src || "Pancake",
+    codes: orderCodes(o),
+    huyLuc: toMs(o?.last_update_status_at) ?? toMs(o?.updated_at),
+    daLay: !!o?.partner?.picked_up_at,
+  };
+}
+
+/**
+ * Đơn đổi sang "Đã hủy" trên Pancake trong 5 ngày gần nhất (theo giờ cập nhật), kèm ghi chú kho đã lấy lại hàng chưa.
+ * Trang kho so với sổ video đóng hàng để ra danh sách đơn đã đóng rồi mới hủy: kho lấy lại hàng, không giao cho hãng.
+ */
+export async function cancelledRecent(now = Date.now()): Promise<{ at: number; rows: HuyRow[]; marks: Record<string, Record<string, unknown>>; errors: string[] }> {
+  const errors: string[] = [];
+  const rows: HuyRow[] = [];
+  const from = Math.floor(now / 1000) - 5 * 86400;
+  try {
+    for (let page = 1; page <= 6; page++) {
+      const body = await getJson("orders", { page_size: 100, page_number: page, "filter_status[]": [6], update_status: "updated_at", start_date_time: from, end_date_time: Math.floor(now / 1000) + 3600, option_sort: "last_update_status_at_desc" });
+      for (const o of body?.data ?? []) rows.push(shapeHuy(o));
+      const total = Number(body?.total_pages ?? 0);
+      if (!body?.data?.length || (total && page >= total)) break;
+      if (page === 6) errors.push("Pancake: quá 600 đơn hủy trong 5 ngày, danh sách có thể thiếu");
+    }
+  } catch (err) {
+    errors.push(`Pancake: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  let marks: Record<string, Record<string, unknown>> = {};
+  try {
+    marks = await huyMarksGet();
+  } catch (err) {
+    errors.push(`Sổ lấy lại hàng: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return { at: now, rows, marks, errors };
 }
 
 /** Một đơn Viettel Post giao có vấn đề. Không có tên, SĐT, địa chỉ khách, không có tiền thu hộ, không có tên sản phẩm. */

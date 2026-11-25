@@ -1,8 +1,8 @@
-import { checkKhoKey, giaoProblems, lookupOrder, ordersToPack, pancakeStock, productCatalog, returnsExpected, shopeeArrange, shopeeLabels, vtpMailPush } from "@/lib/kho";
+import { cancelledRecent, checkKhoKey, giaoProblems, lookupOrder, ordersToPack, pancakeStock, productCatalog, returnsExpected, shopeeArrange, shopeeLabels, vtpMailPush } from "@/lib/kho";
 import { soChoKho } from "@/lib/kho-san-xuat";
 import { homNayVN } from "@/lib/san-xuat";
 import { docSoSanXuat } from "@/lib/san-xuat-data";
-import { cached, dayGet, dayWrite, giaoMarkSet, kiemAdd, kiemList, lechAdd, lechList, markSet, marksGet, nhapAdd, nhapList, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
+import { cached, dayGet, dayWrite, giaoMarkSet, huyMarkSet, kiemAdd, kiemList, lechAdd, lechList, markSet, marksGet, nhapAdd, nhapList, validDay, validKey, videoList, videoUpsert } from "@/lib/kho-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +35,7 @@ export function OPTIONS() {
  *   GET /api/kho/don?laylech=1                           → { entries[] } các lần lấy hàng lệch khi đóng
  *   GET /api/kho/don?kiemke=YYYY-MM-DD                   → { entries[] } các lượt đếm của đợt tổng kiểm kho bắt đầu ngày đó
  *   GET /api/kho/don?tonpancake=1                        → { at, stock[[mã phân loại, tồn thực, tên, mã hàng, đơn đang chờ hàng]], images[[mã hàng, ảnh]] } tồn Pancake (lưu 10 phút, &moi=1 lấy mới)
+ *   GET /api/kho/don?huy=1                               → { at, rows[], marks{}, errors[] } đơn chuyển sang Đã hủy trên Pancake 5 ngày gần nhất (trang kho so với video đã đóng) và ghi chú lấy lại hàng
  *   GET /api/kho/don?giaovtp=1                           → { at, ngay, rows[], marks{} } đơn Viettel Post giao có vấn đề (theo báo cáo mail) và kết quả xử lý đã ghi
  *   GET /api/kho/don?sanxuat=1                           → { at, homNay, tomTat, los[], ngay[], phieu[] } sổ hàng xưởng, chỉ đọc, đã bỏ giá
  */
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
     if (sp.get("nhaphoan")) return json(await nhapList());
     if (sp.get("laylech")) return json(await lechList());
     if (sp.get("giaovtp")) return json(await giaoProblems());
+    if (sp.get("huy")) return json(await cancelledRecent());
     if (sp.get("tonpancake")) return json(await cached("tonpancake3", 10 * 60_000, pancakeStock, (v) => v.stock.length > 0, moi));
     const dot = sp.get("kiemke");
     if (dot != null) return validDay(dot) ? json(await kiemList(dot)) : json({ error: "kiemke phải có dạng YYYY-MM-DD" }, 400);
@@ -86,6 +88,8 @@ export async function GET(request: Request) {
  *                     đơn khâu giao có vấn đề theo cùng báo cáo mail; cũng không gửi tên, SĐT, địa chỉ, tiền thu hộ
  *   action "giaomark" { ma, du_lieu: { state?: "phat-lai" | "cho-hoan" | "sua-thong-tin" | "chua-lien-lac" | "", note? } } → { ok }
  *                     kết quả xử lý một đơn giao có vấn đề; chỉ ghi sổ mình, không bấm gì trên Viettel Post hay Pancake
+ *   action "huymark"  { ma, du_lieu: { state?: "lay-lai" | "da-di" | "", note? } } → { ok }
+ *                     kho ghi đã lấy lại hàng của đơn hủy sau khi đóng; chỉ ghi sổ mình
  * Tem vận đơn Shopee: { action, shop, orders: string[] (tối đa 50) }
  *   action "tem"     → { files: [{ type, carrier, orders[], pdf (base64) }], failed: [{ id, reason }] }. Không đổi trạng thái đơn.
  *   action "chuanbi" → { done[], failed[] }. Bấm "chuẩn bị hàng" trên Shopee (lệnh ghi thật); chỉ chạy khi máy chủ đặt KHO_CHUAN_BI=1.
@@ -112,6 +116,12 @@ export async function POST(request: Request) {
       if (!validDay(body?.ngay)) return json({ error: "ngay phải có dạng YYYY-MM-DD" }, 400);
       if (!Array.isArray(body?.rows)) return json({ error: "thiếu rows" }, 400);
       return json(await vtpMailPush(body.ngay, body.rows, body.action === "giaovtp" ? "giao" : "hoan"));
+    }
+    if (body?.action === "huymark") {
+      const ma = String(body?.ma ?? "").trim().toUpperCase();
+      if (!/^[A-Z0-9_-]{4,40}$/.test(ma)) return json({ error: "ma không hợp lệ" }, 400);
+      await huyMarkSet(ma, body?.du_lieu);
+      return json({ ok: true });
     }
     if (body?.action === "giaomark") {
       const ma = String(body?.ma ?? "").trim().toUpperCase();
