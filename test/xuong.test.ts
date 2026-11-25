@@ -40,6 +40,15 @@ describe("soChoXuong", () => {
     assert.equal(r.los.find((l) => l.id === 1)?.sx.thongTin, "Đang in.");
   });
 
+  it("còn phải trả tính theo số xưởng đã trả: số cắt − đã giao, ma trận khớp tổng", () => {
+    for (const l of r.los) {
+      assert.equal(l.conTra, l.soCat - l.daGiao, `${l.ma} ${l.lo}`);
+      if (l.maTranTra) assert.equal(l.maTranTra.tongCong, l.conTra);
+      else assert.equal(l.theoMauTra.reduce((a, c) => a + c.conTra, 0), l.conTra);
+    }
+    assert.equal(r.tomTat.conTra, r.los.filter((l) => l.trangThai !== "dong").reduce((a, l) => a + Math.max(0, l.conTra), 0));
+  });
+
   it("đơn có ngày cắt sớm nhất của các lô để lọc theo tháng; chưa có lô thì null", () => {
     for (const d of r.don) {
       const ng = r.los.filter((l) => l.ma === d.ma && d.los.includes(l.lo)).map((l) => l.ngayCat).filter(Boolean).sort();
@@ -76,7 +85,7 @@ describe("soChoXuong", () => {
     assert.deepEqual(a.maTran?.hang.map((h) => [h.mau, h.o]), [["Đỏ", [11, 16]], ["Trắng", [8, null]]]);
     assert.deepEqual(a.doiHen, [{ cu: "2026-11-18", moi: "2026-11-19", lyDo: "Người A báo máy in hỏng" }]);
     assert.equal(r.los.find((l) => l.id === 2)?.phieuId, null);
-    assert.deepEqual(r.tomTat, { loTre: 1, conNo: 35, veHomNay: 0, phieuHomNay: 0, choCat: 750, choKhoDem: 69, phieuChoCat: 2 });
+    assert.deepEqual(r.tomTat, { loTre: 1, conNo: 35, veHomNay: 0, phieuHomNay: 0, choCat: 750, choKhoDem: 69, phieuChoCat: 2, conTra: 63 });
   });
 
   it("báo database đã có phần ghi thông tin sản xuất (0026) hay chưa", () => {
