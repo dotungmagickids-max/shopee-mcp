@@ -1,6 +1,7 @@
 import { addDays, vnDate } from "@/lib/autopilot/time";
 import { evaluate, rangeOf, codesFromName, type Level } from "@/lib/facebook/magic";
-import { loadRange, PAGES } from "@/lib/facebook/magic-data";
+import { loadRangeCached, PAGES } from "@/lib/facebook/magic-data";
+import { lamMoiFb } from "./actions";
 import EvalTable from "./table";
 
 export const dynamic = "force-dynamic";
@@ -31,9 +32,9 @@ export default async function FbPage({ searchParams }: { searchParams: Promise<S
   const level: Level = sp.level === "adset" || sp.level === "campaign" ? sp.level : "ad";
   const code = (sp.code ?? "").trim().toUpperCase();
 
-  let data: Awaited<ReturnType<typeof loadRange>>;
+  let data: Awaited<ReturnType<typeof loadRangeCached>>;
   try {
-    data = await loadRange(since, until);
+    data = await loadRangeCached(since, until);
   } catch (e) {
     return (
       <div className="card">
@@ -111,6 +112,12 @@ export default async function FbPage({ searchParams }: { searchParams: Promise<S
           {fmt(since)}{since !== until ? ` → ${fmt(until)}` : ""} · Chi thật = chi Meta × 1,111 · Đơn/doanh thu: Pancake shop 608127 theo ad_id, bỏ đơn
           trạng thái 6, 7 · Màu theo <a href="/fb/tran">bảng trần</a> từng mã
         </p>
+        <form action={lamMoiFb} className="sub" style={{ marginTop: 4 }}>
+          Số lấy lúc{" "}
+          {new Date(data.at).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" })} (giữ 5 phút){" "}
+          <input type="hidden" name="back" value={link({})} />
+          <button type="submit" className="secondary">Làm mới</button>
+        </form>
         {data.errors.length ? <p className="error">Không đọc được: {data.errors.join("; ").slice(0, 600)}</p> : null}
       </div>
       <EvalTable rows={rows} level={level} />
