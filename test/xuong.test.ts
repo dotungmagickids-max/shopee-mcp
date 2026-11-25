@@ -40,6 +40,13 @@ describe("soChoXuong", () => {
     assert.equal(r.los.find((l) => l.id === 1)?.sx.thongTin, "Đang in.");
   });
 
+  it("đơn có ngày cắt sớm nhất của các lô để lọc theo tháng; chưa có lô thì null", () => {
+    for (const d of r.don) {
+      const ng = r.los.filter((l) => l.ma === d.ma && d.los.includes(l.lo)).map((l) => l.ngayCat).filter(Boolean).sort();
+      assert.equal(d.ngayCat, ng[0] ?? null);
+    }
+  });
+
   it("đơn đã nhận: mọi phiếu chưa hủy và lô không có phiếu, kèm trạng thái và số còn nợ", () => {
     assert.deepEqual(
       r.don.map((d) => [d.ma, d.soPhieu, d.trangThai, d.tongDat, d.daCat, d.daGiao, d.khoDem, d.choCat, d.conNo]),

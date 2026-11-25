@@ -68,6 +68,8 @@ export interface XuongDon {
   soPhieu: string;
   ngayDat: string | null;
   duKienCat: string | null;
+  /** Ngày cắt sớm nhất trong các lô của đơn; null khi chưa lô nào ghi ngày cắt. */
+  ngayCat: string | null;
   /** Tổng số đặt; null khi không có phiếu đặt. */
   tongDat: number | null;
   daCat: number;
@@ -149,6 +151,7 @@ function gomDon(p: PhieuDat | null, lo1: LoCat | null, ts: TienDoLo[]): XuongDon
     soPhieu: p ? p.dot : (lo1?.lo ?? ""),
     ngayDat: p?.ngay_dat ?? null,
     duKienCat: p?.ngay_du_kien_cat ?? null,
+    ngayCat: ts.map((t) => t.lo.ngay_cat).filter((x): x is string => !!x).sort()[0] ?? null,
     tongDat,
     daCat,
     daGiao,
