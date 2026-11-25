@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, welcomeTemplate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
+import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, webCanCreate, welcomeTemplate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
 import type { LaunchDraft, LaunchResult, PostRow } from "@/lib/facebook/launch-data";
 
 const vnd = (n: number | null | undefined) => (n == null ? "–" : Math.round(n).toLocaleString("vi-VN"));
@@ -21,6 +21,8 @@ const SHAPES: [Shape, string][] = [
 
 export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], drafts: savedDrafts = null, preselect = [], initialShape, openDraftId }: Props) {
   const router = useRouter();
+  /** Page web không tạo quảng cáo được: chỉ lưu nháp, em lên theo quy trình chuẩn. */
+  const manualOnly = !webCanCreate(pageId);
   const [drafts, setDrafts] = useState<LaunchDraft[]>(savedDrafts ?? []);
   const [startTime, setStartTime] = useState("");
   const [draftMsg, setDraftMsg] = useState<string | null>(null);
@@ -110,7 +112,11 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
       const body = await res.json().catch(() => null);
       if (!res.ok || !body?.draft) return setDraftMsg(body?.error ?? `Chưa lưu được (lỗi ${res.status}).`);
       setDrafts((xs) => [body.draft, ...xs]);
-      setDraftMsg("Đã lưu nháp. Chưa tạo gì trên Meta.");
+      setDraftMsg(
+        manualOnly
+          ? `Đã lưu nháp số ${body.draft.id} "${body.draft.name}". Anh nhắn em "lên nháp số ${body.draft.id}" để em lên theo quy trình chuẩn. Chưa tạo gì trên Meta.`
+          : "Đã lưu nháp. Chưa tạo gì trên Meta."
+      );
     } catch {
       setDraftMsg("Chưa lưu được, anh thử lại.");
     }
@@ -205,7 +211,7 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
           </div>
         </div>
       ) : null}
-      {draftMsg ? <p className="sub" style={{ margin: "8px 4px" }}>{draftMsg}</p> : null}
+      {draftMsg && !items ? <p className="sub" style={{ margin: "8px 4px" }}>{draftMsg}</p> : null}
 
       <div className="card">
         <h2>1. Chọn bài ({picked.length} đã chọn, tối đa {MAX_ITEMS})</h2>
@@ -388,10 +394,23 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
             {items.length} quảng cáo · {plan.reduce((s, c) => s + c.adsets.length, 0)} nhóm · {plan.length} chiến dịch · tổng ngân sách <b>{vnd(total)}đ/ngày</b> (chi thật ~{vnd(total * 1.111)}đ) khi bật hết.
           </p>
           {startTime ? <p className="sub">Hẹn bắt đầu chạy: {startTime.replace("T", " ")} (giờ Việt Nam). Quảng cáo vẫn tạo tạm dừng; anh bật thì Meta chờ tới giờ này mới chạy.</p> : null}
+          {manualOnly ? (
+            <div className="warnbox" style={{ margin: "8px 0" }}>
+              <b>Web không tạo được quảng cáo cho page {pageName}</b> (page không thuộc doanh nghiệp của web, không chia sẻ được). Anh bấm <b>Lưu nháp</b>, rồi
+              nhắn em số nháp: em lên theo quy trình chuẩn (tạo bằng nick anh, gắn mẫu chào trên Trình quản lý quảng cáo) và báo anh duyệt trước khi đăng.
+            </div>
+          ) : null}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => dlg.current?.showModal()}>Tạo {items.length} quảng cáo (tạm dừng)</button>
-            <button type="button" className="secondary" onClick={saveDraft}>Lưu nháp (chưa tạo trên Meta)</button>
+            {manualOnly ? (
+              <button type="button" onClick={saveDraft}>Lưu nháp để em lên</button>
+            ) : (
+              <>
+                <button type="button" onClick={() => dlg.current?.showModal()}>Tạo {items.length} quảng cáo (tạm dừng)</button>
+                <button type="button" className="secondary" onClick={saveDraft}>Lưu nháp (chưa tạo trên Meta)</button>
+              </>
+            )}
           </div>
+          {draftMsg ? <p className={/^Đã lưu/.test(draftMsg) ? "ok" : "low"} style={{ margin: "8px 0 0" }}>{draftMsg}</p> : null}
         </div>
       ) : null}
 

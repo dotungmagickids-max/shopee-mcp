@@ -1,4 +1,5 @@
 import { loadHistory, loadLaunch } from "@/lib/facebook/launch-data";
+import { webCanCreate } from "@/lib/facebook/launch";
 import { PAGES } from "@/lib/facebook/magic-data";
 import History from "./history";
 import Launcher from "./launcher";
@@ -36,6 +37,12 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
         <p className="sub" style={{ marginTop: 8 }}>
           Bài và reel {preselect.length ? 60 : 30} ngày gần nhất của page. Mọi thứ tạo ra đều ở trạng thái <b>tạm dừng</b>; bật từng cái sau.
         </p>
+        {!webCanCreate(pageId) ? (
+          <p className="warnbox">
+            Page {PAGES[pageId]}: web chỉ <b>lưu nháp</b>, không tạo được quảng cáo (page không thuộc doanh nghiệp của web). Chọn bài, Xem trước, Lưu nháp rồi nhắn
+            em số nháp để em lên theo quy trình chuẩn.
+          </p>
+        ) : null}
         {error ? <p className="error">Không tải được bài: {error}</p> : null}
         {data?.errors.length ? <p className="error">Thiếu số: {data.errors.join("; ").slice(0, 500)}</p> : null}
       </div>
