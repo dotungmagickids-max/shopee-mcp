@@ -100,7 +100,7 @@ export default async function SuggestPage({ searchParams }: { searchParams: Prom
         <p className="sub">
           Xét {SUGGEST_RULES.days} ngày{data ? ` (${dm(data.since)} → ${dm(data.until)}, chưa tính hôm nay)` : ""}: chi Meta × 1,111, đơn và doanh thu
           Pancake theo từng quảng cáo; tồn kho Pancake POS (đồng bộ đêm); trần % theo Bảng trần. Bài lấy {POST_DAYS} ngày gần nhất của các page. Trang
-          chỉ đọc và gợi ý, không ghi gì lên Meta.
+          chỉ đọc và gợi ý, không ghi gì lên Meta. Mã thiếu bài để chạy: xem <a href="/fb/content?tab=thieu">Thiếu content gì</a>.
         </p>
         <div className="filters">
           <a href={link("nen")} className={nhan === "nen" ? "on" : ""}>Nên chạy ({SHOULD.reduce((t, l) => t + count(l), 0)})</a>

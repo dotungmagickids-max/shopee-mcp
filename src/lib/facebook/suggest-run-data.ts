@@ -16,7 +16,7 @@ import { buildSuggestions, SUGGEST_RULES, type AdStat, type CodeRow, type StockM
 
 export const POST_DAYS = 60;
 
-export type SuggestData = { since: string; until: string; rows: CodeRow[]; pageErrors: string[]; notes: string[] };
+export type SuggestData = { since: string; until: string; rows: CodeRow[]; posts: SuggestPost[]; stock: StockMap; pageErrors: string[]; notes: string[] };
 
 const msg = (e: unknown) => scrub(e instanceof Error ? e.message : String(e)).slice(0, 160);
 
@@ -88,7 +88,8 @@ export async function loadSuggest(today: string): Promise<SuggestData> {
     message: p.message,
     codes: p.codes,
     offWall: p.offWall,
+    kind: p.kind,
   }));
   const pageErrors = pages.filter((p) => p.error && !p.posts.length).map((p) => `${p.name}: ${p.error}`);
-  return { since, until, rows: buildSuggestions({ ads, posts, stock, ceilings }), pageErrors, notes };
+  return { since, until, rows: buildSuggestions({ ads, posts, stock, ceilings }), posts, stock, pageErrors, notes };
 }

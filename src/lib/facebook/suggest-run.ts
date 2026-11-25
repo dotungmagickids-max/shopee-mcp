@@ -40,6 +40,8 @@ export type SuggestPost = {
   message: string;
   codes: string[];
   offWall: boolean;
+  /** Loại bài (ảnh, video, reel…); màn Lịch content dùng để biết mã đang thiếu dạng nào. */
+  kind?: "video" | "reel" | "photo" | "other";
 };
 
 export type PostVerdict = "winner" | "rerun" | "new" | "loser" | "watch";
