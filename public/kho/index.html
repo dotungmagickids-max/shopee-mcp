@@ -2987,7 +2987,7 @@ function temOpen(sku,def){
       +'<div class="hint" style="margin-bottom:10px">Trình duyệt mở hộp in: chọn máy in tem, đúng khổ giấy tem. Mỗi tem một trang.</div>'
       +'<div class="filters"><button id="temGo" class="primary">In tem</button><button id="temClose">Đóng</button></div>';
     document.body.append(dlg);
-    const prev=()=>{const w=+$('temW').value||40,h=+$('temH').value||30,s=dlg.dataset.sku;const f=$('temPrev');f.innerHTML='';const fr=document.createElement('iframe');fr.style.cssText='border:0;width:'+w+'mm;height:'+h+'mm;display:block';fr.scrolling='no';f.append(fr);fr.srcdoc=temHtml(s,1,w,h);};
+    const prev=()=>{const w=+$('temW').value||35,h=+$('temH').value||22,s=dlg.dataset.sku;const f=$('temPrev');f.innerHTML='';const fr=document.createElement('iframe');fr.style.cssText='border:0;width:'+w+'mm;height:'+h+'mm;display:block';fr.scrolling='no';f.append(fr);fr.srcdoc=temHtml(s,1,w,h);};
     $('temW').oninput=prev;$('temH').oninput=prev;dlg.prev=prev;
     $('temClose').onclick=()=>dlg.close();
     $('temGo').onclick=async()=>{
@@ -3003,7 +3003,7 @@ function temOpen(sku,def){
     };
   }
   dlg.dataset.sku=sku;$('temSku').textContent=sku+(temCode(sku)!==sku?'  ·  mã vạch '+temCode(sku):'');
-  $('temQty').value=Math.min(200,Math.max(1,def|0||1));$('temW').value=S.settings.temW||40;$('temH').value=S.settings.temH||30;
+  $('temQty').value=Math.min(200,Math.max(1,def|0||1));$('temW').value=S.settings.temW||35;$('temH').value=S.settings.temH||22;
   dlg.prev();dlg.showModal();$('temQty').select();
 }
 function nhapAsk(msg,def){
