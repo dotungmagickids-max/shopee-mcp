@@ -8,6 +8,7 @@ import { loadStock } from "./jobs";
 import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, creativeParams, creativeParamsWithCta, explainMetaError, isCreativeIncompatible, type LaunchConfig, type LaunchItem } from "./launch";
 import { loadManualCodes, readPagePosts } from "./content-data";
 import { adsInfo, createObject, listAccounts, scrub } from "./meta";
+import { resultsFromLog, runsFromLog, uncovered, type LogRow, type LogRun, type RunResult } from "./launch-history";
 import { realSpend } from "./rules";
 
 export type PostRow = {
@@ -122,17 +123,8 @@ export async function loadLaunch(pageId: string, days = 30): Promise<LaunchData>
   return { posts: rows, accounts: (accounts ?? []).map((a) => ({ id: a.id, name: a.name })), usedNames, usedCampaigns, drafts, errors };
 }
 
-export type LaunchResult = {
-  post_id: string;
-  ad_name: string;
-  account_id: string;
-  campaign_id: string | null;
-  adset_id: string | null;
-  ad_id: string | null;
-  error: string | null;
-  /** Việc chưa làm được trọn (không phải lỗi tạo), ví dụ chưa tắt được danh mục sản phẩm. */
-  notes?: string[];
-};
+/** Kết quả một quảng cáo. `notes`: việc chưa làm được trọn (không phải lỗi tạo), ví dụ chưa tắt được danh mục sản phẩm. */
+export type LaunchResult = RunResult;
 
 async function logWrite(row: { action: string; account_id: string; target_id: string | null; target_name: string; after: unknown; ok: boolean; error: string | null }) {
   // Nhật ký lỗi không được làm hỏng lệnh đang chạy.
@@ -157,8 +149,11 @@ async function create(accountId: string, edge: Parameters<typeof createObject>[1
  * Tạo camp theo kế hoạch, tất cả ở trạng thái TẠM DỪNG. Một bài lỗi không chặn các bài khác;
  * chiến dịch CBO lỗi thì các bài trong đó đều báo lỗi. Không tự thử lại (tránh tạo trùng).
  */
-export async function runLaunch(cfg: LaunchConfig, items: LaunchItem[]): Promise<LaunchResult[]> {
+export async function runLaunch(cfg: LaunchConfig, items: LaunchItem[], onProgress?: (results: LaunchResult[]) => Promise<void>): Promise<LaunchResult[]> {
   const results: LaunchResult[] = [];
+  const progress = async () => {
+    if (onProgress) await onProgress(results).catch(() => undefined);
+  };
   for (const c of buildPlan(cfg, items)) {
     let campaignId: string | null = null;
     let campaignError: string | null = null;
@@ -179,38 +174,143 @@ export async function runLaunch(cfg: LaunchConfig, items: LaunchItem[]): Promise
         }
       }
       for (const a of set.ads) {
-      const r: LaunchResult = { post_id: a.post_id, ad_name: a.ad_name, account_id: c.account_id, campaign_id: campaignId, adset_id: adsetId, ad_id: null, error: adsetError };
+      const r: LaunchResult = {
+        post_id: a.post_id,
+        ad_name: a.ad_name,
+        account_id: c.account_id,
+        campaign_id: campaignId,
+        campaign_name: c.name,
+        adset_id: adsetId,
+        adset_name: set.name,
+        ad_id: null,
+        error: adsetError,
+      };
       results.push(r);
-      if (!campaignId || !adsetId) continue;
-      try {
-        // Tạo creative kèm lệnh tắt danh mục sản phẩm. Meta từ chối tham số đó thì tạo lại không kèm (tham số khác,
-        // không phải gửi lại lệnh cũ) và ghi chú để anh tắt tay trong Trình quản lý quảng cáo.
-        let noCatalog = true;
-        const creativeId = await create(c.account_id, "adcreatives", creativeParams(a.post_id, a.ad_name)).catch(async (e) => {
-          const first = e instanceof Error ? e.message : String(e);
-          if (!/degrees_of_freedom|product_extensions|creative_features/i.test(first)) throw e;
-          noCatalog = false;
-          r.notes = [`Chưa tắt được danh mục sản phẩm qua API (${first.slice(0, 120)}): anh tắt ở mục Nguồn quảng cáo.`];
-          return create(c.account_id, "adcreatives", creativeParams(a.post_id, a.ad_name, false));
-        });
-        try {
-          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, adsetId, creativeId));
-        } catch (e) {
-          const first = e instanceof Error ? e.message : String(e);
-          if (!isCreativeIncompatible(first)) throw e;
-          // Bài thiếu nút nhắn tin: thử đúng một lần nữa với creative có nút Messenger (tham số khác, không phải gửi lại lệnh cũ).
-          const withCta = await create(c.account_id, "adcreatives", creativeParamsWithCta(a.post_id, a.ad_name, noCatalog)).catch((e2) => {
-            throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
-          });
-          r.ad_id = await create(c.account_id, "ads", adParams(a.ad_name, adsetId, withCta)).catch((e2) => {
-            throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
-          });
-        }
-      } catch (e) {
-        r.error = e instanceof Error ? e.message : String(e);
-      }
+      if (campaignId && adsetId) await createAdInAdset(r);
+      await progress();
       }
     }
   }
   return results;
+}
+
+/**
+ * Tạo creative + quảng cáo cho một bài vào một nhóm có sẵn (dùng khi lên camp và khi bấm "Tạo lại" bài lỗi).
+ * Ghi kết quả vào `r` (ad_id hoặc error). Quảng cáo luôn ở trạng thái tạm dừng.
+ */
+export async function createAdInAdset(r: LaunchResult): Promise<LaunchResult> {
+  if (!r.adset_id) return r;
+  const adsetId = r.adset_id;
+  r.error = null;
+  try {
+    // Tạo creative kèm lệnh tắt danh mục sản phẩm. Meta từ chối tham số đó thì tạo lại không kèm (tham số khác,
+    // không phải gửi lại lệnh cũ) và ghi chú để anh tắt tay trong Trình quản lý quảng cáo.
+    let noCatalog = true;
+    const creativeId = await create(r.account_id, "adcreatives", creativeParams(r.post_id, r.ad_name)).catch(async (e) => {
+      const first = e instanceof Error ? e.message : String(e);
+      if (!/degrees_of_freedom|product_extensions|creative_features/i.test(first)) throw e;
+      noCatalog = false;
+      r.notes = [`Chưa tắt được danh mục sản phẩm qua API (${first.slice(0, 120)}): anh tắt ở mục Nguồn quảng cáo.`];
+      return create(r.account_id, "adcreatives", creativeParams(r.post_id, r.ad_name, false));
+    });
+    try {
+      r.ad_id = await create(r.account_id, "ads", adParams(r.ad_name, adsetId, creativeId));
+    } catch (e) {
+      const first = e instanceof Error ? e.message : String(e);
+      if (!isCreativeIncompatible(first)) throw e;
+      // Bài thiếu nút nhắn tin: thử đúng một lần nữa với creative có nút Messenger (tham số khác, không phải gửi lại lệnh cũ).
+      const withCta = await create(r.account_id, "adcreatives", creativeParamsWithCta(r.post_id, r.ad_name, noCatalog)).catch((e2) => {
+        throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
+      });
+      r.ad_id = await create(r.account_id, "ads", adParams(r.ad_name, adsetId, withCta)).catch((e2) => {
+        throw new Error(`${first} | Thử thêm nút nhắn tin cũng lỗi: ${e2 instanceof Error ? e2.message : String(e2)}`);
+      });
+    }
+  } catch (e) {
+    r.error = e instanceof Error ? e.message : String(e);
+  }
+  return r;
+}
+
+// ---------- Lịch sử lên camp (bảng fb_launch_runs + nhật ký fb_write_log) ----------
+
+export type SavedRun = {
+  id: number;
+  created_at: string;
+  finished_at: string | null;
+  page_id: string | null;
+  source: "web" | "nhat_ky";
+  status: "dang_chay" | "xong";
+  results: LaunchResult[];
+};
+export type HistoryRun = (SavedRun & { kind: "saved" }) | (LogRun & { kind: "log" });
+
+const RUN_COLS = "id, created_at, finished_at, page_id, source, status, results";
+const runsTableMissing = (e: { code?: string | null; message: string }) => e.code === "42P01" || e.code === "PGRST205" || /schema cache|does not exist/i.test(e.message);
+
+/** Bắt đầu một lần lên camp: lưu cấu hình và danh sách bài trước khi gọi Meta. Chưa có bảng thì trả null (vẫn lên camp). */
+export async function startRun(cfg: LaunchConfig, items: LaunchItem[]): Promise<number | null> {
+  const { data, error } = await db().from("fb_launch_runs").insert({ page_id: cfg.page_id, config: cfg, items, results: [], status: "dang_chay", source: "web" }).select("id").single();
+  return error ? null : Number(data.id);
+}
+
+export async function saveRunResults(id: number, results: LaunchResult[], done: boolean): Promise<void> {
+  await db()
+    .from("fb_launch_runs")
+    .update({ results, ...(done ? { status: "xong", finished_at: new Date().toISOString() } : {}) })
+    .eq("id", id);
+}
+
+const LOG_COLS = "id, created_at, action, account_id, target_id, target_name, ok, error, after";
+
+async function logRows(fromIso: string): Promise<LogRow[]> {
+  const { data, error } = await db().from("fb_write_log").select(LOG_COLS).like("action", "create_%").gte("created_at", fromIso).order("id").limit(3000);
+  if (error) throw new Error(`fb_write_log: ${error.message}`);
+  return (data ?? []) as LogRow[];
+}
+
+/** Lần lên camp gần đây: các lần đã lưu + các lần dựng lại từ nhật ký (trước khi có bảng lưu). Mới nhất trước. */
+export async function loadHistory(days = 14, limit = 20): Promise<{ runs: HistoryRun[]; tableReady: boolean; error: string | null }> {
+  const from = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { data, error } = await db().from("fb_launch_runs").select(RUN_COLS).gte("created_at", from).order("created_at", { ascending: false }).limit(limit);
+  const tableReady = !error;
+  if (error && !runsTableMissing(error)) return { runs: [], tableReady, error: `fb_launch_runs: ${error.message}` };
+  const saved = ((data ?? []) as SavedRun[]).map((r) => ({ ...r, kind: "saved" as const }));
+  let fromLog: HistoryRun[] = [];
+  try {
+    fromLog = runsFromLog(uncovered(await logRows(from), saved)).map((r) => ({ ...r, kind: "log" as const }));
+  } catch (e) {
+    return { runs: saved, tableReady, error: e instanceof Error ? e.message : String(e) };
+  }
+  const runs = [...saved, ...fromLog].sort((a, b) => (b.kind === "saved" ? b.created_at : b.started_at).localeCompare(a.kind === "saved" ? a.created_at : a.started_at));
+  return { runs: runs.slice(0, limit), tableReady, error: null };
+}
+
+export async function loadRun(id: number): Promise<SavedRun | null> {
+  const { data, error } = await db().from("fb_launch_runs").select(RUN_COLS).eq("id", id).maybeSingle();
+  if (error) throw new Error(runsTableMissing(error) ? "Chưa có bảng fb_launch_runs (chưa áp migration)." : `fb_launch_runs: ${error.message}`);
+  return (data as SavedRun | null) ?? null;
+}
+
+/**
+ * Lưu một lần lên camp dựng từ nhật ký (lệnh id `fromId`..`toId`) thành lần đã lưu, để tạo lại bài lỗi và ghi kết
+ * quả vào đó. Đã lưu rồi (cùng khoảng thời gian) thì trả lần đã lưu.
+ */
+export async function saveLogRun(fromId: number, toId: number): Promise<SavedRun> {
+  const { data, error } = await db().from("fb_write_log").select(LOG_COLS).gte("id", fromId).lte("id", toId).order("id");
+  if (error) throw new Error(`fb_write_log: ${error.message}`);
+  const rows = (data ?? []) as LogRow[];
+  if (!rows.length) throw new Error("Không còn nhật ký của lần lên camp này.");
+  const started = rows[0].created_at;
+  const finished = rows[rows.length - 1].created_at;
+  const { data: dup } = await db().from("fb_launch_runs").select(RUN_COLS).eq("created_at", started).eq("source", "nhat_ky").maybeSingle();
+  if (dup) return dup as SavedRun;
+  const { results, page_id } = resultsFromLog(rows);
+  const ins = await db()
+    .from("fb_launch_runs")
+    .insert({ created_at: started, finished_at: finished, page_id, config: {}, items: [], results, status: "xong", source: "nhat_ky" })
+    .select(RUN_COLS)
+    .single();
+  if (ins.error) throw new Error(runsTableMissing(ins.error) ? "Chưa có bảng fb_launch_runs (chưa áp migration)." : `fb_launch_runs: ${ins.error.message}`);
+  return ins.data as SavedRun;
 }

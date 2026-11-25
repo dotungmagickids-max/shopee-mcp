@@ -1,6 +1,6 @@
 import { adminFromRequest } from "@/lib/autopilot/admin-auth";
 import { validate, type LaunchConfig, type LaunchItem } from "@/lib/facebook/launch";
-import { runLaunch } from "@/lib/facebook/launch-data";
+import { runLaunch, saveRunResults, startRun } from "@/lib/facebook/launch-data";
 import { PAGES } from "@/lib/facebook/magic-data";
 import { listAccounts } from "@/lib/facebook/meta";
 import { sameOrigin } from "@/lib/video/ui-auth";
@@ -44,9 +44,13 @@ export async function POST(request: Request) {
   // Chỉ tài khoản đang theo dõi (đã bỏ BOSS TUYỀN 3/4/5/6).
   const allowed = new Set((await listAccounts()).map((a) => a.id));
   if (cfg.accounts.some((a) => !allowed.has(a))) return json({ error: "Có tài khoản quảng cáo không được phép dùng." }, 400);
+  // Lưu lần lên camp trước khi gọi Meta, cập nhật sau mỗi quảng cáo: tải lại trang hay mất kết nối vẫn xem lại được.
+  const runId = await startRun(cfg, items).catch(() => null);
   try {
-    return json({ results: await runLaunch(cfg, items) });
+    const results = await runLaunch(cfg, items, runId ? (r) => saveRunResults(runId, r, false) : undefined);
+    if (runId) await saveRunResults(runId, results, true).catch(() => undefined);
+    return json({ results, run_id: runId });
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    return json({ error: e instanceof Error ? e.message : String(e), run_id: runId }, 500);
   }
 }
