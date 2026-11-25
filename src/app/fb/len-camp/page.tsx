@@ -1,5 +1,6 @@
-import { loadLaunch } from "@/lib/facebook/launch-data";
+import { loadHistory, loadLaunch } from "@/lib/facebook/launch-data";
 import { PAGES } from "@/lib/facebook/magic-data";
+import History from "./history";
 import Launcher from "./launcher";
 
 export const dynamic = "force-dynamic";
@@ -13,12 +14,14 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
   const preselect = (sp.posts ?? "").split(",").filter((x) => /^\d+_\d+$/.test(x)).slice(0, 30);
   let data: Awaited<ReturnType<typeof loadLaunch>> | null = null;
   let error: string | null = null;
+  const historyP = loadHistory().catch((e) => ({ runs: [], tableReady: false, error: e instanceof Error ? e.message : String(e) }));
   try {
     // Bài chọn sẵn từ màn Đề xuất có thể cũ hơn 30 ngày (bài thắng chạy lâu): đọc rộng ra 60 ngày.
     data = await loadLaunch(pageId, preselect.length ? 60 : 30);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
+  const history = await historyP;
   return (
     <>
       <div className="card">
@@ -37,6 +40,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
         {data?.errors.length ? <p className="error">Thiếu số: {data.errors.join("; ").slice(0, 500)}</p> : null}
       </div>
       {data ? <Launcher pageId={pageId} pageName={PAGES[pageId]} posts={data.posts} accounts={data.accounts} usedNames={data.usedNames} usedCampaigns={data.usedCampaigns} drafts={data.drafts} preselect={preselect} initialShape={sp.shape === "1-n-1" || sp.shape === "1-1-n" || sp.shape === "n-1-1" ? sp.shape : undefined} openDraftId={Number(sp.draft) || undefined} /> : null}
+      <History runs={history.runs} accounts={data?.accounts ?? []} pages={PAGES} tableReady={history.tableReady} error={history.error} />
     </>
   );
 }

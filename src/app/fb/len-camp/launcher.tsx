@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildPlan, MAX_ITEMS, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, welcomeTemplate, type LaunchConfig, type LaunchItem, type Shape } from "@/lib/facebook/launch";
 import type { LaunchDraft, LaunchResult, PostRow } from "@/lib/facebook/launch-data";
@@ -19,6 +20,7 @@ const SHAPES: [Shape, string][] = [
 ];
 
 export default function Launcher({ pageId, pageName, posts, accounts, usedNames, usedCampaigns = [], drafts: savedDrafts = null, preselect = [], initialShape, openDraftId }: Props) {
+  const router = useRouter();
   const [drafts, setDrafts] = useState<LaunchDraft[]>(savedDrafts ?? []);
   const [startTime, setStartTime] = useState("");
   const [draftMsg, setDraftMsg] = useState<string | null>(null);
@@ -166,6 +168,7 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
         setResults(body.results);
         setItems(null);
         setPicked([]);
+        router.refresh(); // cập nhật Lịch sử lên camp bên dưới
       }
     } catch {
       setError("Không gọi được máy chủ. Kiểm tra trong Trình quản lý quảng cáo trước khi tạo lại, tránh tạo trùng.");
@@ -396,7 +399,8 @@ export default function Launcher({ pageId, pageName, posts, accounts, usedNames,
         <div className="card">
           <h2>Kết quả</h2>
           <p>
-            Tạo được {results.filter((r) => r.ad_id).length}/{results.length} quảng cáo, tất cả đang <b>tạm dừng</b>.
+            Tạo được {results.filter((r) => r.ad_id).length}/{results.length} quảng cáo, tất cả đang <b>tạm dừng</b>. Kết quả đã lưu ở{" "}
+            <a href="#lich-su">Lịch sử lên camp</a> bên dưới: tải lại trang không mất, bài lỗi bấm Tạo lại ở đó.
           </p>
           {results.some((r) => r.ad_id) ? (
             <div className="warnbox" style={{ marginBottom: 10 }}>
