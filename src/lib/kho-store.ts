@@ -355,6 +355,29 @@ export async function giaoMarksGet(): Promise<Record<string, Record<string, unkn
   return Object.fromEntries(rows.map((r) => [r.khoa, r.du_lieu ?? {}]));
 }
 
+/* Đơn đã hủy sau khi kho đóng: kho ghi đã lấy lại hàng hay hàng đã đi mất. */
+export const HUY_KQ = ["lay-lai", "da-di"] as const;
+
+export function cleanHuyMark(v: any): Record<string, unknown> {
+  const o: Record<string, unknown> = {};
+  if (v?.state != null) {
+    const s = String(v.state);
+    if (s === "" || (HUY_KQ as readonly string[]).includes(s)) o.state = s;
+  }
+  if (v?.note != null) o.note = String(v.note).trim().slice(0, 300);
+  return o;
+}
+
+export async function huyMarksGet(): Promise<Record<string, Record<string, unknown>>> {
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const rows = await allRows<{ khoa: string; du_lieu: Record<string, unknown> }>(() => db().from("kho_ghi_chu").select("khoa, du_lieu").eq("pham_vi", "huy-sau-dong").gte("cap_nhat", since).order("khoa"));
+  return Object.fromEntries(rows.map((r) => [r.khoa, r.du_lieu ?? {}]));
+}
+
+export async function huyMarkSet(ma: string, duLieu: unknown): Promise<void> {
+  await notesMerge("huy-sau-dong", { [ma]: duLieu }, cleanHuyMark);
+}
+
 export async function giaoMarkSet(ma: string, duLieu: unknown): Promise<void> {
   await notesMerge("giao-vtp-xl", { [ma]: duLieu }, cleanGiaoMark);
 }

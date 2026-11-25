@@ -1,7 +1,7 @@
 /** Tra đơn cho bàn đóng hàng: chọn đúng đơn theo mã kho quét và rút gọn sản phẩm. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, mergeVtpReturns, shapeOrder, reportAgeDays, shapeGiao, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, shapeVtpMail, vtpMailDoc, vtpWaitingPickup } from "../src/lib/kho";
+import { altSkus, applyPushedStock, applyShopeeStock, arrangeBody, blockReason, carrierGroup, checkKhoKey, endOfTodayVN, exchangeKind, guessSku, labelGroups, mergeVtpReturns, shapeOrder, reportAgeDays, shapeGiao, shapeHuy, shapePancakeReturn, shapePancakeXuat, shapeShopeeReturn, shapeShopeeXuat, shapeVtpMail, vtpMailDoc, vtpWaitingPickup } from "../src/lib/kho";
 
 const info = (display_id: string, barcode: string, mau: string, size: string) => ({
   name: "Áo dài tay ADT25002",
@@ -263,6 +263,14 @@ describe("kiện hoàn đang chờ về", () => {
     assert.equal(shapeGiao(row.ma, d, "2026-11-20").kq, "giao");
     assert.equal(shapeGiao(row.ma, d, "2026-11-20", true).kq, "hoan");
     assert.equal(shapeGiao(row.ma, d, "2026-11-19", true).kq, undefined);
+  });
+
+  it("đơn hủy gần đây: đủ mã trên tem, kênh, giờ hủy, đã lấy hàng chưa; không mang thông tin khách", () => {
+    const o = { id: "2611245CX01V93", system_id: 501554, order_sources_name: "Shopee", status: 6, updated_at: "2026-11-24T02:16:08.626172", partner: { extend_code: "SPXVN000000001" }, bill_full_name: "x", bill_phone_number: "0900000000" };
+    const h = shapeHuy(o);
+    assert.deepEqual(h, { id: "2611245CX01V93", sys: "501554", kenh: "Shopee", codes: ["2611245CX01V93", "501554", "SPXVN000000001"], huyLuc: Date.parse("2026-11-24T02:16:08.626Z"), daLay: false });
+    assert.equal(shapeHuy({ id: 1, order_sources_name: "Tiktok", last_update_status_at: "2026-11-24T01:00:00", updated_at: "2026-11-24T05:00:00" }).huyLuc, Date.parse("2026-11-24T01:00:00Z"));
+    assert.equal(shapeHuy({ id: 2, order_sources_name: "Facebook", partner: { picked_up_at: "2026-11-24T01:00:00", order_number_vtp: "PKE1" } }).daLay, true);
     assert.deepEqual(shapeGiao("PKE1", { status: "", reason: "", ngay: "2026-11-20", first: 0 }, "2026-11-20"), { ma: "PKE1", id: "", channel: "Viettel Post", status: "", reason: "", items: [], since: null, ngay: "2026-11-20", con: true });
   });
   it("hoàn Viettel: mail + đơn hoàn một phần của Pancake, không lấy đơn đang hoàn của Pancake, không trùng", () => {

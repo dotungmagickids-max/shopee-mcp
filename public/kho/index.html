@@ -371,6 +371,12 @@ table.t td.z{color:#b6bcc6}
   </div>
   <div class="hint" id="soatInfo" style="margin:8px 0"></div>
   <div class="cards" id="soatCards"></div>
+  <div id="huyBox" hidden style="border:2px solid var(--red);border-radius:10px;padding:12px;margin:10px 0 16px;background:#fff5f5">
+    <h3 style="margin:0 0 6px;font-size:16px;color:var(--red)">Đơn đã hủy sau khi đóng: lấy lại hàng, KHÔNG giao cho hãng vận chuyển</h3>
+    <div class="hint" id="huyInfo" style="margin:0 0 8px;white-space:normal"></div>
+    <div class="filters" style="margin:0 0 8px"><label><input type="checkbox" id="huyAll"> Hiện cả đơn đã xử lý</label></div>
+    <table class="t"><thead><tr><th class="num">STT</th><th>Mã đơn</th><th>Kênh</th><th>Mã kho đã quét</th><th>Đóng lúc</th><th>Hủy lúc</th><th>Hãng</th><th>Xử lý</th></tr></thead><tbody id="tbHuy"></tbody></table>
+  </div>
   <div id="chuaBox" hidden style="border:1px solid #e3b4b4;border-radius:10px;padding:12px;margin:10px 0 16px;background:#fffafa">
     <h3 style="margin:0 0 6px;font-size:15px">Đơn chưa đóng: lý do và việc cần xử lý</h3>
     <div class="hint" id="chuaInfo" style="margin:0 0 8px"></div>
@@ -1412,8 +1418,16 @@ function mockCloudPost(b){
   }
   if(b.action==='laylech'){s.lech=s.lech||[];for(const e of b.rows||[])if(!s.lech.some(x=>x.id===e.id))s.lech.push(e);save();return {saved:(b.rows||[]).length,skipped:0};}
   if(b.action==='nhaphoan'){s.nhap=s.nhap||[];let n=0;for(const e of b.rows||[])if(!s.nhap.some(x=>x.id===e.id)){s.nhap.push(e);n++;}save();return {saved:n,skipped:(b.rows||[]).length-n};}
+  if(b.action==='huymark'){s.huy=s.huy||{};s.huy[b.ma]=Object.assign({},s.huy[b.ma],b.du_lieu,{at:Date.now()});save();return {ok:true};}
   if(b.action==='giaomark'){s.giao=s.giao||{};s.giao[b.ma]=Object.assign({},s.giao[b.ma],b.du_lieu,{at:Date.now()});save();return {ok:true};}
   s.marks[b.khoa]=Object.assign({},s.marks[b.khoa],b.du_lieu,{at:Date.now()});save();return {ok:true};
+}
+/* đơn giả đã hủy: lấy vài video đã đóng để thấy danh sách khớp */
+function mockHuy(){
+  const v=S.videos.concat(MOCKSV().videos.map(svVideo)).filter(x=>x.mode==='DH').slice(-3),now=Date.now();
+  const rows=v.map((x,i)=>({id:x.orderId||x.code,sys:x.sysId||'',kenh:i===1?'Facebook':'Shopee',codes:[x.code,x.orderId,x.sysId].filter(Boolean).map(norm),huyLuc:now-(i+1)*3600000,daLay:i===2}));
+  rows.push({id:'KHONGDONG01',sys:'',kenh:'Shopee',codes:['KHONGDONG01'],huyLuc:now,daLay:false});
+  return {at:now,rows,marks:MOCKSV().huy||{},errors:[]};
 }
 function mockGiao(){
   const d=86400000,now=Date.now(),day=dayStr(new Date(now-d)),cu=dayStr(new Date(now-3*d));
@@ -1431,7 +1445,7 @@ function mockGiao(){
 }
 async function apiPost(body,timeout){
   if(TEST){
-    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'||body.action==='giaomark'||body.action==='nhaphoan'||body.action==='laylech'){await sleep(120);return mockCloudPost(body);}
+    if(body.action==='ngay'||body.action==='video'||body.action==='hoanmark'||body.action==='giaomark'||body.action==='huymark'||body.action==='nhaphoan'||body.action==='laylech'){await sleep(120);return mockCloudPost(body);}
     await sleep(600);
     const bad=body.orders.filter(x=>/10004$/.test(x)),ok=body.orders.filter(x=>!/10004$/.test(x));
     if(body.action==='chuanbi')return {done:ok,failed:bad.map(id=>({id,reason:'Shopee không trả khung giờ lấy hàng nào (lỗi giả)'}))};
@@ -1458,6 +1472,7 @@ async function api(params,timeout){
     if(params.nhaphoan)return {entries:MOCKSV().nhap||[]};
     if(params.laylech)return {entries:MOCKSV().lech||[]};
     if(params.giaovtp)return mockGiao();
+    if(params.huy)return mockHuy();
     if(params.sanxuat)return mockSx();
     if(/^KHONGCO/.test(params.ma))return {found:false};
     return {found:true,order:{id:'GIA-'+params.ma.slice(-4),source:'Shopee (đơn giả)',status_name:/^HUY/.test(params.ma)?'Đã hủy':'Chờ đóng',cancelled:/^HUY/.test(params.ma)},items:MOCK.items};
@@ -3067,6 +3082,7 @@ async function soatReload(sync){
   if(!SOAT.err){try{await soatLoadOld(sync);}catch(e){SOAT.oldErr=e.message||e.name;}}
   renderSoat();
   soatResolve();
+  if(sync)huyLoad();else renderHuy();
 }
 function renderSoat(){
   const day=SOAT.day,data=SOAT.data,want=new Set(data.codes);
@@ -3350,6 +3366,54 @@ function sxRenderDat(mk,d){
 }
 /* ---------- đơn chưa đóng: gom lý do, lập danh sách cho CSKH ---------- */
 const CHUA={info:new Map(),busy:false,err:'',kenh:''};
+/* ---------- Đơn đã hủy sau khi đóng (anh Tùng dặn 25/11/2026): đơn có video đóng hàng mà nay đã hủy trên Pancake.
+   Kho lấy lại gói hàng, không giao cho hãng. Danh sách đơn hủy 5 ngày lấy từ dịch vụ; so với video đóng hàng 45 ngày trên máy và máy chủ.
+   Ghi "đã lấy lại" chỉ lưu sổ của phần mềm, không đổi gì trên Pancake hay sàn. ---------- */
+const HUY={rows:[],marks:{},at:0,err:'',busy:false};
+async function huyLoad(){
+  if(!cloudOn()||HUY.busy)return;
+  HUY.busy=true;
+  try{const d=await api({huy:1},30000);if(!d||!Array.isArray(d.rows))throw new Error(d&&d.error||'máy chủ trả sai dạng');HUY.rows=d.rows;HUY.marks=d.marks||{};HUY.at=Date.now();HUY.err=(d.errors||[]).join('; ');}
+  catch(e){HUY.err='Chưa tải được danh sách đơn hủy ('+(e.name==='AbortError'?'quá thời gian chờ':e.message||e.name)+')';}
+  HUY.busy=false;renderHuy();
+}
+function huyList(){
+  const mine=new Set(S.videos.map(v=>v.fileName));
+  const dh=S.videos.concat(S.remote?[]:SOAT.cloud.filter(v=>!mine.has(v.fileName))).filter(v=>v.mode==='DH');
+  const by=new Map();for(const v of dh)for(const k of videoKeys(v)){const o=by.get(k);if(!o||o.startedAt<v.startedAt)by.set(k,v);}
+  const out=[];
+  for(const r of HUY.rows){
+    const v=r.codes.map(c=>by.get(norm(c))).find(Boolean);
+    if(!v)continue;
+    const key=norm(r.id||r.codes[0]),m=HUY.marks[key]||{};
+    out.push({key,r,v,state:m.state||'',note:m.note||'',at:m.at||0});
+  }
+  return out.sort((a,b)=>(!!a.state-!!b.state)||(b.v.startedAt-a.v.startedAt));
+}
+async function huyMark(x,state){
+  HUY.marks[x.key]=Object.assign({},HUY.marks[x.key],{state,at:Date.now()});renderHuy();
+  try{await apiPost({action:'huymark',ma:x.key,du_lieu:{state}},15000);}
+  catch(e){banner('Chưa lưu được đơn '+x.key+': '+(e.message||e.name)+'. Bấm lại sau.','err');}
+}
+function renderHuy(){
+  const box=$('huyBox');if(!box)return;
+  const list=huyList(),open=list.filter(x=>!x.state),all=$('huyAll').checked;
+  box.hidden=!HUY.err&&!list.length;if(box.hidden)return;
+  $('huyInfo').textContent=(HUY.err?HUY.err+'. ':'')+(open.length?open.length+' đơn kho đã đóng, nay khách hoặc sàn đã hủy. Tìm gói hàng theo mã, rút ra khỏi chỗ chờ giao, rồi bấm "Đã lấy lại". Đơn hãng đã lấy thì báo CSKH chặn đơn.':'Không còn đơn hủy nào cần lấy lại.')+(HUY.at?' Số lấy lúc '+vnTime(HUY.at).slice(11,16)+'.':'');
+  const tb=$('tbHuy');tb.textContent='';
+  const tm=t=>t?vnTime(t).slice(0,16):'';
+  (all?list:open).forEach((x,i)=>{
+    const tr=document.createElement('tr');if(x.state)tr.style.opacity='.6';
+    const cell=(t,cls)=>{const td=document.createElement('td');td.textContent=t;if(cls)td.className=cls;tr.append(td);return td;};
+    cell(i+1,'num');cell(x.r.id,'code');cell(x.r.kenh);cell(x.v.code,'code');cell(tm(x.v.startedAt));cell(tm(x.r.huyLuc));
+    cell(x.r.daLay?'ĐÃ LẤY HÀNG':'Chưa lấy',x.r.daLay?'warn':'');
+    const act=document.createElement('td');
+    const btn=(t,f,cls)=>{const b=document.createElement('button');b.textContent=t;if(cls)b.className=cls;b.onclick=f;act.append(b);};
+    if(x.state){act.append(x.state==='lay-lai'?'Đã lấy lại ':'Hàng đã đi ');btn('Mở lại',()=>huyMark(x,''));}
+    else{btn('Đã lấy lại',()=>huyMark(x,'lay-lai'),'primary');btn('Hàng đã đi',()=>huyMark(x,'da-di'));}
+    tr.append(act);tb.append(tr);
+  });
+}
 const KENH_ORDER=['Shopee','Facebook','TikTok'];
 /* nhóm kênh của đơn: theo nguồn đơn trên Pancake; chưa tra xong thì đoán theo dạng mã */
 function chuaKenh(code,source){
@@ -3698,7 +3762,7 @@ $('btnXuatTem').onclick=()=>xuatTem(XUAT.sel,'các đơn đang chọn');$('xTem'
 $('btnSoatClear').onclick=soatClear;$('btnNgoaiClear').onclick=ngoaiClear;
 $('btnHoanLoad').onclick=hoanLoad;nhapWire();$('hFrom').onchange=async()=>{S.settings=Object.assign({},S.settings,{hoanFrom:$('hFrom').value});try{await kvSet('settings',S.settings);}catch(e){}renderHoan();};$('hKenh').onchange=renderHoan;$('hOnly').onchange=renderHoan;$('btnHoanCsv').onclick=hoanCsv;
 $('btnXuatSoat').onclick=xuatToSoat;$('btnXuatPrint').onclick=()=>{if(!XUAT.sel.length){banner('Chưa có đơn nào để in.','warn');return;}window.print();};
-$('sDay').onchange=()=>soatReload(true);   /* đổi ngày: lấy danh sách ngày đó từ máy chủ, máy mở thư mục riêng không có sẵn */$('btnSoatReload').onclick=()=>soatReload(true);$('sAll').onchange=renderSoat;$('btnSoatCsv').onclick=soatCsv;$('btnChuaCopy').onclick=chuaCopy;$('btnChuaCsv').onclick=chuaCsv;$('cAll').onchange=renderChua;
+$('sDay').onchange=()=>soatReload(true);   /* đổi ngày: lấy danh sách ngày đó từ máy chủ, máy mở thư mục riêng không có sẵn */$('huyAll').onchange=renderHuy;$('btnSoatReload').onclick=()=>soatReload(true);$('sAll').onchange=renderSoat;$('btnSoatCsv').onclick=soatCsv;$('btnChuaCopy').onclick=chuaCopy;$('btnChuaCsv').onclick=chuaCsv;$('cAll').onchange=renderChua;
 $('tDay').onchange=()=>{if($('tDay').value){$('sDay').value=$('tDay').value;soatReload(true);}};$('btnTienCopy').onclick=chuaCopy;
 $('btnGiaoLoad').onclick=()=>giaoOpen(true);$('gLoc').onchange=renderGiao;$('gQ').oninput=renderGiao;
 $('btnTienReload').onclick=async()=>{if(S.remote){try{await remoteVideos();}catch(e){banner('Chưa lấy được số mới: '+(e.message||e.name),'err');}}soatReload(true);};
