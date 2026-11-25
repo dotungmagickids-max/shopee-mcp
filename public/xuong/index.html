@@ -221,6 +221,7 @@ function mock(){
 function mockTinh(d){
   for(const x of d.los){
     x.conNo=x.soCat-x.khoDem;x.choVe=x.trangThai==='dang_ve'&&x.conNo>0;
+    x.conTra=x.soCat-x.daGiao;if(x.maTranTra===undefined)x.maTranTra=x.maTran;if(!x.theoMauTra)x.theoMauTra=(x.theoMau||[]).map(c=>({mau:c.mau,conTra:c.conNo}));
     const tre=x.choVe&&x.henTra?soNgay(x.henTra,d.homNay):0;x.ngayTre=Math.max(0,tre);
     x.nhan=x.conNo<=0?{k:'ok',t:'Đủ lô'}:!x.henTra?{k:'warn',t:'Chưa hẹn ngày'}:tre>0?{k:'late',t:'Trễ '+tre+' ngày'}:tre===0?{k:'warn',t:'Hẹn hôm nay'}:{k:'idle',t:'Còn '+(-tre)+' ngày'};
   }
@@ -233,7 +234,8 @@ function mockTinh(d){
   }
   const mo=d.los.filter(x=>x.choVe);
   d.tomTat={loTre:mo.filter(x=>x.ngayTre>0).length,conNo:mo.reduce((a,x)=>a+x.conNo,0),veHomNay:0,phieuHomNay:0,
-    choCat:d.don.reduce((a,p)=>a+p.choCat,0),choKhoDem:d.los.reduce((a,x)=>a+x.choKhoDem,0),phieuChoCat:d.don.filter(p=>p.choCat>0).length};
+    choCat:d.don.reduce((a,p)=>a+p.choCat,0),choKhoDem:d.los.reduce((a,x)=>a+x.choKhoDem,0),phieuChoCat:d.don.filter(p=>p.choCat>0).length,
+    conTra:d.los.filter(x=>x.trangThai!=='dong').reduce((a,x)=>a+Math.max(0,x.conTra),0)};
 }
 let MOCK=null;
 const MOCKP=[];
@@ -370,7 +372,7 @@ function dauThe(ma,dong){
 function ve(){
   const d=S.data;
   const info=$('info');
-  info.textContent=S.err||(S.busy&&!d?'Đang đọc sổ hàng xưởng…':d?('Số lấy lúc '+hhmm(S.at)+(S.busy?' · đang tải lại…':'')+' · hôm nay '+day(d.homNay,true)+'. Còn nợ = số đã cắt − số kho Magickids đã đếm.'):'');
+  info.textContent=S.err||(S.busy&&!d?'Đang đọc sổ hàng xưởng…':d?('Số lấy lúc '+hhmm(S.at)+(S.busy?' · đang tải lại…':'')+' · hôm nay '+day(d.homNay,true)+'. Còn phải trả = số đã cắt − số xưởng đã trả. Kho Magickids đếm lại khi nhận hàng.'):'');
   info.classList.toggle('err',!!S.err);
   for(const b of $('tabs').children)b.classList.toggle('on',b.dataset.t===S.tab);
   const cards=$('cards'),body=$('body');cards.textContent='';body.textContent='';
@@ -379,7 +381,7 @@ function ve(){
   if(!d)return;
   const t=d.tomTat;
   const kpi=(v,l,bad)=>{const k=mk('div','kpi'+(bad?' bad':''));k.append(mk('b','',num(v)),mk('span','',l));cards.append(k);};
-  kpi(t.conNo,'cái còn nợ (đã cắt, chưa trả đủ)');
+  kpi(t.conTra!=null?t.conTra:t.conNo,'cái xưởng còn phải trả (đã cắt, chưa trả)');
   kpi(t.loTre,'lô trễ hẹn trả',t.loTre>0);
   kpi(t.phieuChoCat,'phiếu chờ cắt'+(t.choCat?' · '+num(t.choCat)+' cái':''));
   if(S.tab==='don')veDon(d,body);
@@ -448,12 +450,13 @@ function veDon(d,body){
       mk('span',p.trangThai==='xong'?'ok':p.trangThai==='cho_cat'?'amber':'m',p.nhan));
     const dong2=p.id==null?'Lô '+p.soPhieu+' · lô cũ, sổ chưa có phiếu đặt'+(p.ngayCat?' · cắt '+day(p.ngayCat,true):''):((p.ngayDat?'Đặt ngày '+day(p.ngayDat,true):'Chưa ghi ngày đặt')+(p.tongDat!=null?' · tổng đặt '+num(p.tongDat):''));
     const top2=mk('div','top');
-    top2.append(mk('span','m',dong2),mk('span','owe'+(p.conNo>0?'':' m'),p.chuaDoiSoat&&!p.conNo?'?':num(p.conNo)));
-    const sum=[dauThe(p.ma,[top,top2]),o4([p.id==null?['—','đặt (chưa có phiếu)']:[num(p.tongDat),'đặt'],[num(p.daCat),'đã cắt'],[num(p.daGiao),'đã giao'],[num(p.khoDem),'kho đã đếm']])];
+    const conTra=d.los.filter(x=>x.ma===p.ma&&p.los.includes(x.lo)&&x.trangThai!=='dong').reduce((a,x)=>a+Math.max(0,x.conTra!=null?x.conTra:x.conNo),0);
+    top2.append(mk('span','m',dong2),mk('span','owe'+(conTra>0?'':' m'),num(conTra)));
+    const sum=[dauThe(p.ma,[top,top2]),o4([p.id==null?['—','đặt (chưa có phiếu)']:[num(p.tongDat),'đặt'],[num(p.daCat),'đã cắt'],[num(p.daGiao),'xưởng đã trả'],[num(p.khoDem),'kho đã đếm']])];
     const det=[];
-    det.push(mk('div','','Còn nợ (đã cắt, kho chưa đếm được): '+(p.chuaDoiSoat&&!p.conNo?'chưa đối soát':num(p.conNo)+' cái')+(p.choCat>0?' · Chờ cắt: '+num(p.choCat)+' cái':'')));
+    det.push(mk('div','','Còn phải trả (đã cắt, xưởng chưa trả): '+num(conTra)+' cái'+(p.choCat>0?' · Chờ cắt: '+num(p.choCat)+' cái':'')));
     if(p.choCat>0)det.push(mk('div',p.duKienCat?'m':'amber',p.duKienCat?'Dự kiến cắt '+day(p.duKienCat,true):'Chưa có ngày dự kiến cắt'));
-    if(p.daGiao>p.khoDem)det.push(mk('div','amber','Xưởng đã giao '+num(p.daGiao-p.khoDem)+' cái kho chưa đếm xong: chưa trừ vào còn nợ.'));
+    if(p.daGiao>p.khoDem)det.push(mk('div','m','Xưởng đã trả '+num(p.daGiao-p.khoDem)+' cái kho Magickids chưa đếm xong.'));
     if(p.maTran)det.push(mk('div','sec','Số đặt theo màu × size'),bang(p.maTran,'Đặt',false));
     else if(p.theoMau.length)det.push(mk('div','','Đặt: '+p.theoMau.map(c=>c.mau+' '+num(c.so)).join(' · ')+' (chưa chia size)'));
     det.push(nutNhapDon(d,p));
@@ -469,9 +472,10 @@ function tomLo(x){
   const chua=x.trangThai==='chua_doi_soat';
   const top=mk('div','top');top.append(mk('span','code',x.ma+' · '+x.lo),mk('span',lopNhan(x.nhan.k),x.nhan.t));
   const top2=mk('div','top');
-  top2.append(mk('span','m',(x.henTra?'Hẹn trả '+day(x.henTra,true):'Chưa có ngày hẹn')),mk('span','owe'+(x.choVe&&x.ngayTre>0?' late':x.conNo>0?'':' m'),chua?'?':num(Math.max(0,x.conNo))));
-  const bar=mk('div','bar'),i=document.createElement('i');i.style.width=(x.soCat>0?Math.min(100,Math.round(x.khoDem*100/x.soCat)):0)+'%';bar.append(i);
-  return [dauThe(x.ma,[top,top2]),bar,o4([[num(x.soCat),'cắt'],[num(x.daGiao),'đã giao'],[chua?'—':num(x.khoDem),'kho đã đếm'],[chua?'?':num(Math.max(0,x.conNo)),'còn nợ']])];
+  const ct=x.conTra!=null?x.conTra:x.conNo;
+  top2.append(mk('span','m',(x.henTra?'Hẹn trả '+day(x.henTra,true):'Chưa có ngày hẹn')),mk('span','owe'+(ct>0&&x.ngayTre>0?' late':ct>0?'':' m'),num(Math.max(0,ct))));
+  const bar=mk('div','bar'),i=document.createElement('i');i.style.width=(x.soCat>0?Math.min(100,Math.round(x.daGiao*100/x.soCat)):0)+'%';bar.append(i);
+  return [dauThe(x.ma,[top,top2]),bar,o4([[num(x.soCat),'cắt'],[num(x.daGiao),'xưởng đã trả'],[chua?'—':num(x.khoDem),'kho đã đếm'],[num(Math.max(0,ct)),'còn phải trả']])];
 }
 function dongSx(x){
   const sx=x.sx||{},tt=[sx.ngayChot?'Chốt sản xuất '+day(sx.ngayChot,true):'',sx.xuong?'Gia công: '+sx.xuong:'',sx.vaiVe?'Vải về '+day(sx.vaiVe,true):'',sx.thongTin?'Tiến độ: '+sx.thongTin:''].filter(Boolean);
@@ -479,17 +483,19 @@ function dongSx(x){
 }
 function veTra(d,body){
   const ll=locThang(body,d.los,thangLo(d));
-  const ds=loc(body,'tra',[['cho','Còn nợ',ll.filter(x=>x.choVe)],['tre','Trễ hẹn',ll.filter(x=>x.choVe&&x.ngayTre>0)],['tat','Tất cả',ll]]);
+  const conTra=x=>x.trangThai!=='dong'&&(x.conTra!=null?x.conTra:x.conNo)>0;
+  const ds=loc(body,'tra',[['cho','Còn phải trả',ll.filter(conTra)],['tre','Trễ hẹn',ll.filter(x=>conTra(x)&&x.ngayTre>0)],['tat','Tất cả',ll]]);
   if(!ds.length){body.append(mk('div','m',d.los.length?'Không có lô nào ở nhóm này.':'Sổ chưa có lô cắt nào.'));return;}
   for(const x of ds){
     const chua=x.trangThai==='chua_doi_soat',det=[];
-    if(x.maTran)det.push(mk('div','sec','Còn nợ theo màu × size'),bang(x.maTran,'Còn nợ',true));
-    else if(x.theoMau.length)det.push(mk('div','','Còn nợ: '+x.theoMau.map(c=>c.mau+' '+num(Math.max(0,c.conNo))).join(' · ')+' (chưa chia được theo size)'));
-    else if(chua)det.push(mk('div','m','Lô mới có số theo sổ xưởng, kho Magickids chưa đếm: chưa tính còn nợ.'));
-    if(x.conNo<0)det.push(mk('div','amber','Trả thừa '+num(-x.conNo)+' cái so với số cắt.'));
+    const mtt=x.maTranTra!==undefined?x.maTranTra:x.maTran,tmt=x.theoMauTra||(x.theoMau||[]).map(c=>({mau:c.mau,conTra:c.conNo})),ct=x.conTra!=null?x.conTra:x.conNo;
+    if(mtt)det.push(mk('div','sec','Còn phải trả theo màu × size'),bang(mtt,'Còn phải trả',true));
+    else if(tmt.length)det.push(mk('div','','Còn phải trả: '+tmt.map(c=>c.mau+' '+num(Math.max(0,c.conTra))).join(' · ')+' (chưa chia được theo size)'));
+    if(ct<0)det.push(mk('div','amber','Trả thừa '+num(-ct)+' cái so với số cắt.'));
+    if(chua)det.push(mk('div','m','Kho Magickids chưa đếm lô này.'));
     det.push(mk('div','sec','Các đợt trả'));
     if(x.lanVe.length){
-      const tb=mk('table'),bd=mk('tbody'),hr=mk('tr'),coSua=x.lanVe.some(v=>v.sua);hr.append(mk('th','','Ngày'),mk('th','num','Xưởng giao'),mk('th','num','Kho đã đếm'));
+      const tb=mk('table'),bd=mk('tbody'),hr=mk('tr'),coSua=x.lanVe.some(v=>v.sua);hr.append(mk('th','','Ngày'),mk('th','num','Xưởng trả'),mk('th','num','Kho đã đếm'));
       if(coSua)hr.append(mk('th',''));
       const th=mk('thead');th.append(hr);
       for(const v of x.lanVe){

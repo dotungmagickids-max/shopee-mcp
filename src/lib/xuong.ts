@@ -103,6 +103,12 @@ export type XuongLo = Omit<KhoLo, "ghiChu" | "lanVe"> & {
   /** Phiếu đặt mà lô nối tới; null khi lô không nối với phiếu nào. */
   phieuId: number | null;
   daGiao: number;
+  /** Còn phải trả theo số XƯỞNG ĐÃ TRẢ: số cắt − số xưởng giao (anh 25/11: phía xưởng tính theo hàng trả, không theo kho đếm). */
+  conTra: number;
+  /** Còn phải trả màu × size; null khi chưa chia size được. */
+  maTranTra: MaTran | null;
+  /** Còn phải trả theo màu, dùng khi chưa chia được size. */
+  theoMauTra: { mau: string; conTra: number }[];
   lanVe: XuongLanVe[];
 };
 
@@ -142,7 +148,7 @@ export interface XuongDon {
 export interface XuongSo {
   at: number;
   homNay: string;
-  tomTat: TomTat & { phieuChoCat: number };
+  tomTat: TomTat & { phieuChoCat: number; conTra: number };
   /** false = database chưa có phần ghi thông tin sản xuất (migration 0026). */
   ghiThongTin: boolean;
   don: XuongDon[];
@@ -171,6 +177,48 @@ function datTheoMau(dong: PhieuDat["dong"]): { mau: string; so: number }[] {
   const m = new Map<string, number>();
   for (const d of dong) m.set(d.mau.trim() || "Chưa rõ màu", (m.get(d.mau.trim() || "Chưa rõ màu") ?? 0) + d.so_luong);
   return [...m].map(([mau, so]) => ({ mau, so }));
+}
+
+const khoaO = (mau: string, size: string) => `${mau.trim().toLowerCase()}|${size.trim()}`;
+
+/**
+ * Còn phải trả của một lô theo số xưởng đã trả (dòng không ghi số xưởng thì lấy số kho đếm, như `daGiaoCua`).
+ * Trả ma trận màu × size (null khi có dòng không size) và tổng theo màu.
+ */
+export function conTraCua(t: TienDoLo): { conTra: number; maTran: MaTran | null; theoMau: { mau: string; conTra: number }[] } {
+  const o = new Map<string, { mau: string; size: string; cat: number; tra: number }>();
+  const lay = (mau: string, size: string) => {
+    const k = khoaO(mau, size);
+    let x = o.get(k);
+    if (!x) o.set(k, (x = { mau: mau.trim(), size: size.trim(), cat: 0, tra: 0 }));
+    return x;
+  };
+  for (const d of t.lo.dong) lay(d.mau, d.size).cat += d.so_cat;
+  for (const h of t.lanVe) for (const d of h.dong) lay(d.mau, d.size).tra += d.xuong_giao ?? d.kho_dem ?? 0;
+  const os = [...o.values()];
+  const conTra = os.reduce((a, x) => a + x.cat - x.tra, 0);
+  const m = new Map<string, { mau: string; conTra: number }>();
+  for (const x of os) {
+    const k = x.mau.toLowerCase();
+    const r = m.get(k) ?? { mau: x.mau || "Chưa rõ màu", conTra: 0 };
+    r.conTra += x.cat - x.tra;
+    m.set(k, r);
+  }
+  let maTran: MaTran | null = null;
+  if (os.length && !os.some((x) => x.size === "")) {
+    const sizes = [...new Set(os.map((x) => x.size))].sort((a, b) => soSize(a) - soSize(b) || a.localeCompare(b, "vi"));
+    const mau = [...new Set(os.map((x) => x.mau))];
+    const hang = mau.map((mm) => {
+      const v = sizes.map((s) => {
+        const x = o.get(khoaO(mm, s));
+        return x ? x.cat - x.tra : null;
+      });
+      return { mau: mm, o: v, tong: v.reduce<number>((a, x) => a + (x ?? 0), 0) };
+    });
+    const tong = sizes.map((_, i) => hang.reduce((a, h) => a + (h.o[i] ?? 0), 0));
+    maTran = { sizes, hang, tong, tongCong: tong.reduce((a, b) => a + b, 0) };
+  }
+  return { conTra, maTran, theoMau: maTran ? [] : [...m.values()] };
 }
 
 /** Số xưởng giao của một lô: dòng nào không ghi số xưởng thì lấy số kho đếm. */
@@ -230,6 +278,7 @@ export function soChoXuong(so: SoSanXuat, homNay: string, now: number = Date.now
       ...x,
       phieuId: t.lo.phieu_dat_id != null && coPhieu.has(t.lo.phieu_dat_id) ? t.lo.phieu_dat_id : null,
       daGiao: daGiaoCua(t),
+      ...(({ conTra, maTran, theoMau }) => ({ conTra, maTranTra: maTran, theoMauTra: theoMau }))(conTraCua(t)),
       lanVe: t.lanVe
         .map((h) => {
           const sua = suaDuoc(h);
@@ -263,7 +312,11 @@ export function soChoXuong(so: SoSanXuat, homNay: string, now: number = Date.now
   return {
     at: kho.at,
     homNay,
-    tomTat: { ...kho.tomTat, phieuChoCat: kho.phieu.length },
+    tomTat: {
+      ...kho.tomTat,
+      phieuChoCat: kho.phieu.length,
+      conTra: los.filter((x) => x.trangThai !== "dong").reduce((a, x) => a + Math.max(0, x.conTra), 0),
+    },
     // Database đã chạy 0026 thì mỗi lô đọc về có khóa `ngay_chot` (kể cả null); chưa chạy thì không có khóa này.
     ghiThongTin: so.los.length === 0 || so.los.some((l) => l.ngay_chot !== undefined),
     don,
