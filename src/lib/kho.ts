@@ -1002,7 +1002,7 @@ export async function cancelledRecent(now = Date.now()): Promise<{ at: number; r
   const from = Math.floor(now / 1000) - 5 * 86400;
   try {
     for (let page = 1; page <= 6; page++) {
-      const body = await getJson("orders", { page_size: 100, page_number: page, "filter_status[]": [6], update_status: "updated_at", start_date_time: from, end_date_time: Math.floor(now / 1000) + 3600, option_sort: "last_update_status_at_desc" });
+      const body = await getJson("orders", { page_size: 100, page_number: page, "filter_status[]": [6], updateStatus: "updated_at", startDateTime: from, endDateTime: Math.floor(now / 1000) + 3600 });
       for (const o of body?.data ?? []) rows.push(shapeHuy(o));
       const total = Number(body?.total_pages ?? 0);
       if (!body?.data?.length || (total && page >= total)) break;

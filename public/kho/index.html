@@ -114,6 +114,7 @@ body.rec #recinfo{color:var(--red)}
 #check{border:2px solid var(--accent);border-radius:10px;padding:8px;max-height:46vh;overflow:auto}
 #check h4{margin:0 0 6px;font-size:17px}
 #check.full{border-color:var(--dh);background:#eefaf3}
+#check.bad{border:3px solid var(--red);background:#fff0f0}#check.bad h4{color:var(--red);font-size:22px}
 .it{display:grid;grid-template-columns:52px 1fr auto;gap:8px;align-items:center;padding:6px 4px;border-top:1px solid var(--line)}
 .it img{width:52px;height:52px;object-fit:cover;border-radius:6px;background:#e5e7eb}
 .it .n{font-size:13px;color:var(--mut)}
@@ -1539,7 +1540,11 @@ async function lookupOrder(recId,code,pre){
       c.state='ok';c.order=d.order||{};
       c.items=(d.items||[]).map(it=>({name:it.name||'',detail:it.detail||'',image:it.image||'',quantity:Math.max(1,+it.quantity||1),scanned:0,
         sku:norm(it.display_id)||norm(it.barcode),codes:[norm(it.barcode),norm(it.display_id)].filter(Boolean)}));
-      if(c.order.cancelled){banner('ĐƠN ĐÃ HỦY – KHÔNG ĐÓNG ĐƠN NÀY: '+code,'err');beep('err');}
+      /* đơn đóng hàng mà đã hủy (anh Tùng dặn 25/11/2026): báo to cho người đóng, giữ dòng báo tới khi quét đơn khác */
+      if(c.order.cancelled&&S.rec&&S.rec.id===recId&&S.rec.mode==='DH'){
+        banner('ĐƠN ĐÃ HỦY – KHÔNG ĐÓNG ĐƠN NÀY: '+code+'. Để hàng riêng, quét lại mã đơn để dừng quay.','err');beep('err');S.keepBanner=true;
+        bigAlert('ĐƠN ĐÃ HỦY','Không đóng đơn '+code+'. Để hàng riêng, không giao cho hãng vận chuyển.');
+      }
     }
   }catch(e){
     if(S.check!==c)return;
@@ -1657,6 +1662,7 @@ function renderCheck(){
   if(c.state==='loading'){h.textContent='Đang tra sản phẩm của đơn…';tail();return;}
   if(c.state==='notfound'){h.textContent=hh?'Không tìm thấy đơn của kiện này. Vẫn quét từng sản phẩm để ghi lại.':'Không tìm thấy đơn này – không soát được sản phẩm. Máy vẫn đang quay.';tail();return;}
   if(c.state==='error'){h.textContent=hh?'Không tra được đơn (mất mạng?). Vẫn quét từng sản phẩm để ghi lại.':'Không tra được đơn (mất mạng?) – không soát được sản phẩm. Máy vẫn đang quay.';tail();return;}
+  if(c.order.cancelled&&!hh){el.className='bad';h.textContent='ĐƠN ĐÃ HỦY: không đóng đơn này, để hàng riêng';return;}
   const n=checkCount(c);
   h.textContent=(c.order.source||'Đơn')+' · '+(c.order.status_name||'')+' · đã quét '+n.got+'/'+n.need+(c.wrong?' · sai '+c.wrong:'');
   if(n.got===n.need)el.className='full';
