@@ -1,5 +1,5 @@
 import { adminFromRequest } from "@/lib/autopilot/admin-auth";
-import { validate, type LaunchConfig, type LaunchItem } from "@/lib/facebook/launch";
+import { validate, WEB_CANNOT_CREATE, webCanCreate, type LaunchConfig, type LaunchItem } from "@/lib/facebook/launch";
 import { runLaunch, saveRunResults, startRun } from "@/lib/facebook/launch-data";
 import { PAGES } from "@/lib/facebook/magic-data";
 import { listAccounts } from "@/lib/facebook/meta";
@@ -41,6 +41,10 @@ export async function POST(request: Request) {
   const bad = validate(cfg, items);
   if (bad) return json({ error: bad }, 400);
   if (!PAGES[cfg.page_id]) return json({ error: "Page không thuộc Magickids." }, 400);
+  // Chặn trước khi gọi Meta: tạo sẽ lỗi quyền ở bước nhóm và để lại chiến dịch rỗng.
+  if (!webCanCreate(cfg.page_id)) {
+    return json({ error: `Web không tạo được quảng cáo cho page ${WEB_CANNOT_CREATE[cfg.page_id]} (page không thuộc doanh nghiệp của web). Anh bấm Lưu nháp rồi nhắn em để lên theo quy trình chuẩn.` }, 400);
+  }
   // Chỉ tài khoản đang theo dõi (đã bỏ BOSS TUYỀN 3/4/5/6).
   const allowed = new Set((await listAccounts()).map((a) => a.id));
   if (cfg.accounts.some((a) => !allowed.has(a))) return json({ error: "Có tài khoản quảng cáo không được phép dùng." }, 400);

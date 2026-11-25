@@ -148,6 +148,14 @@ export function buildPlan(cfg: LaunchConfig, items: LaunchItem[]): PlannedCampai
  * Tên mẫu chào đã lưu trong Trình quản lý quảng cáo của từng page (mẫu lưu theo page, dùng chung mọi tài khoản
  * quảng cáo). Kiểm 23/11/2026. Page chưa có trong danh sách thì nhắc chung chung.
  */
+/**
+ * Page web KHÔNG tạo quảng cáo được: page không thuộc doanh nghiệp BOSS TUYEN (tài khoản hệ thống của web không có quyền)
+ * và không chia sẻ được cho doanh nghiệp đó (anh xác nhận 23/11 và 25/11/2026). Page này lên theo quy trình chuẩn:
+ * anh lưu nháp trên web, em tạo bằng nick anh rồi chỉnh trên Trình quản lý quảng cáo.
+ */
+export const WEB_CANNOT_CREATE: Record<string, string> = { "159993608025607": "Magic Kids" };
+export const webCanCreate = (pageId: string): boolean => !WEB_CANNOT_CREATE[pageId];
+
 export const welcomeTemplate = (pageName: string): string | null => {
   const code = pageShort(pageName);
   if (code === "MG" || code === "MGO") return "New.Nút";

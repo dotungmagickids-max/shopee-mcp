@@ -1,7 +1,7 @@
 /** FB Magic Tool, phần lên camp: đọc mã trong bài, đặt tên, chia tài khoản, tham số gửi Meta luôn tạm dừng. */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, welcomeTemplate, type LaunchConfig } from "../src/lib/facebook/launch";
+import { adParams, adsetParams, buildPlan, campaignParams, codesFromText, nextName, pageShort, planBudget, suggestAdsetName, suggestCampaignName, validate, webCanCreate, welcomeTemplate, type LaunchConfig } from "../src/lib/facebook/launch";
 
 const cfg = (p: Partial<LaunchConfig> = {}): LaunchConfig => ({
   page_id: "159993608025607", accounts: ["111111", "222222"], budget: 200_000, structure: "abo",
@@ -14,6 +14,11 @@ const items = [
 ];
 
 describe("FB Magic Tool: lên camp", () => {
+  it("page Magic Kids: web không tạo được, chỉ lưu nháp; page khác tạo được", () => {
+    assert.equal(webCanCreate("159993608025607"), false);
+    assert.equal(webCanCreate("341841645677834"), true);
+  });
+
   it("đọc mã trong bài và đặt tên kế tiếp", () => {
     assert.deepEqual(codesFromText("Set bd26011 và BD24066 về hàng. SĐT 0912345678"), ["BD26011", "BD24066"]);
     assert.equal(nextName(["BD26011"], []), "BD26011-P01-V01");
