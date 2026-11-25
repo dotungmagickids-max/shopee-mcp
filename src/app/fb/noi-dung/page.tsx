@@ -38,7 +38,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         <p className="sub" style={{ marginTop: 8 }}>
           Bài và reel đã đăng từ {fmt(since)} đến {fmt(until)} (giờ Việt Nam), tối đa {MAX_RANGE_DAYS} ngày một lần xem. Mã sản phẩm đọc từ nội dung
           bài (dạng BD26011, ADT25002), thiếu thì lấy từ tên quảng cáo của bài, hoặc anh bấm nút Sửa mã để gắn tay. Nhãn Đang chạy QC nghĩa là bài có
-          quảng cáo đang bật và có chi tiền trong 7 ngày gần nhất. Trang không ghi gì lên Meta hay Pancake.
+          quảng cáo đang bật và có chi tiền trong 7 ngày gần nhất. Trang không ghi gì lên Meta hay Pancake. Mã nào đang thiếu ảnh, thiếu video: xem{" "}
+          <a href="/fb/content?tab=thieu">Thiếu content gì</a>.
         </p>
         {data.notes.length ? <p className="error">{data.notes.join("; ").slice(0, 400)}</p> : null}
       </div>

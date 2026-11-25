@@ -107,3 +107,27 @@
 .fb .post .adnote.v-rerun { background: #b7791f; }
 .fb .post .adnote.v-new { background: #1877f2; }
 .fb .post .adnote.v-loser { background: #b42318; }
+
+/* Lịch content */
+.fb .calgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+.fb .calhead { text-align: center; font-size: 12px; font-weight: 700; color: var(--muted); }
+.fb .calcell { min-height: 110px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column; gap: 6px; }
+.fb .calcell.today { border-color: #1877f2; box-shadow: 0 0 0 2px rgba(24,119,242,.2); }
+.fb .calcell.past { opacity: .75; }
+.fb .calrow { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; }
+.fb .calitem { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); border-left: 4px solid #6b7280; background: var(--code-bg); font-size: 13px; min-width: 0; }
+.fb .calitem.ch-facebook { border-left-color: #1877f2; }
+.fb .calitem.ch-shopee { border-left-color: #ee4d2d; }
+.fb .calitem.ch-tiktok { border-left-color: #111; }
+.fb .calitem.st-de_xuat { border-style: dashed; }
+.fb .calitem.st-da_dang { opacity: .7; }
+.fb .calitem.st-bo { opacity: .5; text-decoration: line-through; }
+.fb .calitem .caltitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.fb .chtag { font-size: 11px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fb .chtag.ch-facebook { color: #1877f2; }
+.fb .chtag.ch-shopee { color: #ee4d2d; }
+.fb .calloose { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.fb .planform { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end; margin: 10px 0; }
+.fb .planform label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.fb .planform label.wide { grid-column: span 2; }
+@media (max-width: 800px) { .fb .calgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fb .calhead { display: none; } .fb .planform label.wide { grid-column: auto; } }
