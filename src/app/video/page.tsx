@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/supabase";
 import { listVideoUsers, videoConfig, videoConfigured, type VideoUser } from "@/lib/video/client";
 import { listVideos } from "@/lib/video/ops";
@@ -20,8 +21,18 @@ const fmt = (ms: unknown) =>
 
 const input = { width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", font: "inherit" } as const;
 
-async function safeList(userId: number, type: "draft" | "post"): Promise<{ list: Row[]; error?: string }> {
+// Lưu tạm (Hải thêm 25/11/2026: mỗi lần mở trang hỏi lại Shopee, mất 1–1,5 giây).
+// Danh sách video giữ 60 giây; sau thao tác (có ?msg) thì đọc thẳng Shopee để thấy ngay video vừa tải.
+const listVideosCached = unstable_cache(
+  async (userId: number, type: "draft" | "post") => ((await listVideos(userId, type)).list as Row[] | undefined) ?? [],
+  ["video-list-v1"],
+  { revalidate: 60 }
+);
+const listVideoUsersCached = unstable_cache(async () => listVideoUsers(), ["video-users-v1"], { revalidate: 600 });
+
+async function safeList(userId: number, type: "draft" | "post", fresh: boolean): Promise<{ list: Row[]; error?: string }> {
   try {
+    if (!fresh) return { list: await listVideosCached(userId, type) };
     const r = await listVideos(userId, type);
     return { list: ((r.list as Row[] | undefined) ?? []) };
   } catch (err) {
@@ -45,13 +56,13 @@ export default async function VideoPage({ searchParams }: { searchParams: Promis
   let users: VideoUser[] = [];
   let usersError: string | undefined;
   try {
-    users = await listVideoUsers();
+    users = msg ? await listVideoUsers() : await listVideoUsersCached();
   } catch (err) {
     usersError = err instanceof Error ? err.message : String(err);
   }
   const userId = users.length ? Number(users[0].user_id) : null;
   const [drafts, posted] = userId
-    ? await Promise.all([safeList(userId, "draft"), safeList(userId, "post")])
+    ? await Promise.all([safeList(userId, "draft", !!msg), safeList(userId, "post", !!msg)])
     : [{ list: [] as Row[] }, { list: [] as Row[] }];
   const { data: jobs } = await db()
     .from("video_jobs")
