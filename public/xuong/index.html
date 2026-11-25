@@ -42,6 +42,7 @@ main{max-width:760px;margin:0 auto;padding:12px}
 .loc button{padding:6px 12px;font-size:14px;border-radius:999px}
 .locthang{margin-bottom:8px}
 .locthang select{margin-left:8px;padding:6px 8px;font-size:15px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.nhapdon{margin:8px 0 4px}
 .loc button.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
 .card>summary{cursor:pointer;padding:10px 12px;list-style:none}
@@ -453,6 +454,7 @@ function veDon(d,body){
     if(p.daGiao>p.khoDem)det.push(mk('div','amber','Xưởng đã giao '+num(p.daGiao-p.khoDem)+' cái kho chưa đếm xong: chưa trừ vào còn nợ.'));
     if(p.maTran)det.push(mk('div','sec','Số đặt theo màu × size'),bang(p.maTran,'Đặt',false));
     else if(p.theoMau.length)det.push(mk('div','','Đặt: '+p.theoMau.map(c=>c.mau+' '+num(c.so)).join(' · ')+' (chưa chia size)'));
+    det.push(nutNhapDon(d,p));
     if(p.los.length){
       const b=mk('button','','Xem tiến độ lô '+p.los.join(', '));b.type='button';
       b.onclick=()=>{for(const x of d.los)if(x.ma===p.ma&&p.los.includes(x.lo))S.open.add('tra'+x.id);S.loc.tra='tat';S.thang='';S.tab='tra';ve();};
@@ -890,6 +892,34 @@ function veXem(body){
   k2.append(mk('b','','Bên nhận xác nhận'),mk('div','sh-nhan','(ký, ghi rõ họ tên)'));
   ky.append(k1,k2);sh.append(ky);
   body.append(sh);
+}
+
+/* ---------- nút nhập phiếu ngay trong thẻ đơn: mở màn Nhập phiếu / Làm phiếu đã điền sẵn mã, lô, màu, size ---------- */
+function moNhap(d,loai,ma,lo,dot,don){
+  NP.p=nhapMoi(loai);NP.msg=null;
+  const n=nguonNhap(d,loai).find(x=>x.ma===ma&&(loai==='cat'?x.dot===(dot||''):x.lo===lo));
+  if(n)layNguonNhap(n);
+  else if(don)layNguonNhap({ma,lo:lo||'',dot:dot||'',mt:don.maTran,mau:(don.theoMau||[]).map(c=>c.mau),goi:'đặt'});
+  else{NP.p.ma=ma;NP.p.lo=lo||'';NP.p.dot=dot||'';}
+  S.tab='nhap';ve();scrollTo(0,0);
+}
+function moVai(d,p){
+  PH.p=phieuMoi('vai');PH.xem=false;PH.luu=null;
+  const lo=p.los.length?p.los.join(', '):(p.id!=null?p.soPhieu:'');
+  const n=nguonSo(d).find(x=>x.ma===p.ma&&x.lo===lo);
+  if(n)layTuSo(n);else layTuSo({ma:p.ma,lo,mt:p.maTran,theoMau:p.theoMau||[]});
+  S.tab='phieu';ve();scrollTo(0,0);
+}
+function nutNhapDon(d,p){
+  const w=mk('div','loc nhapdon');
+  const nut=(ten,fn)=>{const b=mk('button','',ten);b.type='button';b.onclick=e=>{e.preventDefault();fn();};w.append(b);};
+  if(p.id!=null&&p.choCat>0)nut('Nhập phiếu cắt',()=>moNhap(d,'cat',p.ma,'',p.soPhieu,p));
+  if(p.trangThai!=='xong')for(const lo of p.los){
+    const x=d.los.find(q=>q.ma===p.ma&&q.lo===lo);
+    if(x&&x.trangThai!=='dong')nut('Nhập phiếu đóng gói'+(p.los.length>1?' lô '+lo:''),()=>moNhap(d,'giao',p.ma,lo));
+  }
+  nut('Làm phiếu đặt vải',()=>moVai(d,p));
+  return w;
 }
 
 /* ---------- nhập phiếu cắt và phiếu đóng gói: số vào Sổ hàng xưởng ngay ----------
