@@ -325,7 +325,8 @@ table.t td.z{color:#b6bcc6}
     <input id="hScan" autocomplete="off" spellcheck="false" placeholder="Kiện hoàn vừa về: quét hoặc gõ mã đơn, mã vận đơn rồi Enter" style="min-width:min(420px,100%);font-size:17px;padding:8px 10px">
     <button id="btnHScan" class="primary">Ghi đã về</button>
   </div>
-  <div class="hint" style="margin:0 0 8px;white-space:normal">Không cần quay video. Phiếu mờ thì gõ 5 số cuối trở lên của mã, máy tự tìm. Kiện ghi về xong, sản phẩm của đơn tự đưa sang mục Nhập hàng hoàn.</div>
+  <div class="hint" style="margin:0 0 8px;white-space:normal">Quét mã kiện → bóc hàng → chọn tình trạng ngay bên dưới. Không cần quay video; chỉ quay khi nghi khách gian dối (để khiếu nại). Phiếu mờ thì gõ 5 số cuối trở lên. Sản phẩm của đơn tự sang mục Nhập hàng hoàn.</div>
+  <div id="hQuick" hidden style="border:2px solid var(--dh);border-radius:10px;padding:10px 12px;margin:0 0 12px;background:#f3fbf6"></div>
   <div class="filters">
     <button id="btnHoanLoad" class="primary">Tải danh sách kiện hoàn</button>
     <select id="hKenh"><option value="">Tất cả kênh</option><option>Shopee</option><option>Facebook</option><option>TikTok</option></select>
@@ -2606,11 +2607,11 @@ async function hoanArrive(raw){
     if(hit.length>1){banner('Mã '+q+' khớp '+hit.length+' kiện ('+hit.slice(0,4).map(x=>x.r.id).join(', ')+(hit.length>4?'…':'')+'). Gõ thêm vài số để chọn đúng một kiện.','warn');beep('warn');return;}
     if(hit.length){
       const x=hit[0];
-      if(x.arrived){banner('Kiện '+x.r.id+' ĐÃ GHI VỀ trước đó'+(x.mark.at?' lúc '+vnTime(x.mark.at).slice(0,16):'')+'. Không ghi lại.','warn');beep('warn');return;}
+      if(x.arrived){banner('Kiện '+x.r.id+' ĐÃ GHI VỀ trước đó'+(x.mark.at?' lúc '+vnTime(x.mark.at).slice(0,16):'')+'. Không ghi lại; sửa tình trạng ở ô bên dưới nếu cần.','warn');beep('warn');hoanQuick(x.key,x.r.id,x.r.channel,Array.isArray(x.mark.need)?x.mark.need:hoanNeedOf(x.r.items));return;}
       const need=hoanNeedOf(x.r.items);
       await hoanMarkSave(x.key,{state:x.mark.state||'khongvideo',need,code:norm(x.r.id)});
       banner('ĐÃ VỀ: kiện '+x.r.id+' ('+x.r.channel+')'+(need.length?' · '+need.map(u=>u.sku+(u.quantity>1?' ×'+u.quantity:'')).join(', ')+'. Đã đưa sang Nhập hàng hoàn.':' · chưa có sản phẩm của đơn, kiểm tay.'),need.length?'ok':'warn');beep(need.length?'ok':'warn');
-      renderHoan();return;
+      renderHoan();hoanQuick(x.key,x.r.id,x.r.channel,need);return;
     }
     /* không có trong danh sách hoàn: tra đơn trên Pancake (chỉ đọc) */
     let d=null;try{d=checkOn()?await api({ma:q},10000):null;}catch(e){}
@@ -2620,9 +2621,42 @@ async function hoanArrive(raw){
     const need=hoanNeedOf(d.items);
     await hoanMarkSave(key,{state:'khongvideo',need,code:norm(d.order.id),codes:[q],note:'Về ngoài danh sách hoàn (quét mã)'});
     banner('VỀ NGOÀI DANH SÁCH: đơn '+d.order.id+' ('+(d.order.source||'')+', '+(d.order.status_name||'')+') không có trong danh sách hoàn. Đã ghi về, sản phẩm đưa sang Nhập hàng hoàn. Báo chị Hiền kiểm đơn.','warn');beep('warn');
-    renderHoan();
+    renderHoan();hoanQuick(key,d.order.id,d.order.source||'',need);
   }catch(e){banner('CHƯA GHI ĐƯỢC kiện '+q+': '+(e.message||e.name)+'. Quét lại.','err');beep('err');}
   finally{hoanArriveBusy=false;}
+}
+/* Ô chọn tình trạng ngay sau khi quét (anh Tùng chốt 25/11/2026): kho bóc hàng, chọn tình trạng tại chỗ.
+   Nghi khách gian dối thì bấm quay video mở kiện để làm bằng chứng khiếu nại. */
+function hoanQuick(key,id,kenh,need){
+  const box=$('hQuick');box.textContent='';box.hidden=false;
+  const mk=(tag,cls,txt)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(txt!=null)x.textContent=txt;return x;};
+  const m=HOAN.marks[key]||{};
+  const h=mk('div','',null);h.style.cssText='font-size:17px;font-weight:700;margin-bottom:4px';h.textContent='Kiện '+id+(kenh?' · '+kenh:'');box.append(h);
+  box.append(mk('div','hint',need&&need.length?'Trong đơn: '+need.map(u=>u.sku+(u.quantity>1?' ×'+u.quantity:'')).join(', '):'Chưa có sản phẩm của đơn: kiểm tay.'));
+  const row=mk('div','filters');row.style.margin='8px 0 6px';
+  const note=document.createElement('input');note.placeholder='Ghi chú: thiếu món gì, lỗi gì (không ghi tên, SĐT khách)';note.value=m.note||'';note.style.cssText='width:100%;margin-bottom:4px';
+  const st=mk('div','hint',m.state&&m.state!=='khongvideo'?'Đã ghi: '+(HOAN_STATES.find(z=>z[0]===m.state)||['',''])[1]:'Chưa chọn tình trạng.');
+  const save=async patch=>{
+    try{await hoanMarkSave(key,patch);st.textContent='Đã ghi: '+(HOAN_STATES.find(z=>z[0]===(HOAN.marks[key]||{}).state)||['',''])[1]+(patch.note!=null&&patch.note?' · '+patch.note:'');$('banner').hidden=true;renderHoan();beep('ok');}
+    catch(e){banner('Chưa lưu được tình trạng kiện '+id+': '+(e.message||e.name),'err');beep('err');}
+  };
+  for(const [val,label] of HOAN_STATES.filter(z=>['dung','thieu','loi','sai'].includes(z[0]))){
+    const b=mk('button',val==='dung'?'primary':'',label);if(m.state===val)b.style.outline='3px solid var(--amber)';
+    b.onclick=()=>{
+      if(val!=='dung'&&!note.value.trim()){banner('Ghi rõ vào ô ghi chú: '+label.toLowerCase()+' thế nào, rồi bấm lại.','warn');beep('warn');note.focus();return;}
+      save({state:val,note:note.value.trim()}).then(()=>{for(const x of row.querySelectorAll('button'))x.style.outline='';b.style.outline='3px solid var(--amber)';$('hScan').focus();});
+    };
+    row.append(b);
+  }
+  const v=mk('button','danger','Nghi gian dối: quay video');
+  v.onclick=async()=>{
+    if(!S.started||S.viewOnly||S.remote){banner('Máy này không quay được video. Mở phần mềm bằng máy có camera ở quầy, bấm "Bắt đầu ca làm", rồi quét lại mã kiện ở mục Hàng hoàn → Quay mới.','warn');beep('warn');return;}
+    if(note.value.trim())await save({note:note.value.trim()});
+    box.hidden=true;go('rec','HH');startRec(norm(id),'gian-doi');
+    banner('ĐANG QUAY kiện '+id+' (nghi gian dối). Mở kiện trước camera, xong thì quét lại mã kiện để dừng và lưu.','warn');
+  };
+  row.append(v);
+  box.append(row,note,st);
 }
 function hoanScanWire(){
   const fire=()=>{const v=$('hScan').value;$('hScan').value='';hoanArrive(v).finally(()=>$('hScan').focus());};
