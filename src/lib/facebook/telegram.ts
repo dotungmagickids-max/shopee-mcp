@@ -3,6 +3,7 @@
  * được ra lệnh (TELEGRAM_OWNER_IDS) với nhân viên Shopee; token và chủ đề riêng:
  *   FB_TELEGRAM_BOT_TOKEN, FB_TELEGRAM_THREAD_ID (bỏ trống nếu là chủ đề mặc định).
  */
+import { luuTinChoAnh } from "../tin-cho-anh";
 import { createHash } from "node:crypto";
 import { db } from "../supabase";
 
@@ -73,7 +74,9 @@ export async function fbSend(text: string, replyMarkup?: unknown): Promise<numbe
     disable_web_page_preview: true,
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
-  return r?.result?.message_id ?? null;
+  const msgId = r?.result?.message_id ?? null;
+  await luuTinChoAnh("facebook", text, { coNut: !!replyMarkup, tgMessageId: msgId }); // 25/11/2026: Minh Anh chuyển Zalo anh
+  return msgId;
 }
 
 export async function fbEdit(messageId: number, text: string): Promise<void> {

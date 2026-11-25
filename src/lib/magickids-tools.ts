@@ -181,8 +181,47 @@ export function registerMagickidsTools(server: McpServer, ctx: ApiKeyContext): v
     }
   );
 
+  server.registerTool(
+    "mk_tin_cho_anh",
+    {
+      title: "Magickids: tin máy chủ chờ chuyển anh",
+      description:
+        "Tin máy chủ (Autopilot Shopee, Nhân viên Facebook, bảng việc) đã gửi vào Telegram mặc định nhưng chưa chuyển anh qua Zalo. " +
+        "Cũ trước. co_nut = tin có nút Đồng ý/Bỏ qua trên Telegram (anh duyệt trên web quản trị, không duyệt qua Zalo). Chỉ đọc.",
+      inputSchema: { toi_da: z.coerce.number().int().min(1).max(100).default(30) },
+      annotations: ro,
+    },
+    async ({ toi_da }) => {
+      try {
+        const { docTinChuaChuyen } = await import("./tin-cho-anh");
+        const ds = await docTinChuaChuyen(toi_da);
+        return { content: [{ type: "text", text: JSON.stringify(ds, null, 2) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }] };
+      }
+    }
+  );
+
   if (ctx.access !== "read_write") return;
   const add = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
+
+  server.registerTool(
+    "mk_tin_cho_anh_da_chuyen",
+    {
+      title: "Magickids: đánh dấu tin đã chuyển anh",
+      description: "Đánh dấu các tin trong mk_tin_cho_anh là đã chuyển anh (sau khi Minh Anh nhận tin gom). Không gửi gì.",
+      inputSchema: { ids: z.array(z.coerce.number().int().positive()).min(1).max(100) },
+      annotations: add,
+    },
+    async ({ ids }) => {
+      try {
+        const { danhDauDaChuyen } = await import("./tin-cho-anh");
+        return { content: [{ type: "text", text: `Đã đánh dấu ${await danhDauDaChuyen(ids)} tin.` }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }] };
+      }
+    }
+  );
 
   server.registerTool(
     "mk_add_to_inbox",
