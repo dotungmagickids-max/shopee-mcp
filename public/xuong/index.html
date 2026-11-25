@@ -899,7 +899,7 @@ function moNhap(d,loai,ma,lo,dot,don){
   NP.p=nhapMoi(loai);NP.msg=null;
   const n=nguonNhap(d,loai).find(x=>x.ma===ma&&(loai==='cat'?x.dot===(dot||''):x.lo===lo));
   if(n)layNguonNhap(n);
-  else if(don)layNguonNhap({ma,lo:lo||'',dot:dot||'',mt:don.maTran,mau:(don.theoMau||[]).map(c=>c.mau),goi:'đặt'});
+  else if(don)layNguonNhap({ma,lo:lo||dot||'',dot:dot||'',mt:don.maTran,mau:(don.theoMau||[]).map(c=>c.mau),goi:'đặt'});
   else{NP.p.ma=ma;NP.p.lo=lo||'';NP.p.dot=dot||'';}
   S.tab='nhap';ve();scrollTo(0,0);
 }
@@ -935,7 +935,7 @@ const tongDong=(p,h)=>p.sizes.reduce((a,_,i)=>a+soO(h.o[i]),0);
 function nguonNhap(d,loai){
   const ds=[];if(!d)return ds;
   if(loai==='cat'){
-    for(const p of d.don)if(p.id!=null&&p.choCat>0)ds.push({nhan:p.ma+(p.soPhieu?' · đợt '+p.soPhieu:'')+' · chờ cắt '+num(p.choCat),ma:p.ma,lo:'',dot:p.soPhieu||'',mt:p.maTran,mau:(p.theoMau||[]).map(c=>c.mau),goi:'đặt'});
+    for(const p of d.don)if(p.id!=null&&p.choCat>0)ds.push({nhan:p.ma+(p.soPhieu?' · đợt '+p.soPhieu:'')+' · chờ cắt '+num(p.choCat),ma:p.ma,lo:p.soPhieu&&!d.los.some(x=>x.ma===p.ma&&x.lo===p.soPhieu)?p.soPhieu:'',dot:p.soPhieu||'',mt:p.maTran,mau:(p.theoMau||[]).map(c=>c.mau),goi:'đặt'});
   }else{
     for(const x of d.los)if(x.trangThai!=='dong'&&(x.choVe||x.trangThai==='chua_doi_soat'))ds.push({nhan:x.ma+' · '+x.lo+(x.trangThai==='chua_doi_soat'?'':' · còn nợ '+num(Math.max(0,x.conNo))),ma:x.ma,lo:x.lo,dot:'',mt:x.maTran,mau:(x.theoMau||[]).map(c=>c.mau),goi:'còn nợ'});
   }
@@ -1045,7 +1045,7 @@ function veNhap(d,body){
   if(!p.suaId)d1.append(nutAnh,tbAnh);
   const noi=(k,i)=>{i.oninput=()=>{p[k]=i.value;p.daCo=false;};return i;};
   const [wMa,iMa]=o('Mã hàng','text',p.ma,30);noi('ma',iMa);
-  const [wLo,iLo]=o(p.loai==='cat'?'Tên lô (ví dụ L2)':'Lô','text',p.lo,30);noi('lo',iLo);
+  const [wLo,iLo]=o(p.loai==='cat'?(p.dot&&p.lo===p.dot?'Tên lô (lấy theo đơn, sửa được)':'Tên lô (ví dụ L2)'):'Lô','text',p.lo,30);noi('lo',iLo);
   if(p.suaId){iMa.disabled=true;iLo.disabled=true;}
   const r1=mk('div','row2');r1.append(wMa,wLo);d1.append(r1);
   const [wNg,iNg]=o(L.ngay,'date',p.ngay);iNg.max=homNay();noi('ngay',iNg);
