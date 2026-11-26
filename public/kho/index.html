@@ -3845,7 +3845,7 @@ function camErr(e){
 let shiftBusy=false;
 async function startShift(){
   const msg=$('gateMsg');
-  if(shiftBusy){msg.textContent='Đang mở, chờ một chút…';return;}
+  if(shiftBusy){if(!/chờ một chút/.test(msg.textContent))msg.textContent+=' (đang chạy, chờ một chút…)';return;}
   shiftBusy=true;msg.textContent='Đang mở thư mục video…';
   try{
     try{S.ac=S.ac||new AudioContext();if(S.ac.state==='suspended')S.ac.resume();}catch(e){}
@@ -3853,7 +3853,11 @@ async function startShift(){
       try{S.dir=await showDirectoryPicker({mode:'readwrite'});await kvSet('dir',S.dir);}
       catch(e){msg.textContent=e.name==='AbortError'?'Chưa chọn thư mục lưu video. Bấm lại và chọn thư mục.':'Không chọn được thư mục: '+(e.message||e.name);return;}
     }
-    if(!await checkDir(true)){msg.textContent='Chưa ghi được vào thư mục "'+(S.dir.name||'')+'". Bấm lại và chọn "Cho phép", hoặc kiểm tra Google Drive đã chạy chưa.';return;}
+    /* thư mục video nằm trên Google Drive: Drive chưa chạy thì ghi thử treo mãi, nên chỉ chờ 30 giây */
+    let dirT;
+    const dirOk=await Promise.race([checkDir(true),new Promise(r=>{dirT=setTimeout(()=>r('treo'),30000);})]);clearTimeout(dirT);
+    if(dirOk==='treo'){msg.textContent='Chưa mở được thư mục video "'+(S.dir.name||'')+'" sau 30 giây. Nếu Chrome đang hỏi quyền thì bấm "Cho phép". Nếu không thấy hỏi: mở Google Drive trên máy (biểu tượng góc phải dưới), chờ Drive chạy xong, tắt hẳn Chrome rồi mở lại trang.';return;}
+    if(!dirOk){msg.textContent='Chưa ghi được vào thư mục "'+(S.dir.name||'')+'". Bấm lại và chọn "Cho phép", hoặc kiểm tra Google Drive đã chạy chưa.';return;}
     msg.textContent='Đang mở camera…';
     ensureWorker();
     try{await startCamera();}catch(e){msg.textContent=camErr(e);return;}
