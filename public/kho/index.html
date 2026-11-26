@@ -3231,7 +3231,7 @@ async function soatReload(sync){
   if(!SOAT.err){try{await soatLoadOld(sync);}catch(e){SOAT.oldErr=e.message||e.name;}}
   renderSoat();
   soatResolve();
-  if(sync)huyLoad();else renderHuy();
+  /* anh Tùng bỏ hiển thị khung "Đơn đã hủy sau khi đóng" ngày 26/11/2026 (đã có báo ĐƠN ĐÃ HỦY lúc quét đóng hàng); giữ code để bật lại */
 }
 function renderSoat(){
   const day=SOAT.day,data=SOAT.data,want=new Set(data.codes);
