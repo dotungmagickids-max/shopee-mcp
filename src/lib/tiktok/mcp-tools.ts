@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ApiKeyContext } from "../api-keys";
 import { db } from "../supabase";
 import { isReadOnly, listAccounts, tiktokCall, tiktokConfigured, type HttpMethod } from "./client";
-import { contentConfigured, draftStatus, uploadDraft } from "./content";
+import { contentConfigured, draftStatus, listContentUsers, uploadDraft } from "./content";
 
 const text = (v: unknown): CallToolResult => ({
   content: [{ type: "text", text: typeof v === "string" ? v : JSON.stringify(v, null, 2) }],
@@ -58,16 +58,19 @@ export function registerTikTokTools(server: McpServer, ctx: ApiKeyContext): void
     "tiktok_shops",
     {
       title: "TikTok Shop: authorized shops and accounts",
-      description: "Lists TikTok Shop sellers (with shops) and creator accounts authorized for the Magickids Gateway app, their scopes and token expiry.",
+      description:
+        "Lists TikTok Shop sellers (with shops) and creator accounts authorized for the Magickids Gateway app, plus the TikTok " +
+        "channels authorized for video drafts (Magickids Content app, used by tiktok_video_draft), with token expiry.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => {
-      if (!tiktokConfigured()) return fail("TikTok Shop chưa cấu hình trên máy chủ.");
+      if (!tiktokConfigured() && !contentConfigured()) return fail("TikTok chưa cấu hình trên máy chủ.");
       try {
-        const accounts = await listAccounts();
-        return text(
-          accounts.map((a) => ({
+        const accounts = tiktokConfigured() ? await listAccounts() : [];
+        const channels = contentConfigured() ? await listContentUsers() : [];
+        return text({
+          shops: accounts.map((a) => ({
             type: a.user_type === 1 ? "creator" : "seller",
             name: a.seller_name,
             region: a.region,
@@ -75,8 +78,15 @@ export function registerTikTokTools(server: McpServer, ctx: ApiKeyContext): void
             scopes: a.scopes,
             access_token_expires: new Date(Number(a.access_expire_at)).toISOString(),
             refresh_token_expires: a.refresh_expire_at ? new Date(Number(a.refresh_expire_at)).toISOString() : null,
-          }))
-        );
+          })),
+          video_draft_channels: channels.map((c) => ({
+            name: c.display_name ?? c.open_id,
+            open_id: c.open_id,
+            scopes: c.scopes,
+            access_token_expires: new Date(Number(c.access_expire_at)).toISOString(),
+            refresh_token_expires: c.refresh_expire_at ? new Date(Number(c.refresh_expire_at)).toISOString() : null,
+          })),
+        });
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }

@@ -19,8 +19,9 @@ Mở `/admin/tiktok` (đăng nhập quản trị).
   Access token tự làm mới bằng refresh token. Cột "Phải ủy quyền lại trước" là hạn refresh token;
   trước ngày đó bấm lại nút này (cùng tài khoản) là xong, không mất dữ liệu.
 - **Kênh TikTok:** bấm **Ủy quyền kênh TikTok**, đăng nhập đúng kênh, đồng ý quyền
-  `user.info.basic`, `video.upload`. Access token sống khoảng 2 giờ và tự làm mới; refresh token sống khoảng
-  180 ngày và mỗi lần làm mới TikTok cấp refresh token mới (cái cũ hết hiệu lực).
+  `user.info.basic`, `video.upload`. Hạn token do TikTok trả về và hiện ở `/admin/tiktok` (lần ủy quyền đầu ở Sandbox:
+  access token khoảng 24 giờ, tự làm mới; refresh token khoảng 1 năm). Mỗi lần làm mới TikTok có thể cấp
+  refresh token mới, cái cũ hết hiệu lực; máy chủ tự lưu cái mới.
   Nếu tool báo lỗi token (`access_token_invalid`, `invalid_grant`, "chưa ủy quyền"), hoặc chủ kênh gỡ app trong
   phần cài đặt TikTok, thì bấm lại nút này.
 - Khi app Content còn ở **Sandbox**, chỉ các tài khoản có trong *Sandbox settings → Target users* mới ủy quyền được.
@@ -31,7 +32,7 @@ Mở `/admin/tiktok` (đăng nhập quản trị).
 
 | Tool | Việc |
 |---|---|
-| `tiktok_shops` | Liệt kê seller/shop và kênh creator đã ủy quyền, scope, hạn token |
+| `tiktok_shops` | Liệt kê shop (app Gateway) và kênh đăng video vào nháp (app Content) đã ủy quyền, hạn token |
 | `tiktok_orders` | Đơn theo khoảng thời gian tạo (Get Order List `POST /order/202309/orders/search`), từng trang |
 | `tiktok_products` | Sản phẩm (Search Products `POST /product/202502/products/search`), lọc theo `status` |
 | `tiktok_read` | Gọi bất kỳ API chỉ đọc (GET hoặc POST tra cứu: search/query/list/check…) |
