@@ -21,6 +21,7 @@ function menu(): Muc[] {
     { ten: "QC Shopee", href: "/admin/shopee" },
     { ten: "QC Facebook", href: "/fb", ghiChu: "đang làm" },
     { ten: "QC TikTok", ghiChu: "chưa có" },
+    { ten: "TikTok Shop", href: "/admin/tiktok" },
     { ten: "Sản xuất", href: "/kho#sx" },
     ngoai("Nội dung: lịch bài", l.noiDung),
     { ten: "Shopee Video", href: "/video" },

@@ -7,6 +7,7 @@ import type { CatalogEntry, CatalogParam } from "./catalog-types";
 import { registerMagickidsTools } from "./magickids-tools";
 import { registerSanXuatTools } from "./san-xuat-tools";
 import { registerShopeeVideoTools } from "./video/mcp-tools";
+import { registerTikTokTools } from "./tiktok/mcp-tools";
 import {
   assertImage,
   decodeBase64,
@@ -126,6 +127,8 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
         "Magickids company data (all channels, not only Shopee): mk_get_rules first, then mk_query_sales, " +
           "mk_product_profit, mk_get_products, mk_list_decisions, mk_search_knowledge, mk_find_cases. " +
           "Changes to real systems go through mk_create_proposal for the owner to approve.",
+        "TikTok Shop (Magickids, Vietnam): tiktok_shops, tiktok_orders, tiktok_products, tiktok_read for any read API; " +
+          "tiktok_write only after the owner approves the exact change.",
       ].join("\n"),
     }
   );
@@ -714,6 +717,7 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
   registerMagickidsTools(server, ctx);
   registerSanXuatTools(server, ctx);
   registerShopeeVideoTools(server, ctx);
+  registerTikTokTools(server, ctx);
 
   return server;
 }
