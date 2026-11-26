@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { ApiKeyContext } from "../api-keys";
 import { db } from "../supabase";
 import { isReadOnly, listAccounts, tiktokCall, tiktokConfigured, type HttpMethod } from "./client";
+import { contentConfigured, draftStatus, uploadDraft } from "./content";
 
 const text = (v: unknown): CallToolResult => ({
   content: [{ type: "text", text: typeof v === "string" ? v : JSON.stringify(v, null, 2) }],
@@ -152,7 +153,46 @@ export function registerTikTokTools(server: McpServer, ctx: ApiKeyContext): void
     }
   );
 
+  const contentRun = (fn: () => Promise<unknown>) => async (): Promise<CallToolResult> => {
+    if (!contentConfigured()) return fail("App Magickids Content chưa cấu hình trên máy chủ (TIKTOK_CONTENT_CLIENT_KEY / SECRET).");
+    try {
+      return text(await fn());
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  server.registerTool(
+    "tiktok_video_status",
+    {
+      title: "TikTok channel: draft upload status",
+      description: "Status of a video pushed to the TikTok channel's drafts (publish_id from tiktok_video_draft).",
+      inputSchema: { publish_id: z.string(), channel: z.string().optional().describe("Channel name or open_id; omit if only one") },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async (a) => contentRun(() => draftStatus(a.publish_id, a.channel))()
+  );
+
   if (ctx.access !== "read_write") return;
+
+  server.registerTool(
+    "tiktok_video_draft",
+    {
+      title: "TikTok channel: push video to drafts",
+      description:
+        "Downloads a video from a public direct URL (MP4/MOV/WEBM, 3s–10min) and uploads it to the authorized TikTok " +
+        "channel's inbox as a DRAFT (Content Posting API, Upload to TikTok). Nothing goes public: the owner opens the " +
+        "TikTok app notification, adds the product link and posts. Tell the owner which video and channel first.",
+      inputSchema: {
+        video_url: z.string().describe("Public direct link to the video file"),
+        channel: z.string().optional().describe("Channel name or open_id; omit if only one"),
+        note: z.string().max(500).optional().describe("Internal note, e.g. product code"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async (a) => contentRun(() => uploadDraft({ videoUrl: a.video_url, channel: a.channel, note: a.note, createdBy: `mcp:${ctx.label ?? ctx.id}` }))()
+  );
+
 
   server.registerTool(
     "tiktok_write",
