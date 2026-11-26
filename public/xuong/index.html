@@ -438,6 +438,19 @@ function the(khoa,sum,det){
   c.ontoggle=()=>{if(c.open)S.open.add(khoa);else S.open.delete(khoa);};
   const s=mk('summary');s.append(...sum);const d=mk('div','d');d.append(...det);c.append(s,d);return c;
 }
+/* tên hiển thị theo PHIẾU ĐẶT HÀNG (anh 26/11: các lô đổi thành phiếu đặt hàng cho đồng bộ); lô chỉ là tên nội bộ */
+function nhanDon(p){
+  if(p.id==null)return 'lô '+p.soPhieu+' (chưa có phiếu)';
+  const ds=(S.data&&S.data.don)||[];
+  if(p.soPdh)return p.soPdh+(ds.filter(q=>q.soPdh===p.soPdh).length>1&&p.soPhieu?' · '+p.soPhieu:'');
+  return p.soPhieu?'phiếu '+p.soPhieu:'phiếu đặt '+day(p.ngayDat);
+}
+function nhanLoTheoPhieu(x){
+  const d=S.data,q=x.phieuId!=null&&d?d.don.find(z=>z.id===x.phieuId):null;
+  if(!q)return 'lô '+x.lo+' (chưa có phiếu)';
+  const nhieu=d.los.filter(z=>z.phieuId===q.id).length>1;
+  return nhanDon(q)+(nhieu&&x.lo!==q.soPhieu?' · lô '+x.lo:'');
+}
 const lopNhan=k=>k==='late'?'late':k==='ok'?'ok':k==='warn'?'amber':'m';
 
 function veDon(d,body){
@@ -446,7 +459,7 @@ function veDon(d,body){
   if(!ds.length){body.append(mk('div','m',d.don.length?'Không có đơn nào ở nhóm này.':'Sổ chưa có phiếu đặt nào.'));return;}
   for(const p of ds){
     const top=mk('div','top');
-    top.append(mk('span','code',p.ma+(p.id!=null&&p.soPhieu?' · '+p.soPhieu:'')),
+    top.append(mk('span','code',p.ma+' · '+nhanDon(p)),
       mk('span',p.trangThai==='xong'?'ok':p.trangThai==='cho_cat'?'amber':'m',p.nhan));
     const dong2=p.id==null?'Lô '+p.soPhieu+' · lô cũ, sổ chưa có phiếu đặt'+(p.ngayCat?' · cắt '+day(p.ngayCat,true):''):((p.ngayDat?'Đặt ngày '+day(p.ngayDat,true):'Chưa ghi ngày đặt')+(p.tongDat!=null?' · tổng đặt '+num(p.tongDat):''));
     const top2=mk('div','top');
@@ -461,7 +474,7 @@ function veDon(d,body){
     else if(p.theoMau.length)det.push(mk('div','','Đặt: '+p.theoMau.map(c=>c.mau+' '+num(c.so)).join(' · ')+' (chưa chia size)'));
     det.push(nutNhapDon(d,p));
     if(p.los.length){
-      const b=mk('button','','Xem tiến độ lô '+p.los.join(', '));b.type='button';
+      const b=mk('button','','Xem tiến độ hàng trả');b.type='button';
       b.onclick=()=>{for(const x of d.los)if(x.ma===p.ma&&p.los.includes(x.lo))S.open.add('tra'+x.id);S.loc.tra='tat';S.thang='';S.tab='tra';ve();};
       const w=mk('div');w.append(b);det.push(w);
     }else det.push(mk('div','m','Chưa có lô cắt nào cho phiếu này.'));
@@ -470,7 +483,7 @@ function veDon(d,body){
 }
 function tomLo(x){
   const chua=x.trangThai==='chua_doi_soat';
-  const top=mk('div','top');top.append(mk('span','code',x.ma+' · '+x.lo),mk('span',lopNhan(x.nhan.k),x.nhan.t));
+  const top=mk('div','top');top.append(mk('span','code',x.ma+' · '+nhanLoTheoPhieu(x)),mk('span',lopNhan(x.nhan.k),x.nhan.t));
   const top2=mk('div','top');
   const ct=x.conTra!=null?x.conTra:x.conNo;
   top2.append(mk('span','m',(x.henTra?'Hẹn trả '+day(x.henTra,true):'Chưa có ngày hẹn')),mk('span','owe'+(ct>0&&x.ngayTre>0?' late':ct>0?'':' m'),num(Math.max(0,ct))));
@@ -541,7 +554,7 @@ function veSua(d,body){
     body.append(mk('div','sec','Phiếu chờ cắt ('+cho.length+')'));
     for(const p of cho){
       const c2=mk('div','card'),d2=mk('div','d'),top=mk('div','top');
-      top.append(mk('span','code',p.ma+(p.id!=null&&p.soPhieu?' · '+p.soPhieu:'')),mk('b','',num(p.choCat)+' cái'));
+      top.append(mk('span','code',p.ma+' · '+nhanDon(p)),mk('b','',num(p.choCat)+' cái'));
       d2.append(top,mk('div','m',(p.duKienCat?'Dự kiến cắt '+day(p.duKienCat,true)+'. ':'')+'Phiếu chưa cắt thì chưa cập nhật được ở đây: cắt xong báo số cắt cho Magickids, lô hiện lên ở mục trên.'));
       c2.append(d2);body.append(c2);
     }
@@ -903,7 +916,7 @@ function veXem(body){
 }
 
 /* ---------- chọn theo phiếu đặt hàng: xưởng chỉ chọn mã và phiếu, phần mềm tự gắn lô nội bộ (góp ý xưởng 26/11) ---------- */
-const tenPhieu=p=>(p.soPdh||('Phiếu '+(p.soPhieu||'đặt ngày '+day(p.ngayDat,true))));
+const tenPhieu=p=>nhanDon(p);
 /* lô nội bộ của một phiếu khi cắt: lô đã nối với phiếu thì cộng vào lô đó, chưa có thì đặt tên theo đợt của phiếu */
 function loNoiBo(d,p){
   const ls=d.los.filter(x=>x.phieuId===p.id);
