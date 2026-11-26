@@ -26,6 +26,12 @@ describe("docLenhNhap: phiếu cắt", () => {
     const r = docLenhNhap({ ...cat, ghi_de: true }, nay, gio);
     assert.ok(r.ok && r.loai === "cat" && r.ghiDe && r.args.p_hen_tra === null);
   });
+  it("đợt rỗng \"\" vẫn nối với phiếu chỉ có một đợt; thiếu hẳn thì không nối", () => {
+    const r1 = docLenhNhap({ ...cat, dot_dat: "" }, nay, gio);
+    const r2 = docLenhNhap({ ...cat, dot_dat: undefined }, nay, gio);
+    assert.ok(r1.ok && r2.ok);
+    if (r1.ok && r2.ok) assert.deepEqual([r1.args.p_dot_dat, r2.args.p_dot_dat], ["", null]);
+  });
   it("từ chối phiếu sai", () => {
     const loi = (doi: Record<string, unknown>) => {
       const r = docLenhNhap({ ...cat, ...doi }, nay, gio);

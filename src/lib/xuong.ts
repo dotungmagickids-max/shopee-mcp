@@ -120,6 +120,8 @@ export interface XuongDon {
   ma: string;
   /** Số phiếu / đợt của phiếu đặt; với lô không có phiếu là tên lô. */
   soPhieu: string;
+  /** Số phiếu đặt hàng xưởng nhận (dạng PĐH-261117-02), lấy từ ghi chú của phiếu; null khi không có. */
+  soPdh: string | null;
   ngayDat: string | null;
   duKienCat: string | null;
   /** Ngày cắt sớm nhất trong các lô của đơn; null khi chưa lô nào ghi ngày cắt. */
@@ -245,6 +247,7 @@ function gomDon(p: PhieuDat | null, lo1: LoCat | null, ts: TienDoLo[]): XuongDon
     id: p?.id ?? null,
     ma: p?.ma_hang ?? lo1?.ma_hang ?? "",
     soPhieu: p ? p.dot : (lo1?.lo ?? ""),
+    soPdh: (p?.ghi_chu ?? "").match(/PĐH-\d{6}-\d{2}(?:-v\d+)?/)?.[0] ?? null,
     ngayDat: p?.ngay_dat ?? null,
     duKienCat: p?.ngay_du_kien_cat ?? null,
     ngayCat: ts.map((t) => t.lo.ngay_cat).filter((x): x is string => !!x).sort()[0] ?? null,
