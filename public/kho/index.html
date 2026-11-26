@@ -416,6 +416,7 @@ table.t td.z{color:#b6bcc6}
     <div><button id="btnView" disabled>Chỉ xem quản lý (máy không có camera)</button></div>
     <div><button id="btnRemote" disabled>Xem từ xa (không cần thư mục, không mở được video)</button></div>
     <div id="gateMsg"></div>
+    <div><button id="btnPickDir" hidden>Chọn thư mục khác để lưu video</button></div>
     <div class="hint">Lần đầu sẽ hỏi thư mục lưu video và quyền dùng camera. Các lần sau chỉ cần bấm nút này.</div>
   </div>
 </div>
@@ -3856,8 +3857,8 @@ async function startShift(){
     /* thư mục video nằm trên Google Drive: Drive chưa chạy thì ghi thử treo mãi, nên chỉ chờ 30 giây */
     let dirT;
     const dirOk=await Promise.race([checkDir(true),new Promise(r=>{dirT=setTimeout(()=>r('treo'),30000);})]);clearTimeout(dirT);
-    if(dirOk==='treo'){msg.textContent='Chưa mở được thư mục video "'+(S.dir.name||'')+'" sau 30 giây. Nếu Chrome đang hỏi quyền thì bấm "Cho phép". Nếu không thấy hỏi: mở Google Drive trên máy (biểu tượng góc phải dưới), chờ Drive chạy xong, tắt hẳn Chrome rồi mở lại trang.';return;}
-    if(!dirOk){msg.textContent='Chưa ghi được vào thư mục "'+(S.dir.name||'')+'". Bấm lại và chọn "Cho phép", hoặc kiểm tra Google Drive đã chạy chưa.';return;}
+    if(dirOk==='treo'){$('btnPickDir').hidden=false;msg.textContent='Chưa mở được thư mục video "'+(S.dir.name||'')+'" sau 30 giây. Nếu Chrome đang hỏi quyền thì bấm "Cho phép". Nếu không thấy hỏi: mở Google Drive trên máy (biểu tượng góc phải dưới), chờ Drive chạy xong, tắt hẳn Chrome rồi mở lại trang. Cần làm ngay thì bấm "Chọn thư mục khác" và chọn một thư mục trên ổ máy (ví dụ D:\\Video tam), sau này chép video sang Drive.';return;}
+    if(!dirOk){$('btnPickDir').hidden=false;msg.textContent='Chưa ghi được vào thư mục "'+(S.dir.name||'')+'". Bấm lại và chọn "Cho phép", hoặc kiểm tra Google Drive đã chạy chưa.';return;}
     msg.textContent='Đang mở camera…';
     ensureWorker();
     try{await startCamera();}catch(e){msg.textContent=camErr(e);return;}
@@ -3920,6 +3921,12 @@ async function init(){
 
 /* ---------- sự kiện ---------- */
 $('btnStart').onclick=startShift;
+/* thư mục cũ (trên Google Drive) treo hoặc không ghi được: chọn thư mục khác rồi bắt đầu ca luôn */
+$('btnPickDir').onclick=async()=>{
+  if(shiftBusy){$('gateMsg').textContent='Chờ bước trước dừng hẳn (tối đa 30 giây) rồi bấm lại.';return;}
+  try{const h=await showDirectoryPicker({mode:'readwrite'});S.dir=h;await kvSet('dir',h);$('btnPickDir').hidden=true;log('Đổi thư mục lưu video sang "'+h.name+'"');startShift();}
+  catch(e){if(e.name!=='AbortError')$('gateMsg').textContent='Không chọn được thư mục: '+(e.message||e.name);}
+};
 $('mDH').onclick=()=>go('rec','DH');$('mHH').onclick=()=>go('rec','HH');
 $('btnView').onclick=startView;$('btnRemote').onclick=startRemote;
 setInterval(()=>{if(S.remote&&!document.querySelector('dialog[open]'))remoteVideos().then(()=>S.view==='tien'?soatReload(false):refresh()).catch(()=>{});},120000);
