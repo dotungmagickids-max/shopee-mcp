@@ -1,4 +1,5 @@
 import { listAccounts, tiktokConfigured, type TikTokAccount } from "@/lib/tiktok/client";
+import { contentConfigured, listContentUsers, type ContentUser } from "@/lib/tiktok/content";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,17 @@ export default async function TikTokPage({ searchParams }: { searchParams: Promi
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
+  let channels: ContentUser[] = [];
+  let channelError: string | undefined;
+  if (contentConfigured()) {
+    try {
+      channels = await listContentUsers();
+    } catch (err) {
+      channelError = err instanceof Error ? err.message : String(err);
+    }
+  }
   return (
+    <>
     <div className="card">
       <h1>TikTok Shop</h1>
       {msg ? <p>{msg}</p> : null}
@@ -61,5 +72,34 @@ export default async function TikTokPage({ searchParams }: { searchParams: Promi
         </table>
       )}
     </div>
+    <div className="card">
+      <h2>Kênh TikTok: đẩy video vào nháp</h2>
+      {!contentConfigured() ? (
+        <p className="error">Chưa cấu hình TIKTOK_CONTENT_CLIENT_KEY / TIKTOK_CONTENT_CLIENT_SECRET.</p>
+      ) : (
+        <>
+          <p>
+            App "Magickids Content". Video được đẩy vào hộp nháp của kênh; mở app TikTok, gắn sản phẩm rồi bấm đăng.
+            Khi app còn ở Sandbox, kênh phải nằm trong danh sách Target users.
+          </p>
+          {channelError ? <p className="error">{channelError}</p> : null}
+          <form method="post" action="/api/tiktok/content/start">
+            <button type="submit">Ủy quyền kênh TikTok</button>
+          </form>
+          {channels.length ? (
+            <ul>
+              {channels.map((c) => (
+                <li key={c.open_id}>
+                  {c.display_name ?? c.open_id}: token đến {fmt(c.access_expire_at)}, ủy quyền lại trước {fmt(c.refresh_expire_at)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>Chưa có kênh nào.</p>
+          )}
+        </>
+      )}
+    </div>
+    </>
   );
 }
