@@ -206,7 +206,7 @@ function mock(){
     lo(3,'MA26003','Tái 1',null,360,341,341,null,{theoMau:[{mau:'Ghi',conNo:19}],lanVe:[{ngay:lui(-9),giao:341,khoDem:341,choDem:false}]}),
     lo(4,'MA26004','L1',4,58,58,58,lui(-6),{choVe:false,maTran:mt(['140','150'],[['Đen',[0,0]]]),lanVe:[{ngay:lui(-6),giao:58,khoDem:58,choDem:false}]})
   ];
-  const don=(id,ma,soPhieu,ngayDat,tongDat,trangThai,x)=>Object.assign({id,ma,soPhieu,ngayDat,duKienCat:null,ngayCat:null,tongDat,daCat:0,daGiao:0,khoDem:0,choCat:0,conNo:0,trangThai,nhan:'',chuaDoiSoat:false,maTran:null,theoMau:[],los:[]},x||{});
+  const don=(id,ma,soPhieu,ngayDat,tongDat,trangThai,x)=>Object.assign({id,ma,soPhieu,soPdh:id!=null?'PĐH-2611'+String(10+id)+'-0'+id:null,ngayDat,duKienCat:null,ngayCat:null,tongDat,daCat:0,daGiao:0,khoDem:0,choCat:0,conNo:0,trangThai,nhan:'',chuaDoiSoat:false,maTran:null,theoMau:[],los:[]},x||{});
   const d={at:Date.now(),homNay:hn,ghiThongTin:true,tomTat:{},los,
     don:[
       don(1,'MA26001','L1',lui(-30),192,'dang_tra',{los:['L1'],maTran:mt(['130','140','150','160'],[['Đỏ',[20,24,44,64]],['Trắng',[8,16,12,4]]])}),
@@ -902,13 +902,66 @@ function veXem(body){
   body.append(sh);
 }
 
+/* ---------- chọn theo phiếu đặt hàng: xưởng chỉ chọn mã và phiếu, phần mềm tự gắn lô nội bộ (góp ý xưởng 26/11) ---------- */
+const tenPhieu=p=>(p.soPdh||('Phiếu '+(p.soPhieu||'đặt ngày '+day(p.ngayDat,true))));
+/* lô nội bộ của một phiếu khi cắt: lô đã nối với phiếu thì cộng vào lô đó, chưa có thì đặt tên theo đợt của phiếu */
+function loNoiBo(d,p){
+  const ls=d.los.filter(x=>x.phieuId===p.id);
+  if(ls.length===1)return ls[0].lo;
+  return p.soPhieu||p.soPdh||('Đặt '+day(p.ngayDat));
+}
+function chonPhieu(d,p,khung){
+  /* danh sách lựa chọn: phiếu cắt → phiếu chưa xong; phiếu đóng gói → từng lô còn phải trả (theo phiếu nếu có) */
+  const ds=[];
+  if(p.loai==='cat'){
+    for(const q of d.don)if(q.id!=null&&q.trangThai!=='xong'&&(q.choCat>0||q.daCat===0))ds.push({ma:q.ma,nhan:tenPhieu(q)+' · đặt '+num(q.tongDat)+' · đã cắt '+num(q.daCat),q,lo:loNoiBo(d,q)});
+  }else{
+    for(const x of d.los){
+      const ct=x.conTra!=null?x.conTra:x.conNo;
+      if(x.trangThai==='dong'||ct<=0)continue;
+      const q=x.phieuId!=null?d.don.find(z=>z.id===x.phieuId):null;
+      const cung=q?d.los.filter(z=>z.phieuId===q.id&&z.trangThai!=='dong').length:0;
+      ds.push({ma:x.ma,nhan:(q?tenPhieu(q)+(cung>1?' · lô '+x.lo:''):'Lô '+x.lo+' (chưa có phiếu)')+' · còn phải trả '+num(ct),q,lo:x.lo,x});
+    }
+  }
+  const mas=[...new Set(ds.map(n=>n.ma))].sort();
+  if(!p.ma&&mas.length===1)p.ma=mas[0];
+  const lMa=mk('label','','Mã hàng'),sMa=mk('select');
+  sMa.append(new Option('— chọn mã —',''));for(const m of mas)sMa.append(new Option(m,m));sMa.value=mas.includes(p.ma)?p.ma:'';
+  sMa.onchange=()=>{const t=p.loai;NP.p=nhapMoi(t);NP.p.ma=sMa.value;NP.msg=null;ve();};
+  const w1=mk('div');w1.append(lMa,sMa);
+  const cua=ds.filter(n=>n.ma===p.ma);
+  const lP=mk('label','','Phiếu đặt hàng'),sP=mk('select');
+  sP.append(new Option(p.ma?'— chọn phiếu —':'chọn mã trước',''));cua.forEach((n,i)=>sP.append(new Option(n.nhan,String(i))));
+  const dangChon=cua.findIndex(n=>(n.q?n.q.id:null)===(p.phieuId!=null?p.phieuId:-1)&&n.lo===p.lo);
+  sP.value=dangChon>=0?String(dangChon):'';sP.disabled=!p.ma;
+  const chon=n=>{
+    const goc={ma:n.ma,lo:n.lo,dot:n.q?n.q.soPhieu:'',mt:p.loai==='cat'?(n.q&&n.q.maTran):(n.x.maTranTra!==undefined?n.x.maTranTra:n.x.maTran),
+      mau:p.loai==='cat'?((n.q&&n.q.theoMau)||[]).map(c=>c.mau):(n.x.theoMauTra||n.x.theoMau||[]).map(c=>c.mau),goi:p.loai==='cat'?'đặt':'còn phải trả'};
+    layNguonNhap(goc);NP.p.phieuId=n.q?n.q.id:null;
+  };
+  sP.onchange=()=>{if(sP.value==='')return;chon(cua[Number(sP.value)]);NP.msg=null;ve();};
+  if(p.ma&&cua.length===1&&dangChon<0){chon(cua[0]);ve();return;}
+  const w2=mk('div');w2.append(lP,sP);
+  const r=mk('div','row2');r.append(w1,w2);khung.append(r);
+  if(dangChon>=0){
+    const daCo=p.loai==='cat'&&d.los.some(x=>x.ma===p.ma&&x.lo===p.lo);
+    khung.append(mk('div','m','Magickids tự ghi vào lô nội bộ "'+p.lo+'"'+(daCo?'; phiếu này đã cắt trước đó nên số lần này được cộng thêm vào.':'.')));
+  }
+  const bTay=mk('button','','Không có trong danh sách: nhập tay mã, lô');bTay.type='button';
+  bTay.onclick=()=>{const t=p.loai;NP.p=nhapMoi(t);NP.p.tay=true;ve();};
+  const w3=mk('div');w3.append(bTay);khung.append(w3);
+}
+
 /* ---------- nút nhập phiếu ngay trong thẻ đơn: mở màn Nhập phiếu / Làm phiếu đã điền sẵn mã, lô, màu, size ---------- */
 function moNhap(d,loai,ma,lo,dot,don){
   NP.p=nhapMoi(loai);NP.msg=null;
+  const pd=don&&don.id!=null?don:d.don.find(q=>q.id!=null&&q.ma===ma&&(loai==='cat'?q.soPhieu===(dot||''):q.los.includes(lo)));
   const n=nguonNhap(d,loai).find(x=>x.ma===ma&&(loai==='cat'?x.dot===(dot||''):x.lo===lo));
   if(n)layNguonNhap(n);
   else if(don)layNguonNhap({ma,lo:lo||dot||'',dot:dot||'',mt:don.maTran,mau:(don.theoMau||[]).map(c=>c.mau),goi:'đặt'});
   else{NP.p.ma=ma;NP.p.lo=lo||'';NP.p.dot=dot||'';}
+  if(pd){NP.p.phieuId=pd.id;if(loai==='cat'){NP.p.dot=pd.soPhieu;NP.p.lo=loNoiBo(d,pd);}}
   S.tab='nhap';ve();scrollTo(0,0);
 }
 function moVai(d,p){
@@ -1036,13 +1089,7 @@ function veNhap(d,body){
   const [wTen,iTen]=o('Tên người nhập (máy nhớ cho lần sau)','text',S.ten,40);
   iTen.onchange=()=>{S.ten=iTen.value.replace(/\s+/g,' ').trim();store.set('mk_xuong_ten',S.ten);};
   const c1=mk('div','card'),d1=mk('div','d');d1.append(wTen);
-  const ns=p.suaId?[]:nguonNhap(d,p.loai);
-  if(ns.length){
-    const l=mk('label','',p.loai==='cat'?'Chọn phiếu đặt đang chờ cắt (điền sẵn màu, size)':'Chọn lô đang trả hàng (điền sẵn màu, size)'),sel=mk('select');
-    sel.append(new Option('— chọn —',''));ns.forEach((n,i)=>sel.append(new Option(n.nhan,String(i))));
-    sel.onchange=()=>{if(sel.value==='')return;layNguonNhap(ns[Number(sel.value)]);NP.msg=null;ve();};
-    const w=mk('div');w.append(l,sel);d1.append(w);
-  }
+  if(!p.suaId&&!p.tay)chonPhieu(d,p,d1);
   const [nutAnh,tbAnh]=nutDocAnh(p.loai,kq=>{
     const b=kq.bang||{};
     if(b.ma&&!p.ma)p.ma=b.ma;if(b.lo&&!p.lo)p.lo=b.lo;if(b.ngay&&b.ngay<=homNay())p.ngay=b.ngay;
@@ -1052,10 +1099,13 @@ function veNhap(d,body){
   });
   if(!p.suaId)d1.append(nutAnh,tbAnh);
   const noi=(k,i)=>{i.oninput=()=>{p[k]=i.value;p.daCo=false;};return i;};
-  const [wMa,iMa]=o('Mã hàng','text',p.ma,30);noi('ma',iMa);
-  const [wLo,iLo]=o(p.loai==='cat'?(p.dot&&p.lo===p.dot?'Tên lô (lấy theo đơn; cắt nhiều lần vẫn để tên này)':'Tên lô (ví dụ L2)'):'Lô','text',p.lo,30);noi('lo',iLo);
-  if(p.suaId){iMa.disabled=true;iLo.disabled=true;}
-  const r1=mk('div','row2');r1.append(wMa,wLo);d1.append(r1);
+  if(p.suaId||p.tay){
+    const [wMa,iMa]=o('Mã hàng','text',p.ma,30);noi('ma',iMa);
+    const [wLo,iLo]=o(p.loai==='cat'?'Tên lô (ví dụ L2)':'Lô','text',p.lo,30);noi('lo',iLo);
+    if(p.suaId){iMa.disabled=true;iLo.disabled=true;}
+    const r1=mk('div','row2');r1.append(wMa,wLo);d1.append(r1);
+    if(p.tay){const b=mk('button','','Chọn theo phiếu đặt hàng');b.type='button';b.onclick=()=>{NP.p=nhapMoi(p.loai);ve();};const w=mk('div');w.append(b);d1.append(w);}
+  }
   const [wNg,iNg]=o(L.ngay,'date',p.ngay);iNg.max=homNay();noi('ngay',iNg);
   if(p.loai==='cat'){const [wH,iH]=o('Hẹn trả (bỏ trống được)','date',p.hen);noi('hen',iH);const r2=mk('div','row2');r2.append(wNg,wH);d1.append(r2);}
   else{const [wS,iS]=o('Số phiếu của xưởng (nếu có)','text',p.soPhieu,60);noi('soPhieu',iS);const r2=mk('div','row2');r2.append(wNg,wS);d1.append(r2);}
@@ -1085,11 +1135,12 @@ function veNhap(d,body){
     if(!dong.length)return 'Chưa có số lượng nào.';
     const tong=dong.reduce((a,x)=>a+x.so,0);
     const than=p.suaId?{action:'giao_sua',id:p.suaId,ngay:p.ngay,so_phieu:p.soPhieu.trim()||undefined,dong,nguoi:ten}
-      :p.loai==='cat'?{action:'cat',ma_hang:ma,lo,ngay_cat:p.ngay,hen_tra:p.hen||undefined,dot_dat:p.dot||undefined,ghi_de:ghiDe||undefined,cong_them:cong||undefined,dong,nguoi:ten}
+      :p.loai==='cat'?{action:'cat',ma_hang:ma,lo,ngay_cat:p.ngay,hen_tra:p.hen||undefined,dot_dat:p.phieuId!=null&&!p.tay?p.dot:(p.dot||undefined),ghi_de:ghiDe||undefined,cong_them:cong||undefined,dong,nguoi:ten}
       :{action:'giao',ma_hang:ma,lo,ngay:p.ngay,so_phieu:p.soPhieu.trim()||undefined,dong,nguoi:ten};
     return {than,tong,ma,lo};
   };
   const luu=async(che,nut)=>{
+    if(!che&&p.loai==='cat'&&p.phieuId!=null&&!p.tay&&d.los.some(x=>x.ma===p.ma&&x.lo===p.lo))che='cong';
     msg.className='msg err';
     const v=lay(che);if(typeof v==='string'){msg.textContent=v;return;}
     if(!confirm((p.suaId?'SỬA phiếu đóng gói ':che==='de'?'THAY TOÀN BỘ số cắt cũ của lô ':che==='cong'?'CỘNG THÊM lần cắt này vào lô ':'Lưu '+L.ten.toLowerCase()+' ')+v.ma+' '+v.lo+': tổng '+num(v.tong)+' cái?\nSố vào sổ ngay, Magickids thấy luôn.'))return;

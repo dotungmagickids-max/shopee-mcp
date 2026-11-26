@@ -314,3 +314,12 @@ describe("đăng nhập bằng mật khẩu chung", () => {
     });
   });
 });
+
+describe("chọn theo phiếu đặt hàng", () => {
+  it("đơn có số phiếu đặt hàng lấy từ ghi chú của phiếu", () => {
+    const p = { ...so.phieu[0], ghi_chu: "PĐH-261117-02 · Đỏ 500. Giá 64.000" };
+    const r = soChoXuong({ ...so, phieu: [p, ...so.phieu.slice(1)] }, "2026-11-22", 1);
+    assert.equal(r.don.find((d) => d.id === p.id)?.soPdh, "PĐH-261117-02");
+    assert.ok(!JSON.stringify(r).includes("64.000"));
+  });
+});

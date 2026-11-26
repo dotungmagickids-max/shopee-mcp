@@ -95,7 +95,8 @@ export function docLenhNhap(body: unknown, homNay: string, now: number = Date.no
     const hen = ngay(b.hen_tra, "ngày hẹn trả", false);
     if (hen && typeof hen === "object") return hen;
     if (hen && hen < (ngayCat as string)) return sai("Ngày hẹn trả không được trước ngày cắt");
-    const dot = trong(b.dot_dat) ? null : chu(b.dot_dat);
+    // "" là đợt rỗng của phiếu đặt chỉ có một đợt (trang chọn theo phiếu gửi đúng đợt của phiếu); thiếu hẳn thì không nối phiếu.
+    const dot = b.dot_dat === undefined || b.dot_dat === null ? null : chu(b.dot_dat);
     if (dot != null && dot.length > 30) return sai("Đợt của phiếu đặt không hợp lệ");
     return {
       ok: true, loai: "cat", fn: "mk_sx_lot_save", ma, lo: lo as string, ghiDe, congThem, ngayCat: ngayCat as string, nguoi, tong,
