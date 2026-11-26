@@ -1090,7 +1090,10 @@ async function checkDir(ask){
   try{
     if(!TEST){
       let p=await S.dir.queryPermission({mode:'readwrite'});
-      if(p!=='granted'&&ask)p=await S.dir.requestPermission({mode:'readwrite'});
+      if(p!=='granted'&&ask){
+        if($('gateMsg'))$('gateMsg').textContent='Chrome đang hỏi quyền ghi thư mục video: bấm "Cho phép" (hoặc "Allow") ở hộp thoại trên cùng màn hình.';
+        p=await S.dir.requestPermission({mode:'readwrite'});
+      }
       if(p!=='granted')return false;
     }
     const fh=await S.dir.getFileHandle('kiem-tra-ghi.tmp',{create:true});
@@ -1210,10 +1213,10 @@ async function startCamera(){
   else{
     const base={width:{ideal:q.w},height:{ideal:q.h},frameRate:{ideal:30}};
     try{
-      stream=await navigator.mediaDevices.getUserMedia({audio:false,video:S.settings.cameraId?Object.assign({deviceId:{exact:S.settings.cameraId}},base):base});
+      stream=await camTimeout(navigator.mediaDevices.getUserMedia({audio:false,video:S.settings.cameraId?Object.assign({deviceId:{exact:S.settings.cameraId}},base):base}));
     }catch(e){
       if(S.settings.cameraId&&(e.name==='OverconstrainedError'||e.name==='NotFoundError'))
-        stream=await navigator.mediaDevices.getUserMedia({audio:false,video:base});
+        stream=await camTimeout(navigator.mediaDevices.getUserMedia({audio:false,video:base}));
       else throw e;
     }
   }
@@ -3826,14 +3829,24 @@ async function chooseDir(){
 }
 
 /* ---------- bắt đầu ca ---------- */
+/* camera treo (driver kẹt, camera đang mở ở tab hoặc chương trình khác): không chờ mãi, báo sau 15 giây */
+function camTimeout(p){
+  let t;const late=new Promise((_,rej)=>{t=setTimeout(()=>{const e=new Error('camera không phản hồi');e.name='CamTimeout';rej(e);},15000);});
+  p.then(st=>{if(late.done)for(const tr of st.getTracks())tr.stop();},()=>{});
+  return Promise.race([p,late]).finally(()=>{clearTimeout(t);late.done=true;});
+}
 function camErr(e){
+  if(e.name==='CamTimeout')return 'Camera không phản hồi sau 15 giây. Tắt các tab khác đang mở phần mềm này, tắt Zalo/Zoom/DHN, rút cắm lại dây camera, rồi bấm lại. Vẫn không được thì tắt hẳn Chrome và mở lại.';
   if(e.name==='NotAllowedError')return 'Chrome chưa được phép dùng camera. Bấm biểu tượng ổ khóa/camera trên thanh địa chỉ, chọn Cho phép, rồi bấm lại.';
   if(e.name==='NotFoundError')return 'Không thấy camera. Kiểm tra dây USB.';
   if(e.name==='NotReadableError')return 'Camera đang bị chương trình khác dùng (Zalo, Zoom, DHN…). Tắt chương trình đó rồi bấm lại.';
   return 'Lỗi camera: '+(e.message||e.name);
 }
+let shiftBusy=false;
 async function startShift(){
-  const msg=$('gateMsg');msg.textContent='';
+  const msg=$('gateMsg');
+  if(shiftBusy){msg.textContent='Đang mở, chờ một chút…';return;}
+  shiftBusy=true;msg.textContent='Đang mở thư mục video…';
   try{
     try{S.ac=S.ac||new AudioContext();if(S.ac.state==='suspended')S.ac.resume();}catch(e){}
     if(!S.dir){
@@ -3841,8 +3854,10 @@ async function startShift(){
       catch(e){msg.textContent=e.name==='AbortError'?'Chưa chọn thư mục lưu video. Bấm lại và chọn thư mục.':'Không chọn được thư mục: '+(e.message||e.name);return;}
     }
     if(!await checkDir(true)){msg.textContent='Chưa ghi được vào thư mục "'+(S.dir.name||'')+'". Bấm lại và chọn "Cho phép", hoặc kiểm tra Google Drive đã chạy chưa.';return;}
+    msg.textContent='Đang mở camera…';
     ensureWorker();
     try{await startCamera();}catch(e){msg.textContent=camErr(e);return;}
+    msg.textContent='';
     try{await startCamera2();}catch(e){log('Chưa mở được camera tem: '+camErr(e));retryCamera2();}
     S.started=true;$('gate').hidden=true;$('gate').style.display='none';
     try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(e){}
@@ -3854,6 +3869,7 @@ async function startShift(){
     chips();renderList();$('scan').focus();
     log('Bắt đầu ca. Thư mục: '+(S.dir.name||'(gốc)'));
   }catch(e){msg.textContent='Lỗi: '+(e.message||e.name);}
+  finally{shiftBusy=false;}
 }
 /* máy văn phòng không có camera: chỉ mở thư mục video để xem tổng quan, tìm và tải video */
 async function startView(){
