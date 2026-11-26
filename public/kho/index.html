@@ -50,6 +50,10 @@ table.t th,table.t td{padding:7px 8px;border-bottom:1px solid var(--line);text-a
 table.t th{color:var(--mut);font-size:12px;position:sticky;top:0;background:#fff}
 table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums}
 table.t td.code{font-family:Consolas,monospace;font-weight:700}
+/* ô sản phẩm nhiều mã: mỗi mã một dòng, cột hẹp để lý do và xử lý không bị đẩy ra ngoài màn hình (anh Tùng dặn 26/11/2026) */
+table.t td.sp{white-space:pre-line;min-width:140px;max-width:220px;font-size:12px;line-height:1.35;word-break:break-all}
+table.t td.wrap{white-space:normal;min-width:70px;max-width:120px}
+#chuaBox table.t th{white-space:normal}#chuaBox table.t td{padding:6px 6px}
 table.t td.warn{color:var(--red);font-weight:700}
 table.t button{padding:4px 9px;font-size:13px;margin-right:3px}
 table.t td input{width:100%;min-width:130px;padding:4px 6px;font-size:13px}
@@ -3645,9 +3649,9 @@ function renderChua(){
   list.forEach((x,i)=>{
     if(x.state&&!all)return;
     const row=tb.insertRow();if(x.state)row.style.opacity='.55';const cell=(t,cls)=>{const c=row.insertCell();c.textContent=t;c.className=cls||'';return c;};
-    cell(i+1,'num');cell(x.code,'code');cell(x.cu?dm(x.day)+' (cũ)':'',x.cu?'warn':'');cell(x.nhom+(x.kenh&&x.kenh!==x.nhom?' ('+x.kenh+')':''));cell(x.tt,/hủy|Không tra ra/i.test(x.tt)?'warn':'');cell(x.sp,'code');
+    cell(i+1,'num');cell(x.code,'code');cell(x.cu?dm(x.day)+' (cũ)':'',x.cu?'warn':'');cell(x.nhom+(x.kenh&&x.kenh!==x.nhom?' ('+x.kenh+')':''),'wrap');cell(x.tt,'wrap'+(/hủy|Không tra ra/i.test(x.tt)?' warn':''));cell((x.sp||'').split(', ').join(String.fromCharCode(10)),'code sp');
     for(const f of ['lyDo','xuLy']){
-      const inp=document.createElement('input');inp.value=x[f];inp.style.minWidth='170px';
+      const inp=document.createElement('input');inp.value=x[f];inp.style.minWidth='130px';
       if(f==='lyDo'){inp.setAttribute('list','dlLyDo');inp.placeholder=x.hint||'Lý do';}else inp.placeholder='CSKH / kho cần làm gì';
       inp.onchange=()=>{const val=inp.value.trim();
         save(x,cur=>{cur.notes[x.r.key]=Object.assign({},cur.notes[x.r.key],{[f]:val});})            /* bảng chính ở dưới hiện cùng ghi chú */
