@@ -115,7 +115,7 @@ export function registerTikTokTools(server: McpServer, ctx: ApiKeyContext): void
     "tiktok_products",
     {
       title: "TikTok Shop: search products",
-      description: "Products of the shop (Product Search API 202309), one page at a time.",
+      description: "Products of the shop (Search Products API 202502), one page at a time.",
       inputSchema: {
         status: z.string().optional().describe("ALL, DRAFT, PENDING, FAILED, ACTIVATE, SELLER_DEACTIVATED, PLATFORM_DEACTIVATED, FREEZE, DELETED"),
         page_size: z.number().int().min(1).max(100).default(50),
@@ -128,7 +128,7 @@ export function registerTikTokTools(server: McpServer, ctx: ApiKeyContext): void
       run(
         "POST",
         {
-          path: "/product/202309/products/search",
+          path: "/product/202502/products/search",
           query: { page_size: a.page_size, ...(a.next_page_token ? { page_token: a.next_page_token } : {}) },
           body: a.status ? { status: a.status } : {},
           shop: a.shop,

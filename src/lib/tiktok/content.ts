@@ -166,11 +166,25 @@ export async function resolveContentUser(who?: string): Promise<ContentUser> {
 
 const MB = 1024 * 1024;
 
-/** Chia khối theo quy định TikTok: video ≤ 64 MB gửi 1 khối; lớn hơn thì khối 10 MB, khối cuối gom phần dư. */
+/**
+ * Chia khối theo Media Transfer Guide: video ≤ 64 MB gửi 1 khối (dưới 5 MB bắt buộc 1 khối);
+ * lớn hơn thì khối 10 MB (5–64 MB), total_chunk_count = floor(size / chunk_size),
+ * khối cuối gom phần dư (≤ 128 MB), tối đa 1000 khối.
+ */
 export function chunkPlan(size: number): { chunkSize: number; count: number } {
   if (size <= 64 * MB) return { chunkSize: size, count: 1 };
   const chunkSize = 10 * MB;
   return { chunkSize, count: Math.floor(size / chunkSize) };
+}
+
+/** TikTok chỉ nhận video/mp4, video/quicktime, video/webm. Không rõ loại thì đoán theo đuôi file, mặc định mp4. */
+export function uploadMime(contentType: string, url = ""): string {
+  const t = contentType.split(";")[0].trim().toLowerCase();
+  if (t === "video/mp4" || t === "video/quicktime" || t === "video/webm") return t;
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
+  if (ext === "mov") return "video/quicktime";
+  if (ext === "webm") return "video/webm";
+  return "video/mp4";
 }
 
 /** Tải video từ URL công khai rồi đẩy vào hộp nháp của kênh. Trả publish_id. */
@@ -184,6 +198,7 @@ export async function uploadDraft(opts: { videoUrl: string; channel?: string; no
   const buf = Buffer.from(await src.arrayBuffer());
   if (buf.length > 1024 * MB) throw new Error("Video quá 1 GB.");
   const { chunkSize, count } = chunkPlan(buf.length);
+  const mime = uploadMime(type, opts.videoUrl);
 
   const init = (await api("/v2/post/publish/inbox/video/init/", accessToken, {
     body: { source_info: { source: "FILE_UPLOAD", video_size: buf.length, chunk_size: chunkSize, total_chunk_count: count } },
@@ -196,7 +211,7 @@ export async function uploadDraft(opts: { videoUrl: string; channel?: string; no
     const res = await fetch(init.upload_url, {
       method: "PUT",
       headers: {
-        "content-type": type.startsWith("video/") ? type : "video/mp4",
+        "content-type": mime,
         "content-length": String(end - start),
         "content-range": `bytes ${start}-${end - 1}/${buf.length}`,
       },
