@@ -137,4 +137,40 @@ export function registerNoiBoTools(server: McpServer, _ctx: ApiKeyContext): void
       return (await import("./facebook/suggest-run-data")).loadSuggest(today);
     })
   );
+
+  server.registerTool(
+    "mk_hom_nay",
+    {
+      title: "Magickids: trang Hôm nay (web quản trị)",
+      description: "Số của trang /admin/hom-nay: 6 khối số trong ngày (doanh số các kênh, quảng cáo, đơn, kho…), mỗi số kèm nguồn và mốc giờ. Chỉ đọc.",
+      inputSchema: {},
+      annotations: ro,
+    },
+    safe(async () => (await import("./quan-tri/hom-nay")).taiHomNay())
+  );
+
+  server.registerTool(
+    "mk_shopee_autopilot",
+    {
+      title: "Magickids: Shopee Autopilot (web quản trị)",
+      description:
+        "Số của Shopee Autopilot: phan=tong_quan (hôm nay từng shop: chi, doanh thu, ROAS, đề xuất), chien_dich (chiến dịch kèm xếp hạng, cần `shop_id`), " +
+        "nhat_ky (các lệnh/đề xuất gần đây), cho_duyet (đề xuất đang chờ anh duyệt), do_phu (giờ nào thiếu số trong 48 giờ). Chỉ đọc, không bấm duyệt.",
+      inputSchema: {
+        phan: z.enum(["tong_quan", "chien_dich", "nhat_ky", "cho_duyet", "do_phu"]).default("tong_quan"),
+        shop_id: z.coerce.number().int().optional().describe("chien_dich: shop_id; bỏ trống = shop đầu tiên"),
+        toi_da: z.coerce.number().int().min(1).max(200).default(50),
+      },
+      annotations: ro,
+    },
+    safe(async ({ phan, shop_id, toi_da }: { phan: "tong_quan" | "chien_dich" | "nhat_ky" | "cho_duyet" | "do_phu"; shop_id?: number; toi_da: number }) => {
+      const d = await import("./autopilot/dashboard");
+      const { shops } = await import("./autopilot/config");
+      if (phan === "tong_quan") return Promise.all(shops().map(async (s) => ({ shop: s.name ?? s.shopId, shop_id: s.shopId, hom_nay: await d.todayOverview(s.shopId), kinh_te: await d.econSummary(s.shopId) })));
+      if (phan === "chien_dich") return (await d.campaignsWithRanking(shop_id ?? shops()[0].shopId)).slice(0, toi_da);
+      if (phan === "nhat_ky") return d.recentLog(toi_da);
+      if (phan === "cho_duyet") return d.pendingProposals();
+      return d.collectCoverage(48);
+    })
+  );
 }
