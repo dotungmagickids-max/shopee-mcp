@@ -363,10 +363,11 @@ table.t td.z{color:#b6bcc6}
     <label><input type="checkbox" id="nOnly" checked> Chỉ hiện mã còn thiếu</label>
     <button id="btnNhapReload">Tải lại</button>
     <button id="btnNhapCsv">Xuất CSV</button>
+    <button id="btnTemSel">In tem các mã đã chọn</button>
   </div>
   <div class="hint" id="nhapInfo" style="margin:8px 0;white-space:normal"></div>
   <div class="cards" id="nhapCards"></div>
-  <table class="t"><thead><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Cần nhập</th><th class="num">Đã nhập</th><th class="num">Không nhập</th><th class="num">Còn thiếu</th><th class="num">Số kiện</th><th></th></tr></thead><tbody id="tbNhap"></tbody></table>
+  <table class="t"><thead><tr><th><input type="checkbox" id="nAll" title="Chọn tất cả mã đang hiện"></th><th>Mã sản phẩm</th><th>Tên</th><th class="num">Cần nhập</th><th class="num">Đã nhập</th><th class="num">Không nhập</th><th class="num">Còn thiếu</th><th class="num">Số kiện</th><th></th></tr></thead><tbody id="tbNhap"></tbody></table>
   <h3 style="margin:18px 0 6px;font-size:15px">Các lượt vừa ghi</h3>
   <table class="t"><tbody id="tbNhapLog"></tbody></table>
 </section>
@@ -2967,6 +2968,8 @@ function renderNhap(){
     if(only&&!r.thieu&&!r.thua)continue;
     const row=tb.insertRow();row.className=r.thua?'out':'';
     const cell=(txt,cls)=>{const c=row.insertCell();c.textContent=txt;c.className=cls||'';return c;};
+    const ck=document.createElement('input');ck.type='checkbox';ck.className='temck';ck.dataset.sku=r.sku;ck.checked=TEMH.sel.has(r.sku);
+    ck.onchange=()=>{if(ck.checked)TEMH.sel.add(r.sku);else TEMH.sel.delete(r.sku);temSelLabel();};row.insertCell().append(ck);
     cell(r.sku,'code');cell(r.name||(r.need?'':'(ngoài danh sách)')).style.whiteSpace='normal';
     cell(r.need,'num');cell(r.nhap,'num');cell(r.bo||'','num');
     cell(r.thua?'thừa '+r.thua:r.thieu,'num'+(r.thieu||r.thua?' warn':''));cell(r.kien.size||'','num');
@@ -2983,7 +2986,7 @@ function renderNhap(){
     b3.onclick=()=>temOpen(r.sku,r.thieu||r.need||1);
     a.append(b1,b2,b3);
   }
-  if(!tb.rows.length){const row=tb.insertRow(),c=row.insertCell();c.colSpan=8;c.textContent=rows.length?'Không còn mã nào thiếu. Bỏ dấu "Chỉ hiện mã còn thiếu" để xem tất cả.':'Chưa có kiện hoàn nào về kho nên chưa có gì cần nhập.';}
+  if(!tb.rows.length){const row=tb.insertRow(),c=row.insertCell();c.colSpan=9;c.textContent=rows.length?'Không còn mã nào thiếu. Bỏ dấu "Chỉ hiện mã còn thiếu" để xem tất cả.':'Chưa có kiện hoàn nào về kho nên chưa có gì cần nhập.';}
   const undone=new Set(NHAP.entries.filter(e=>/^HUY:/.test(e.note||'')).map(e=>e.note.slice(4)));
   for(const e of NHAP.entries.filter(e=>!/^HUY:/.test(e.note||'')).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,15)){
     const row=lg.insertRow(),off=undone.has(e.id);
@@ -3011,42 +3014,85 @@ function code128Svg(text,hMm){
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+mod+' 10" preserveAspectRatio="none" style="width:100%;height:'+hMm+'mm;display:block"><g fill="#000">'+bars+'</g></svg>';
 }
 const temCode=sku=>{let bc='';if(S.pair)for(const [b,s] of S.pair)if(s===sku&&b!==sku){bc=b;break;}return bc||sku;};
-function temHtml(sku,qty,w,h){
-  const code=temCode(sku),esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const one='<div class="lab">'+code128Svg(code,Math.max(6,h*0.5))+'<div class="sku">'+esc(sku)+'</div>'+(code!==sku?'<div class="bc">'+esc(code)+'</div>':'')+'</div>';
-  return '<!doctype html><html><head><meta charset="utf-8"><title>Tem '+esc(sku)+'</title><style>@page{size:'+w+'mm '+h+'mm;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif}'
-    +'.lab{width:'+w+'mm;height:'+h+'mm;padding:1.5mm 2.5mm;overflow:hidden;page-break-after:always;break-after:page;display:flex;flex-direction:column;justify-content:center;text-align:center}'
-    +'html,body{overflow:hidden}.sku{font-weight:700;font-size:'+Math.max(6,Math.min(14,(w-5)/(Math.max(6,sku.length)*0.25))).toFixed(1)+'pt;margin-top:1mm;white-space:nowrap;line-height:1.1}.bc{font-size:7pt}</style></head><body>'+one.repeat(qty)+'</body></html>';
+/* In tem theo khổ giấy nhiều tem một hàng (anh Tùng dặn 27/11/2026: giấy tem 3 tem một hàng, in lẻ 1 tem thì phí 2 tem).
+   Chọn nhiều mã, mỗi mã một số tem; tem xếp liền nhau, mỗi hàng giấy là một trang in. */
+const TEMH={sel:new Set(),items:[]};
+const temEsc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function temCfg(){const st=S.settings||{};return {w:+st.temW||35,h:+st.temH||22,cols:+st.temCols||3,gap:st.temGap!=null&&st.temGap!==''?+st.temGap:2};}
+function temHtml(items,c){
+  const labs=[];for(const it of items)for(let i=0;i<it.qty;i++)labs.push(it.sku);
+  const rowW=c.cols*c.w+(c.cols-1)*c.gap,cell=sku=>{
+    if(!sku)return '<div class="lab"></div>';
+    const code=temCode(sku),fs=Math.max(6,Math.min(14,(c.w-5)/(Math.max(6,sku.length)*0.25))).toFixed(1);
+    return '<div class="lab">'+code128Svg(code,Math.max(6,c.h*0.5))+'<div class="sku" style="font-size:'+fs+'pt">'+temEsc(sku)+'</div>'+(code!==sku?'<div class="bc">'+temEsc(code)+'</div>':'')+'</div>';
+  };
+  let body='';for(let i=0;i<labs.length;i+=c.cols){let r='';for(let j=0;j<c.cols;j++)r+=cell(labs[i+j]);body+='<div class="row">'+r+'</div>';}
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Tem hàng hoàn</title><style>@page{size:'+rowW+'mm '+c.h+'mm;margin:0}*{box-sizing:border-box}html,body{margin:0;overflow:hidden;font-family:Arial,sans-serif}'
+    +'.row{width:'+rowW+'mm;height:'+c.h+'mm;display:flex;gap:'+c.gap+'mm;page-break-after:always;break-after:page;overflow:hidden}'
+    +'.lab{width:'+c.w+'mm;height:'+c.h+'mm;flex:none;padding:1.5mm 2.5mm;overflow:hidden;display:flex;flex-direction:column;justify-content:center;text-align:center}'
+    +'.sku{font-weight:700;margin-top:1mm;white-space:nowrap;line-height:1.1}.bc{font-size:7pt}</style></head><body>'+body+'</body></html>';
 }
-function temOpen(sku,def){
+function temSum(){
+  const c=temCfg(),n=TEMH.items.reduce((s,x)=>s+x.qty,0),rows=Math.ceil(n/c.cols),blank=rows*c.cols-n;
+  $('temSum').textContent='Tổng '+n+' tem · '+rows+' hàng giấy'+(blank?' · thừa '+blank+' ô trống (thêm '+blank+' tem cho mã nào đó để khỏi phí)':' · không thừa ô nào');
+  $('temSum').style.color=blank?'var(--amber)':'var(--dh)';
+}
+/* list: [{sku, def}] — mở hộp in cho một hoặc nhiều mã */
+function temOpen(list){
+  if(typeof list==='string')list=[{sku:list,def:arguments[1]}];
   let dlg=$('dlgTem');
   if(!dlg){
-    dlg=document.createElement('dialog');dlg.id='dlgTem';dlg.style.cssText='max-width:min(460px,94vw)';
-    dlg.innerHTML='<h3 style="margin:0 0 8px">In lại tem hàng hoàn</h3><div id="temSku" class="code" style="font-size:18px;font-weight:700;margin-bottom:8px"></div>'
-      +'<div class="filters" style="margin-bottom:8px"><label>Số tem <input id="temQty" type="number" min="1" max="200" style="width:90px"></label>'
-      +'<label>Cỡ tem (mm) <input id="temW" type="number" min="20" max="120" style="width:70px"> × <input id="temH" type="number" min="15" max="120" style="width:70px"></label></div>'
-      +'<div id="temPrev" style="border:1px dashed var(--line);display:inline-block;margin-bottom:8px;background:#fff"></div>'
-      +'<div class="hint" style="margin-bottom:10px">Trình duyệt mở hộp in: chọn máy in tem, đúng khổ giấy tem. Mỗi tem một trang.</div>'
+    dlg=document.createElement('dialog');dlg.id='dlgTem';dlg.style.cssText='max-width:min(620px,96vw)';
+    dlg.innerHTML='<h3 style="margin:0 0 8px">In lại tem hàng hoàn</h3>'
+      +'<div style="max-height:46vh;overflow:auto;margin-bottom:8px"><table class="t"><thead><tr><th>Mã sản phẩm</th><th class="num">Số tem</th><th></th></tr></thead><tbody id="temList"></tbody></table></div>'
+      +'<div id="temSum" style="font-weight:700;margin-bottom:8px"></div>'
+      +'<div class="filters" style="margin-bottom:8px"><label>Cỡ tem (mm) <input id="temW" type="number" min="20" max="120" style="width:64px"> × <input id="temH" type="number" min="15" max="120" style="width:64px"></label>'
+      +'<label>Tem mỗi hàng <input id="temCols" type="number" min="1" max="6" style="width:56px"></label><label>Khe giữa tem (mm) <input id="temGap" type="number" min="0" max="10" step="0.5" style="width:60px"></label></div>'
+      +'<div id="temPrev" style="border:1px dashed var(--line);display:inline-block;margin-bottom:8px;background:#fff;max-width:100%;overflow:hidden"></div>'
+      +'<div class="hint" style="margin-bottom:10px">Xem trước hàng tem đầu tiên. Hộp in: chọn máy in tem, khổ giấy đúng một hàng tem (ví dụ 3 tem 35×22 là 109×22 mm). Mỗi hàng tem một trang.</div>'
       +'<div class="filters"><button id="temGo" class="primary">In tem</button><button id="temClose">Đóng</button></div>';
     document.body.append(dlg);
-    const prev=()=>{const w=+$('temW').value||35,h=+$('temH').value||22,s=dlg.dataset.sku;const f=$('temPrev');f.innerHTML='';const fr=document.createElement('iframe');fr.style.cssText='border:0;width:'+w+'mm;height:'+h+'mm;display:block';fr.scrolling='no';f.append(fr);fr.srcdoc=temHtml(s,1,w,h);};
-    $('temW').oninput=prev;$('temH').oninput=prev;dlg.prev=prev;
+    const cfgIn=()=>({w:+$('temW').value||35,h:+$('temH').value||22,cols:Math.max(1,Math.min(6,+$('temCols').value||3)),gap:Math.max(0,+$('temGap').value||0)});
+    const prev=()=>{
+      const c=cfgIn();S.settings=Object.assign({},S.settings,{temW:c.w,temH:c.h,temCols:c.cols,temGap:c.gap});temSum();
+      const f=$('temPrev');f.innerHTML='';const fr=document.createElement('iframe');fr.scrolling='no';
+      fr.style.cssText='border:0;width:'+(c.cols*c.w+(c.cols-1)*c.gap)+'mm;height:'+c.h+'mm;display:block';f.append(fr);
+      const first=[];let left=c.cols;for(const x of TEMH.items){if(left<=0)break;const q=Math.min(left,x.qty);if(q>0){first.push({sku:x.sku,qty:q});left-=q;}}
+      fr.srcdoc=temHtml(first,c);
+    };
+    for(const id of ['temW','temH','temCols','temGap'])$(id).oninput=prev;
+    dlg.prev=prev;
     $('temClose').onclick=()=>dlg.close();
     $('temGo').onclick=async()=>{
-      const q=parseInt($('temQty').value,10),w=+$('temW').value,h=+$('temH').value;
-      if(!(q>=1&&q<=200)){banner('Số tem phải từ 1 đến 200.','warn');return;}
-      if(!(w>=20&&w<=120&&h>=15&&h<=120)){banner('Cỡ tem không hợp lệ.','warn');return;}
-      if(w!==S.settings.temW||h!==S.settings.temH){S.settings=Object.assign({},S.settings,{temW:w,temH:h});try{await kvSet('settings',S.settings);}catch(e){}}
+      const c=cfgIn(),items=TEMH.items.filter(x=>x.qty>0),n=items.reduce((s,x)=>s+x.qty,0);
+      if(!n){banner('Chưa có tem nào để in.','warn');return;}
+      if(n>600){banner('Một lần in tối đa 600 tem.','warn');return;}
+      if(!(c.w>=20&&c.w<=120&&c.h>=15&&c.h<=120)){banner('Cỡ tem không hợp lệ.','warn');return;}
+      try{await kvSet('settings',S.settings);}catch(e){}
       let fr=$('temFrame');if(fr)fr.remove();
       fr=document.createElement('iframe');fr.id='temFrame';fr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';document.body.append(fr);
       fr.onload=()=>{try{fr.contentWindow.focus();fr.contentWindow.print();}catch(e){banner('Không mở được hộp in: '+(e.message||e.name),'err');}};
-      fr.srcdoc=temHtml(dlg.dataset.sku,q,w,h);
-      log('In '+q+' tem '+dlg.dataset.sku);dlg.close();
+      fr.srcdoc=temHtml(items,c);
+      log('In '+n+' tem: '+items.map(x=>x.sku+' ×'+x.qty).join(', '));dlg.close();
     };
   }
-  dlg.dataset.sku=sku;$('temSku').textContent=sku+(temCode(sku)!==sku?'  ·  mã vạch '+temCode(sku):'');
-  $('temQty').value=Math.min(200,Math.max(1,def|0||1));$('temW').value=S.settings.temW||35;$('temH').value=S.settings.temH||22;
-  dlg.prev();dlg.showModal();$('temQty').select();
+  TEMH.items=list.map(x=>({sku:x.sku,qty:Math.min(200,Math.max(0,x.def|0))}));
+  const tb=$('temList');tb.textContent='';
+  for(const it of TEMH.items){
+    const tr=tb.insertRow();
+    const a=tr.insertCell();a.className='code';a.textContent=it.sku+(temCode(it.sku)!==it.sku?'  ·  '+temCode(it.sku):'');
+    const b=tr.insertCell();b.className='num';const q=document.createElement('input');q.type='number';q.min=0;q.max=200;q.value=it.qty;q.style.cssText='width:70px;min-width:0';
+    q.oninput=()=>{it.qty=Math.min(200,Math.max(0,parseInt(q.value,10)||0));dlg.prev();};b.append(q);
+    const d=tr.insertCell();const x=document.createElement('button');x.textContent='Bỏ';x.onclick=()=>{it.qty=0;q.value=0;dlg.prev();};d.append(x);
+  }
+  const c=temCfg();$('temW').value=c.w;$('temH').value=c.h;$('temCols').value=c.cols;$('temGap').value=c.gap;
+  dlg.prev();dlg.showModal();
+}
+function temSelLabel(){const n=TEMH.sel.size;$('btnTemSel').textContent='In tem các mã đã chọn'+(n?' ('+n+')':'');$('btnTemSel').className=n?'primary':'';}
+function temPickOpen(){
+  const list=NHAP.rows.filter(r=>TEMH.sel.has(r.sku)).sort((a,b)=>a.sku.localeCompare(b.sku)).map(r=>({sku:r.sku,def:r.thieu||r.need||1}));
+  if(!list.length){banner('Chưa chọn mã nào: tick ô ở đầu dòng các mã cần in tem.','warn');return;}
+  temOpen(list);
 }
 function nhapAsk(msg,def){
   const s=prompt(msg,String(def));if(s==null)return 0;
@@ -3921,6 +3967,8 @@ async function init(){
 
 /* ---------- sự kiện ---------- */
 $('btnStart').onclick=startShift;
+$('btnTemSel').onclick=temPickOpen;
+$('nAll').onchange=()=>{for(const ck of document.querySelectorAll('#tbNhap .temck')){ck.checked=$('nAll').checked;if(ck.checked)TEMH.sel.add(ck.dataset.sku);else TEMH.sel.delete(ck.dataset.sku);}temSelLabel();};
 /* thư mục cũ (trên Google Drive) treo hoặc không ghi được: chọn thư mục khác rồi bắt đầu ca luôn */
 $('btnPickDir').onclick=async()=>{
   if(shiftBusy){$('gateMsg').textContent='Chờ bước trước dừng hẳn (tối đa 30 giây) rồi bấm lại.';return;}
