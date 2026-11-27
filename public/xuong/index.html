@@ -439,14 +439,16 @@ function the(khoa,sum,det){
   const s=mk('summary');s.append(...sum);const d=mk('div','d');d.append(...det);c.append(s,d);return c;
 }
 /* tên hiển thị theo LÔ như xưởng quen gọi (anh 27/11); số phiếu đặt hàng (PĐH) chỉ để dòng phụ */
+/* tên lô hiển thị một kiểu như xưởng đánh số: "Lô 1", "lô 2", "L 3" → "L1", "L2", "L3"; tên khác (vd "Tái 27/10") giữ nguyên (anh 27/11) */
+function tenLo(s){const m=String(s||'').trim().match(/^(?:lô|lo|l)\s*\.?\s*(\d+)$/i);return m?'L'+Number(m[1]):String(s||'').trim();}
 function nhanDon(p){
-  if(p.los&&p.los.length)return p.los.join(' + ');
-  if(p.id==null)return 'lô '+p.soPhieu;
-  return p.soPhieu||('đặt '+day(p.ngayDat));
+  if(p.los&&p.los.length)return p.los.map(tenLo).join(' + ');
+  if(p.id==null)return tenLo(p.soPhieu);
+  return p.soPhieu&&!/^\d{1,2}\/\d{1,2}$/.test(p.soPhieu.trim())?tenLo(p.soPhieu):'chưa đánh số lô';
 }
 function phieuCua(x){const d=S.data;return x.phieuId!=null&&d?d.don.find(z=>z.id===x.phieuId):null;}
 const dongPdh=p=>p&&p.soPdh?'Phiếu '+p.soPdh:'';
-function nhanLoTheoPhieu(x){return x.lo;}
+function nhanLoTheoPhieu(x){return tenLo(x.lo);}
 const lopNhan=k=>k==='late'?'late':k==='ok'?'ok':k==='warn'?'amber':'m';
 
 function veDon(d,body){
@@ -917,7 +919,7 @@ const tenPhieu=p=>nhanDon(p)+(p.soPdh?' ('+p.soPdh+')':'');
 function loNoiBo(d,p){
   const ls=d.los.filter(x=>x.phieuId===p.id);
   if(ls.length===1)return ls[0].lo;
-  return p.soPhieu||p.soPdh||('Đặt '+day(p.ngayDat));
+  return p.soPhieu?tenLo(p.soPhieu):(p.soPdh||('Đặt '+day(p.ngayDat)));
 }
 function chonPhieu(d,p,khung){
   /* danh sách lựa chọn: phiếu cắt → phiếu chưa xong; phiếu đóng gói → từng lô còn phải trả (theo phiếu nếu có) */
@@ -929,7 +931,7 @@ function chonPhieu(d,p,khung){
       const ct=x.conTra!=null?x.conTra:x.conNo;
       if(x.trangThai==='dong'||ct<=0)continue;
       const q=x.phieuId!=null?d.don.find(z=>z.id===x.phieuId):null;
-            ds.push({ma:x.ma,nhan:x.lo+(q&&q.soPdh?' ('+q.soPdh+')':'')+' · còn phải trả '+num(ct),q,lo:x.lo,x});
+            ds.push({ma:x.ma,nhan:tenLo(x.lo)+(q&&q.soPdh?' ('+q.soPdh+')':'')+' · còn phải trả '+num(ct),q,lo:x.lo,x});
     }
   }
   const mas=[...new Set(ds.map(n=>n.ma))].sort();
@@ -954,7 +956,7 @@ function chonPhieu(d,p,khung){
   const r=mk('div','row2');r.append(w1,w2);khung.append(r);
   if(dangChon>=0){
     const daCo=p.loai==='cat'&&d.los.some(x=>x.ma===p.ma&&x.lo===p.lo);
-    khung.append(mk('div','m','Ghi vào lô "'+p.lo+'"'+(daCo?'; lô này đã cắt trước đó nên số lần này được cộng thêm vào.':'.')));
+    khung.append(mk('div','m','Ghi vào lô "'+tenLo(p.lo)+'"'+(daCo?'; lô này đã cắt trước đó nên số lần này được cộng thêm vào.':'.')));
   }
   const bTay=mk('button','','Không có trong danh sách: nhập tay mã, lô');bTay.type='button';
   bTay.onclick=()=>{const t=p.loai;NP.p=nhapMoi(t);NP.p.tay=true;ve();};
@@ -1006,7 +1008,7 @@ function nguonNhap(d,loai){
   if(loai==='cat'){
     for(const p of d.don)if(p.id!=null&&p.choCat>0)ds.push({nhan:p.ma+(p.soPhieu?' · đợt '+p.soPhieu:'')+' · chờ cắt '+num(p.choCat),ma:p.ma,lo:p.soPhieu||'',dot:p.soPhieu||'',mt:p.maTran,mau:(p.theoMau||[]).map(c=>c.mau),goi:'đặt'});
   }else{
-    for(const x of d.los)if(x.trangThai!=='dong'&&(x.choVe||x.trangThai==='chua_doi_soat'))ds.push({nhan:x.ma+' · '+x.lo+(x.trangThai==='chua_doi_soat'?'':' · còn nợ '+num(Math.max(0,x.conNo))),ma:x.ma,lo:x.lo,dot:'',mt:x.maTran,mau:(x.theoMau||[]).map(c=>c.mau),goi:'còn nợ'});
+    for(const x of d.los)if(x.trangThai!=='dong'&&(x.choVe||x.trangThai==='chua_doi_soat'))ds.push({nhan:x.ma+' · '+tenLo(x.lo)+(x.trangThai==='chua_doi_soat'?'':' · còn nợ '+num(Math.max(0,x.conNo))),ma:x.ma,lo:x.lo,dot:'',mt:x.maTran,mau:(x.theoMau||[]).map(c=>c.mau),goi:'còn nợ'});
   }
   return ds;
 }
