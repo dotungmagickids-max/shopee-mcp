@@ -94,3 +94,14 @@ describe("mk_doc_phan_mem", () => {
     assert.equal(n, 2);
   });
 });
+
+describe("mk_doc_phan_mem tham_so", () => {
+  it("nhận chuỗi JSON, object, rỗng; báo lỗi chuỗi sai", async () => {
+    const { docThamSo } = await import("../src/lib/doc-phan-mem-tool");
+    assert.deepEqual(docThamSo('{"ngay":"2026-11-28"}'), { v: { ngay: "2026-11-28" } });
+    assert.deepEqual(docThamSo({ toi_da: 3 }), { v: { toi_da: 3 } });
+    assert.deepEqual(docThamSo(undefined), { v: {} });
+    assert.ok("loi" in docThamSo("không phải json"));
+    assert.ok("loi" in docThamSo("[1,2]"));
+  });
+});
