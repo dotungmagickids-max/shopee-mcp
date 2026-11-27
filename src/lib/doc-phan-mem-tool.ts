@@ -61,7 +61,7 @@ const loi = (msg: string): CallToolResult => ({ isError: true, content: [{ type:
  * Mọi phòng gọi cùng một nguồn với cùng tham số trong thời gian này dùng chung một bản đã lưu (lưu trên Supabase,
  * nên các máy chủ Vercel cũng dùng chung), không gọi lại Pancake / Shopee / Meta.
  */
-export const LUU_PHUT: Record<string, number> = { kho_dong_hang: 5, kho_su_co: 10, kho_hang_hoan: 10, kho_ton: 10, cskh_chat_luong: 15, mau_media: 10, fb_quang_cao: 10, so_sang: 15 };
+export const LUU_PHUT: Record<string, number> = { kho_dong_hang: 5, kho_su_co: 10, kho_hang_hoan: 10, kho_ton: 10, cskh_chat_luong: 15, mau_media: 10, fb_quang_cao: 10, so_sang: 15, hom_nay: 10, shopee_autopilot: 5 };
 export const LUU_MAC_DINH_PHUT = 3;
 const VN = (ms: number) => new Date(ms + 7 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
 

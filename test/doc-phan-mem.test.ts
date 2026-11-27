@@ -40,7 +40,7 @@ function luuGia(): GoiLuu & { store: Map<string, CallToolResult & { _at: number 
 describe("mk_doc_phan_mem", () => {
   it("gom đủ công cụ chỉ đọc thật, bỏ công cụ ghi", () => {
     const m = gomNguon(ctx, [registerKhoTools, registerNoiBoTools, registerSanXuatTools, registerMagickidsTools]);
-    for (const k of ["kho_dong_hang", "kho_su_co", "kho_hang_hoan", "kho_ton", "cskh_chat_luong", "mau_media", "fb_quang_cao", "sx_orders", "sx_progress", "so_sang", "task_list"]) assert.ok(m.has(k), k);
+    for (const k of ["kho_dong_hang", "kho_su_co", "kho_hang_hoan", "kho_ton", "cskh_chat_luong", "mau_media", "fb_quang_cao", "sx_orders", "sx_progress", "so_sang", "task_list", "hom_nay", "shopee_autopilot"]) assert.ok(m.has(k), k);
     for (const k of ["task_create", "task_update", "sx_order_save", "tin_cho_anh_da_chuyen"]) assert.equal(m.has(k), false, k);
     const ds = danhSachNguon(m);
     const dh = ds.find((d) => d.nguon === "kho_dong_hang") as any;
