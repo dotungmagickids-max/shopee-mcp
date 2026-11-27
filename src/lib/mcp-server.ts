@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { ApiKeyContext } from "./api-keys";
 import { catalog } from "./catalog.generated";
 import type { CatalogEntry, CatalogParam } from "./catalog-types";
+import { registerDocPhanMemTool } from "./doc-phan-mem-tool";
 import { registerKhoTools } from "./kho-tools";
 import { registerMagickidsTools } from "./magickids-tools";
 import { registerNoiBoTools } from "./noi-bo-tools";
@@ -720,6 +721,7 @@ export function createMcpServer(ctx: ApiKeyContext): McpServer {
   registerSanXuatTools(server, ctx);
   registerKhoTools(server, ctx);
   registerNoiBoTools(server, ctx);
+  registerDocPhanMemTool(server, ctx);
   registerShopeeVideoTools(server, ctx);
   registerTikTokTools(server, ctx);
 
