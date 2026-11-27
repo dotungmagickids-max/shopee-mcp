@@ -93,6 +93,19 @@ export async function docNguon(m: Map<string, NguonDoc>, nguon: string, thamSo: 
   return { ...out, content: [{ type: "text", text: ghi }, ...(out.content ?? [])] };
 }
 
+/** tham_so là chuỗi JSON (hoặc object nếu client gửi thẳng). Rỗng = {}. */
+export function docThamSo(v: unknown): { v: Record<string, unknown> } | { loi: string } {
+  if (v == null || v === "") return { v: {} };
+  if (typeof v === "object" && !Array.isArray(v)) return { v: v as Record<string, unknown> };
+  try {
+    const o = JSON.parse(String(v));
+    if (o && typeof o === "object" && !Array.isArray(o)) return { v: o };
+  } catch {
+    /* rơi xuống báo lỗi */
+  }
+  return { loi: 'tham_so phải là chuỗi JSON dạng object, vd {"ngay":"2026-11-28"}' };
+}
+
 export function registerDocPhanMemTool(server: McpServer, ctx: ApiKeyContext): void {
   const nguon = gomNguon(ctx, [registerKhoTools, registerNoiBoTools, registerSanXuatTools, registerMagickidsTools]);
   server.registerTool(
@@ -105,10 +118,14 @@ export function registerDocPhanMemTool(server: McpServer, ctx: ApiKeyContext): v
         "Phần mềm mới chỉ thêm nguồn mới, tên công cụ không đổi. Chỉ đọc, không ghi gì. Không trả tên, SĐT, địa chỉ khách.",
       inputSchema: {
         nguon: z.string().max(60).describe('Tên nguồn, vd "kho_dong_hang", "sx_progress"; "danh_sach" để xem tất cả'),
-        tham_so: z.record(z.string(), z.unknown()).optional().describe("Tham số của nguồn (xem trong danh_sach)"),
+        // Chuỗi JSON, không dùng z.record: schema có propertyNames làm connector claude.ai bỏ cả schema công cụ (28/11).
+        tham_so: z.string().max(4000).optional().describe('Tham số của nguồn dạng chuỗi JSON, vd {"ngay":"2026-11-28","toi_da":20}; xem tham số từng nguồn trong danh_sach'),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ nguon: ten, tham_so }) => docNguon(nguon, ten, tham_so)
+    async ({ nguon: ten, tham_so }) => {
+      const t = docThamSo(tham_so);
+      return "loi" in t ? loi(t.loi) : docNguon(nguon, ten, t.v);
+    }
   );
 }
